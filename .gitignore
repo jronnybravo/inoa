@@ -1,9 +1,27 @@
-node_modules/
-.cache/
-out/
+
+!.env.example
+!.env.test
+# Env
+# OS
+# Output
+# Vite
 *.log
+.DS_Store
 .brandy/
-dist/
-ruvector.db
+.cache/
 .env
 .env.*
+.netlify
+.output
+.vercel
+.wrangler
+/.svelte-kit
+/build
+Thumbs.db
+dist/
+node_modules
+node_modules/
+out/
+ruvector.db
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*

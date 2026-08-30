@@ -11,15 +11,16 @@
  * unique names, 45% duplicates, and 99% of them one of 38 first words glued to
  * one of 13 endings. Small batches keep each request sharp.
  *
- * Batches run concurrently in waves. Each call is a separate process that
- * spends almost all its life waiting on the network, so the cost of running
- * several is close to the cost of running one; threads would add machinery and
- * no throughput, because there is nothing to compute locally.
+ * Batches run concurrently. Each call is a separate process that spends almost
+ * all its life waiting on the network, so the cost of running several is close
+ * to the cost of running one; threads would add machinery and no throughput,
+ * because there is nothing to compute locally.
  *
- * Diversity is handled per wave rather than per batch. Batches inside a wave
- * cannot see each other, so they overlap and the overlap is deduplicated; each
- * new wave is told everything produced so far, which is what stops the whole
- * run collapsing onto the same handful of roots.
+ * A fixed pool rather than waves. A wave can only build its exclusion list from
+ * the wave before it, so five batches launched together all repeat each other's
+ * output. Here a finished batch is folded into the set immediately and its
+ * replacement launches knowing everything produced so far — so only the batches
+ * genuinely in flight at the same moment are blind to each other.
  */
 
 import { execFile } from 'node:child_process';
@@ -124,16 +125,25 @@ async function generateBatch(
   return parse(stdout);
 }
 
+/**
+ * One batch, whose failure is reported rather than swallowed.
+ *
+ * An earlier version returned an empty array on error. Three batches failed in
+ * a row, generation stopped at 234 names of 1000, and nothing anywhere said
+ * why — the same silence this whole tool exists to eliminate.
+ */
 async function settledBatch(
   brief: string,
   strategies: StrategyId[],
   count: number,
-  avoid: string[]
+  avoid: string[],
+  onProblem?: (reason: string) => Promise<void> | void
 ): Promise<GeneratedName[]> {
   try {
     return await generateBatch(brief, strategies, count, avoid);
-  } catch {
-    // One failed batch must not lose the wave beside it.
+  } catch (error) {
+    const raw = (error as Error & { stderr?: string }).stderr ?? (error as Error).message;
+    await onProblem?.(raw.split('\n').filter(Boolean).slice(-1)[0] ?? 'unknown error');
     return [];
   }
 }
@@ -148,38 +158,70 @@ export async function generateNames(
    * and the better part of half an hour; holding them all back until the end
    * makes a working run look like a stalled one.
    */
-  onBatch?: (fresh: GeneratedName[], total: number) => Promise<void> | void
+  onBatch?: (fresh: GeneratedName[], total: number) => Promise<void> | void,
+  onProblem?: (reason: string) => Promise<void> | void
 ): Promise<GeneratedName[]> {
   const seen = new Set<string>();
   const all: GeneratedName[] = [];
-  let emptyWaves = 0;
 
-  while (all.length < target && emptyWaves < 3) {
-    const remaining = target - all.length;
-    const batches = Math.min(CONCURRENCY, Math.ceil(remaining / BATCH_SIZE));
+  /** Consecutive finished batches that contributed nothing new. */
+  let barren = 0;
+  const GIVE_UP_AFTER = 6;
+
+  let nextId = 0;
+  const pool = new Map<number, Promise<{ id: number; names: GeneratedName[] }>>();
+
+  const spawn = () => {
+    const id = nextId++;
+    const want = Math.min(BATCH_SIZE, Math.max(10, target - all.length));
+    // The exclusion list is read HERE, at launch, so a batch starting now knows
+    // everything every earlier batch has already returned.
     const avoid = [...seen];
-
-    const waves = await Promise.all(
-      Array.from({ length: batches }, () =>
-        settledBatch(brief, strategies, Math.min(BATCH_SIZE, remaining), avoid)
-      )
+    pool.set(
+      id,
+      settledBatch(brief, strategies, want, avoid, onProblem).then((names) => ({ id, names }))
     );
+  };
 
+  const absorb = async (names: GeneratedName[]) => {
     const fresh: GeneratedName[] = [];
-    for (const candidate of waves.flat()) {
+    for (const candidate of names) {
       const key = candidate.name.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
       fresh.push(candidate);
     }
+    barren = fresh.length === 0 ? barren + 1 : 0;
+    if (fresh.length) {
+      all.push(...fresh);
+      await onBatch?.(fresh, all.length);
+    }
+  };
 
-    // A wave that adds nothing new means this brief and these strategies are
-    // exhausted; stop rather than spin.
-    if (fresh.length === 0) emptyWaves++;
-    else emptyWaves = 0;
+  while (all.length < target && barren < GIVE_UP_AFTER) {
+    while (pool.size < CONCURRENCY && all.length + pool.size * BATCH_SIZE < target + BATCH_SIZE) {
+      spawn();
+    }
+    if (pool.size === 0) break;
+    const { id, names } = await Promise.race(pool.values());
+    pool.delete(id);
+    await absorb(names);
+  }
 
-    all.push(...fresh);
-    if (fresh.length) await onBatch?.(fresh, all.length);
+  // Whatever is still in flight has already been paid for; keep its output.
+  for (const settled of await Promise.all(pool.values())) await absorb(settled.names);
+
+  /**
+   * A final, sequential attempt at the shortfall.
+   *
+   * The pool stops as soon as the target is met, which usually leaves it a
+   * little short once duplicates are removed. This last call knows every name
+   * produced and asks only for what is missing.
+   */
+  if (all.length < target && barren < GIVE_UP_AFTER) {
+    const shortfall = target - all.length;
+    await onProblem?.(`Topping up the last ${shortfall}`);
+    await absorb(await settledBatch(brief, strategies, shortfall, [...seen], onProblem));
   }
 
   return all.slice(0, target);

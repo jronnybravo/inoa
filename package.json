@@ -11,7 +11,8 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "worker": "node --experimental-strip-types worker/index.ts",
-    "db:sync": "node --experimental-strip-types worker/sync-schema.ts"
+    "db:sync": "node --experimental-strip-types worker/sync-schema.ts",
+    "recheck": "node --experimental-strip-types worker/recheck.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^7.0.1",

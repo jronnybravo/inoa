@@ -17,9 +17,11 @@ const Body = z.object({
   requireAppStore: z.boolean(),
   requirePlayStore: z.boolean(),
   requireGoogle: z.boolean(),
-  email: z.string().email(),
-  targetCount: z.number().int().min(50).max(2000).default(1000)
+  email: z.string().email()
 });
+
+/** Every run generates the same number. It is not a per-request choice. */
+const TARGET_COUNT = 1000;
 
 export const POST: RequestHandler = async ({ request }) => {
   const parsed = Body.safeParse(await request.json());
@@ -29,7 +31,12 @@ export const POST: RequestHandler = async ({ request }) => {
   const runs = source.getRepository(RunEntity);
 
   const run = await runs.save(
-    runs.create({ ...parsed.data, status: 'awaiting_verification', emailVerified: false })
+    runs.create({
+      ...parsed.data,
+      targetCount: TARGET_COUNT,
+      status: 'awaiting_verification',
+      emailVerified: false
+    })
   );
 
   // Six digits, from a CSPRNG rather than Math.random.
@@ -41,6 +48,8 @@ export const POST: RequestHandler = async ({ request }) => {
     expiresAt: new Date(Date.now() + 20 * 60_000)
   });
 
-  const sent = await sendVerificationCode(run.email, code);
-  return json({ id: run.id, emailSent: sent });
+  const { sent, reason } = await sendVerificationCode(run.email, code);
+  // The reason travels to the client: a run whose code never arrived is
+  // otherwise indistinguishable from one the user simply has not opened yet.
+  return json({ id: run.id, emailSent: sent, emailProblem: reason });
 };

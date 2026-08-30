@@ -141,7 +141,7 @@ async function processRun(run: Run): Promise<void> {
 
   await runs.update(run.id, { status: 'done', finishedAt: new Date() });
 
-  const sent = await sendResults(
+  const mail = await sendResults(
     run.email,
     run.id,
     run.brief,
@@ -154,9 +154,12 @@ async function processRun(run: Run): Promise<void> {
     })),
     `${APP_URL}/?requestid=${run.id}`
   );
-  if (sent) await runs.update(run.id, { notifiedAt: new Date() });
+  if (mail.sent) await runs.update(run.id, { notifiedAt: new Date() });
 
-  console.log(`  done — ${survivors.length} passed of ${stored.length}${sent ? ', emailed' : ''}`);
+  console.log(
+    `  done — ${survivors.length} passed of ${stored.length}` +
+      (mail.sent ? ', emailed' : `, EMAIL FAILED: ${mail.reason}`)
+  );
 }
 
 async function main() {

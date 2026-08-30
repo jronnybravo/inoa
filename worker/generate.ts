@@ -93,7 +93,13 @@ export async function generateNames(
   brief: string,
   strategies: StrategyId[],
   target: number,
-  onProgress?: (total: number) => Promise<void> | void
+  /**
+   * Called with each batch as it lands, so the caller can store names while
+   * later batches are still being written. A thousand names is five requests
+   * and the better part of half an hour; holding them all back until the end
+   * makes a working run look like a stalled one.
+   */
+  onBatch?: (fresh: GeneratedName[], total: number) => Promise<void> | void
 ): Promise<GeneratedName[]> {
   const seen = new Set<string>();
   const all: GeneratedName[] = [];
@@ -116,7 +122,7 @@ export async function generateNames(
     else emptyRounds = 0;
 
     all.push(...fresh);
-    await onProgress?.(all.length);
+    await onBatch?.(fresh, all.length);
   }
 
   return all.slice(0, target);

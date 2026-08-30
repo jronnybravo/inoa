@@ -353,14 +353,24 @@
         </button>
       </div>
 
-      <div class="overflow-x-auto rounded-xl border border-stone-200 dark:border-stone-800">
+      <!--
+        The table scrolls inside its own panel rather than lengthening the page.
+        A thousand rows on a page scroll takes the header away with it, and
+        leaves the console stranded beside an endless column.
+      -->
+      <div class="h-[32rem] overflow-auto rounded-xl border border-stone-200
+                  lg:h-[calc(100vh-19rem)] dark:border-stone-800">
         <table class="w-full text-sm">
-          <thead class="bg-stone-100 text-left dark:bg-stone-900">
-            <tr>
-              <th class="w-9 px-3 py-2"></th>
-              <th class="px-3 py-2 font-medium">Name</th>
+          <thead class="sticky top-0 z-10 text-left">
+            <tr class="bg-stone-100 dark:bg-stone-900">
+              <th class="w-9 px-3 py-2 shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
+                         dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]"></th>
+              <th class="px-3 py-2 font-medium shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
+                         dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]">Name</th>
               {#each CHECK_ORDER as k}
-                <th class="px-3 py-2 font-medium whitespace-nowrap">{CHECK_LABEL[k]}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap
+                           shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
+                           dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]">{CHECK_LABEL[k]}</th>
               {/each}
             </tr>
           </thead>
@@ -410,7 +420,7 @@
       {#if consoleOpen}
         <div bind:this={logEl}
           class="h-72 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50 p-3
-                 font-mono text-xs leading-relaxed lg:h-[32rem]
+                 font-mono text-xs leading-relaxed lg:h-[calc(100vh-19rem)]
                  dark:border-stone-800 dark:bg-stone-950">
           {#each events as e}
             <div class="flex gap-2 py-px">
@@ -418,7 +428,17 @@
               <span class="{LEVEL[e.level] ?? LEVEL.info} break-words">{e.message}</span>
             </div>
           {:else}
-            <p class="text-stone-500">Waiting for the worker…</p>
+            <p class="text-stone-500">
+              {#if run.status === 'queued'}
+                Waiting for a worker to pick this run up.
+              {:else if finished}
+                This run recorded no console output.
+              {:else}
+                No console output. The run is working — see the counters above —
+                but the worker process handling it started before console
+                recording existed, so it has no way to report its progress here.
+              {/if}
+            </p>
           {/each}
         </div>
       {/if}

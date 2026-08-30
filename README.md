@@ -79,6 +79,27 @@ So the HTTP tier is trusted only when its results actually **mention the name**.
 That is the evidence the engine understood the question. Everything else
 escalates.
 
+### Why it runs on its own clock
+
+Checking happens in two phases. `.com`, App Store and Play Store run inline,
+paced against limits that announce themselves — Apple says 403 at around twenty
+calls a minute. The web check is drained afterwards, one name a minute.
+
+Search engines do not announce anything. Google gives no warning, then serves
+its `/sorry/` interstitial, and the penalty outlasts the run: measured here, it
+tripped after roughly 25 queries and was still blocking half an hour later, in
+both headless and headed real Chrome.
+
+Spacing the queries makes tripping it less likely. But the queue earns its keep
+on the other side of that: once blocked, an inline check keeps calling and marks
+every remaining name `unverified` in seconds — the run finishes fast, tells you
+nothing, and the names *look* checked. The queue notices, pauses, retries the
+same name, and gives up out loud after three attempts.
+
+Only names that survived the earlier gates are queued, which is what makes a
+minute apiece affordable. And most never reach Google at all: names that are
+obviously taken are resolved by the HTTP tier for free.
+
 Set `BRAVE_API_KEY` if you can. The browser fallback gives a better answer than
 any scraper — Google says "did not match any documents" outright, a positive
 statement of absence — but it does not survive volume, and it reports

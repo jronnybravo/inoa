@@ -1,3 +1,4 @@
+import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { RunEntity } from '$lib/server/entities/run';
@@ -8,7 +9,7 @@ import { CandidateEntity } from '$lib/server/entities/candidate';
  * hold a Vercel function open and reintroduce the duration cap this whole
  * architecture exists to avoid.
  */
-export async function GET({ params, url }) {
+export const GET: RequestHandler = async ({ params, url }) => {
   const source = await db();
   const run = await source.getRepository(RunEntity).findOneBy({ id: params.id });
   if (!run) error(404, 'No such request');
@@ -36,4 +37,4 @@ export async function GET({ params, url }) {
       droppedBy: c.droppedBy
     }))
   });
-}
+};

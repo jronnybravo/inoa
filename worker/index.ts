@@ -103,10 +103,18 @@ async function processRun(run: Run): Promise<void> {
 
   await log(`Generating ${run.targetCount} names`);
 
-  // Names are stored as each batch arrives rather than at the end, so the page
-  // fills in while generation is still running.
+  /**
+   * Generation and checking run together.
+   *
+   * A name is checkable the moment it exists, and the two halves contend for
+   * nothing: generation waits on one service, the checks wait on others. Run in
+   * sequence they added up; run together the checking is nearly free, because
+   * it happens inside time that was already being spent waiting.
+   */
+  let generationDone = false;
   let stored_count = 0;
-  const generated = await generateNames(
+
+  const generating = generateNames(
     run.brief,
     run.strategies as never,
     run.targetCount,
@@ -124,20 +132,8 @@ async function processRun(run: Run): Promise<void> {
       }
       await runs.update(run.id, { generatedCount: total });
       await log(`Generated ${total} of ${run.targetCount}`);
-    }
-  );
-
-  if (generated.length === 0) {
-    const reason = 'Generation produced no names. Is the Claude CLI signed in? Try `claude login`.';
-    await log(reason, 'error');
-    await runs.update(run.id, { status: 'failed', error: reason, finishedAt: new Date() });
-    return;
-  }
-
-  await runs.update(run.id, { status: 'checking', generatedCount: generated.length });
-  await log(
-    `Checking ${generated.length} names — ${FAST_CHECKS.map((k) => CHECK_LABEL[k]).join(', ')}`,
-    'success'
+    },
+    async (reason) => log(`Generation: ${reason}`, 'warn')
   );
 
   const required = {
@@ -148,28 +144,59 @@ async function processRun(run: Run): Promise<void> {
   };
 
   let checked = 0;
-  const stored = await candidates.find({ where: { runId: run.id }, order: { position: 'ASC' } });
 
-  for (const candidate of stored) {
-    const result = await checkCandidate(candidate.name, required, FAST_CHECKS);
-    await candidates.update(candidate.id, {
-      com: result.statuses.com!,
-      appStore: result.statuses.appStore!,
-      playStore: result.statuses.playStore!,
-      // A name dropped by an earlier gate never reaches the web queue.
-      google: result.droppedBy ? 'skipped' : 'pending',
-      detail: result.detail,
-      passed: result.passed,
-      droppedBy: result.droppedBy,
-      checkedAt: new Date()
-    });
-    checked++;
-    await runs.update(run.id, { checkedCount: checked });
-    if (result.droppedBy) {
-      await log(`${candidate.name} — dropped, ${CHECK_LABEL[result.droppedBy]} taken`);
+  /** Drain names as they appear, and keep draining until generation is over. */
+  const checking = (async () => {
+    await log(`Checking as names arrive — ${FAST_CHECKS.map((k) => CHECK_LABEL[k]).join(', ')}`);
+    for (;;) {
+      const batch = await candidates.find({
+        where: { runId: run.id, com: 'pending' as never },
+        order: { position: 'ASC' },
+        take: 25
+      });
+
+      if (batch.length === 0) {
+        if (generationDone) return;
+        await sleep(2000);
+        continue;
+      }
+
+      for (const candidate of batch) {
+        const result = await checkCandidate(candidate.name, required, FAST_CHECKS);
+        await candidates.update(candidate.id, {
+          com: result.statuses.com!,
+          appStore: result.statuses.appStore!,
+          playStore: result.statuses.playStore!,
+          // A name dropped by an earlier gate never reaches the web queue.
+          google: result.droppedBy ? 'skipped' : 'pending',
+          detail: result.detail,
+          passed: result.passed,
+          droppedBy: result.droppedBy,
+          checkedAt: new Date()
+        });
+        checked++;
+        await runs.update(run.id, { checkedCount: checked });
+        if (result.droppedBy) {
+          await log(`${candidate.name} — dropped, ${CHECK_LABEL[result.droppedBy]} taken`);
+        }
+        if (checked % 25 === 0) await log(`Checked ${checked}`);
+      }
     }
-    if (checked % 25 === 0) await log(`Checked ${checked} of ${stored.length}`);
+  })();
+
+  const generated = await generating;
+  generationDone = true;
+
+  if (generated.length === 0) {
+    const reason = 'Generation produced no names. Is the Claude CLI signed in? Try `claude login`.';
+    await log(reason, 'error');
+    await runs.update(run.id, { status: 'failed', error: reason, finishedAt: new Date() });
+    return;
   }
+
+  await runs.update(run.id, { status: 'checking', generatedCount: generated.length });
+  await checking;
+  const stored = await candidates.find({ where: { runId: run.id } });
 
   // Phase two. Only survivors are here, which is what makes a minute apiece
   // affordable — the funnel has already removed most of the field.

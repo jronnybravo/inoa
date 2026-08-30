@@ -1,0 +1,119 @@
+---
+/*
+ * THESIS: A name is a measured specimen, not a search result. This refuses the
+ *   category default — a search bar over a grid of equal cards with green pills.
+ * OWN-WORLD: A phonetics lab. Cool plotting ground, white recording slips with
+ *   a ruled numbered left margin, hairline rules, syllable splits and CV
+ *   skeletons, quantity as ink density columns, risks as red margin annotations.
+ *   One family (Libre Franklin), square corners, tabular numerals throughout.
+ * STORY: A founder writes one sentence, watches the engine transcribe
+ *   candidates as it works, then reads a ranked sheet where every number can be
+ *   interrogated — and leaves with a report, a link, and a route to clearance.
+ * FIRST VIEWPORT: Ruled masthead, then slip 01 at full width: a large ruled
+ *   textarea holding the brief, refinements folded behind one disclosure band,
+ *   and the primary action bottom-left beside the honest cost of the run.
+ * FORM: Phonetics lab — candidate 4 of my grounded list, assigned by seed
+ *   0950e249; staging is the transcription slip and specimen sheet.
+ */
+
+import Masthead from '../components/Masthead.astro';
+import BriefSlip from '../components/BriefSlip.astro';
+import '../styles/lab.css';
+
+export const prerender = false;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>brandy — a naming engine that shows its work</title>
+    <meta
+      name="description"
+      content="Discover company, product and project names. Phonotactic generation, imagery-weighted scoring across eleven dimensions, cross-linguistic screening, and live domain and handle checks."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&display=swap"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230e141b'/%3E%3Ctext x='16' y='23' font-family='Helvetica,Arial' font-size='20' font-weight='700' fill='%23fcfdfd' text-anchor='middle'%3Eb%3C/text%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <main class="shell">
+      <Masthead />
+
+      <div class="notice" id="notice" role="alert" hidden></div>
+
+      <BriefSlip />
+
+      <section class="slip capture" id="capture" aria-labelledby="capture-heading" hidden>
+        <span class="slip__index" aria-hidden="true">02</span>
+        <div class="capture__stage">
+          <h2 class="notation notation--ink" id="capture-heading">Capturing</h2>
+          <p class="notation measure" id="elapsed">0.0s</p>
+        </div>
+        <div class="gauge">
+          <div class="gauge__fill" id="gauge-fill"></div>
+          <div class="gauge__tick" id="gauge-tick"></div>
+        </div>
+        <p class="notation" id="stage" role="status" aria-live="polite">Waiting</p>
+        <div class="capture__names" id="capture-names" aria-hidden="true"></div>
+      </section>
+
+      <div id="results"></div>
+
+      <footer class="slip">
+        <span class="slip__index" aria-hidden="true">§</span>
+        <h2 class="notation notation--ink">Method and limits</h2>
+        <ul class="prose" style="padding-left: 1.1em; margin-top: var(--md)">
+          <li>
+            Candidates are generated under six naming philosophies and gated by English
+            phonotactics, so they are sayable by construction. The strongest are then bred
+            into descendants and rescored.
+          </li>
+          <li>
+            Scoring is dominated by imagery: how much of a mental picture a name arrives
+            with. That decays as a root stops being audible in the finished name. Letter
+            sequences occurring nowhere in English are a veto rather than a deduction.
+          </li>
+          <li>
+            <b>Names already on the App Store or Play Store are dropped</b> before the
+            shortlist is picked. Apple's search API is authoritative; Google Play has no
+            public API, so that half is read best-effort and can come back unknown —
+            unknown is never counted as clear.
+          </li>
+          <li>
+            Domain status comes from RDAP, the registries' own protocol, with DNS as a
+            fallback. <b>Unknown means no authoritative answer</b>; never assume it is free.
+            A registered domain may still be parked or for sale, which registry data
+            cannot distinguish — so a taken domain is reported, not treated as fatal.
+          </li>
+          <li>
+            Handle checks are authoritative for GitHub and npm only. Consumer social
+            platforms block automated probes and are reported as indicative.
+          </li>
+          <li>
+            <b>Nothing here checks trademarks, or what a name means in another
+            language.</b> Both checks were removed with the word lists they depended on.
+            The trademark figure is only a weak notability proxy from Wikipedia. Run a
+            real clearance search before you commit to any name.
+          </li>
+          <li>
+            Runs are limited to six per fifteen minutes, because each one makes outbound
+            calls to public registries on your behalf.
+          </li>
+        </ul>
+      </footer>
+    </main>
+
+    <script>
+      import '../scripts/run.ts';
+    </script>
+  </body>
+</html>

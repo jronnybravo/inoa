@@ -1,0 +1,38 @@
+{
+  "name": "brandy",
+  "version": "0.1.0",
+  "description": "Brand Discovery Platform \u2014 a naming engine that discovers memorable, ownable, premium names.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.18"
+  },
+  "bin": {
+    "brandy": "./discover.ts"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "start": "node ./dist/server/entry.mjs",
+    "preview": "astro preview",
+    "discover": "node discover.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "naming",
+    "branding",
+    "brand-strategy",
+    "domains",
+    "trademark",
+    "linguistics"
+  ],
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@astrojs/node": "^11.1.0",
+    "astro": "^7.2.0"
+  }
+}

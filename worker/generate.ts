@@ -7,9 +7,19 @@
  * with `claude login`.
  *
  * Asked for a thousand names in one response a model will repeat itself and
- * drift into filler. Batching keeps each request small enough to stay sharp,
- * and every batch is told what has already been produced so the batches do not
- * converge on the same obvious material.
+ * drift into filler — measured on a competing model's 296-line answer: 163
+ * unique names, 45% duplicates, and 99% of them one of 38 first words glued to
+ * one of 13 endings. Small batches keep each request sharp.
+ *
+ * Batches run concurrently in waves. Each call is a separate process that
+ * spends almost all its life waiting on the network, so the cost of running
+ * several is close to the cost of running one; threads would add machinery and
+ * no throughput, because there is nothing to compute locally.
+ *
+ * Diversity is handled per wave rather than per batch. Batches inside a wave
+ * cannot see each other, so they overlap and the overlap is deduplicated; each
+ * new wave is told everything produced so far, which is what stops the whole
+ * run collapsing onto the same handful of roots.
  */
 
 import { execFile } from 'node:child_process';
@@ -18,7 +28,34 @@ import { STRATEGIES, type StrategyId } from '../src/lib/types.ts';
 
 const run = promisify(execFile);
 
-const BATCH_SIZE = 200;
+/**
+ * The CLI waits three seconds for stdin before giving up on it, and we never
+ * write any — the prompt goes in as an argument. Closing stdin outright skips
+ * that wait, which is otherwise paid on every batch of every run.
+ */
+const CLI_OPTIONS = {
+  maxBuffer: 32 * 1024 * 1024,
+  timeout: 900_000,
+  stdio: ['ignore', 'pipe', 'pipe'] as const
+};
+
+/**
+ * Which model generates. Names are a bulk text task with no reasoning in it,
+ * so the largest model is not obviously the right one; set BRANDY_MODEL to
+ * try another.
+ */
+const MODEL = process.env.BRANDY_MODEL;
+
+const BATCH_SIZE = Number(process.env.BRANDY_BATCH_SIZE ?? 50);
+
+/**
+ * How many generations run at once.
+ *
+ * Not a CPU question — the work happens on a server and this machine only
+ * waits for it. The ceiling is the account's rate limit, so this is a knob to
+ * be tuned against reality rather than against core count.
+ */
+const CONCURRENCY = Number(process.env.BRANDY_CONCURRENCY ?? 5);
 
 export interface GeneratedName {
   name: string;
@@ -81,12 +118,24 @@ async function generateBatch(
   count: number,
   avoid: string[]
 ): Promise<GeneratedName[]> {
-  const { stdout } = await run(
-    'claude',
-    ['-p', promptFor(brief, strategies, count, avoid), '--output-format', 'text'],
-    { maxBuffer: 8 * 1024 * 1024, timeout: 300_000 }
-  );
+  const args = ['-p', promptFor(brief, strategies, count, avoid), '--output-format', 'text'];
+  if (MODEL) args.push('--model', MODEL);
+  const { stdout } = await run('claude', args, CLI_OPTIONS);
   return parse(stdout);
+}
+
+async function settledBatch(
+  brief: string,
+  strategies: StrategyId[],
+  count: number,
+  avoid: string[]
+): Promise<GeneratedName[]> {
+  try {
+    return await generateBatch(brief, strategies, count, avoid);
+  } catch {
+    // One failed batch must not lose the wave beside it.
+    return [];
+  }
 }
 
 export async function generateNames(
@@ -103,26 +152,34 @@ export async function generateNames(
 ): Promise<GeneratedName[]> {
   const seen = new Set<string>();
   const all: GeneratedName[] = [];
-  let emptyRounds = 0;
+  let emptyWaves = 0;
 
-  while (all.length < target && emptyRounds < 3) {
-    const want = Math.min(BATCH_SIZE, target - all.length);
-    const batch = await generateBatch(brief, strategies, want, [...seen]);
+  while (all.length < target && emptyWaves < 3) {
+    const remaining = target - all.length;
+    const batches = Math.min(CONCURRENCY, Math.ceil(remaining / BATCH_SIZE));
+    const avoid = [...seen];
 
-    const fresh = batch.filter((c) => {
-      const key = c.name.toLowerCase();
-      if (seen.has(key)) return false;
+    const waves = await Promise.all(
+      Array.from({ length: batches }, () =>
+        settledBatch(brief, strategies, Math.min(BATCH_SIZE, remaining), avoid)
+      )
+    );
+
+    const fresh: GeneratedName[] = [];
+    for (const candidate of waves.flat()) {
+      const key = candidate.name.toLowerCase();
+      if (seen.has(key)) continue;
       seen.add(key);
-      return true;
-    });
+      fresh.push(candidate);
+    }
 
-    // A batch that adds nothing new means the model has exhausted what this
-    // brief and these strategies can reach; stop rather than spin.
-    if (fresh.length === 0) emptyRounds++;
-    else emptyRounds = 0;
+    // A wave that adds nothing new means this brief and these strategies are
+    // exhausted; stop rather than spin.
+    if (fresh.length === 0) emptyWaves++;
+    else emptyWaves = 0;
 
     all.push(...fresh);
-    await onBatch?.(fresh, all.length);
+    if (fresh.length) await onBatch?.(fresh, all.length);
   }
 
   return all.slice(0, target);

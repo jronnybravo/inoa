@@ -100,8 +100,22 @@ Only names that survived the earlier gates are queued, which is what makes a
 minute apiece affordable. And most never reach Google at all: names that are
 obviously taken are resolved by the HTTP tier for free.
 
-Set `BRAVE_API_KEY` if you can. The browser fallback gives a better answer than
-any scraper — Google says "did not match any documents" outright, a positive
-statement of absence — but it does not survive volume, and it reports
+Set a tier-2 API key if you can. The browser fallback gives a better answer
+than any scraper — Google says "did not match any documents" outright, a
+positive statement of absence — but it does not survive volume, and it reports
 `unverified` the moment it is challenged rather than trying to look like
 something it isn't.
+
+The first configured provider wins:
+
+| env var | free allowance | card |
+|---|---|---|
+| `TAVILY_API_KEY` | 1,000 searches/month, renews | no |
+| `EXA_API_KEY` | $10 credit/month | no |
+| `SERPER_API_KEY` | 2,500 once, then $0.30/1,000 | for paid |
+| `BRAVE_API_KEY` | $5 credit/month, then $5/1,000 | yes |
+
+Tavily is the default recommendation: the allowance renews monthly and there is
+no card on file, so a runaway loop cannot produce a bill. Brave is listed last
+because its genuinely-free tier ended in February 2026 — the card it collects
+at signup now gets charged past the included credit.

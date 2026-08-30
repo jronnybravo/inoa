@@ -30,7 +30,7 @@
 import type { Repository } from 'typeorm';
 import { CandidateEntity, type Candidate } from '../src/lib/server/entities/candidate.ts';
 import type { CheckKind, CheckStatus } from '../src/lib/types.ts';
-import { checkWeb } from './checks/web.ts';
+import { checkWeb, hasSearchApi } from './checks/web.ts';
 import { computePassed, type Requirements } from './pipeline.ts';
 import { jitter, sleep } from './checks/shared.ts';
 
@@ -44,7 +44,7 @@ const BACKOFF_MS = Number(process.env.WEB_CHECK_BACKOFF_MS ?? 30 * 60_000);
 /** Consecutive challenges before we stop trying at all for this run. */
 const MAX_BACKOFFS = 3;
 
-const usingApi = () => Boolean(process.env.BRAVE_API_KEY);
+const usingApi = hasSearchApi;
 
 const CHALLENGED = /challenged the request/i;
 

@@ -13,6 +13,7 @@
  *      Header', 'Google Play logo' — so every name came back clear.
  */
 
+import { request as httpsRequest } from 'node:https';
 import * as cheerio from 'cheerio';
 import { isBrandCollision, type CheckOutcome } from './shared.ts';
 
@@ -37,21 +38,53 @@ async function resolveViaDoh(hostname: string): Promise<string | undefined> {
   }
 }
 
+/**
+ * Fetch play.google.com at a specific address.
+ *
+ * Not `fetch`. Undici forbids overriding the Host header, and pointing a URL at
+ * a bare IP sends the wrong TLS SNI — which is why every check in the first run
+ * came back 'fetch failed'. node:https lets us connect to the resolved address
+ * while still presenting play.google.com for SNI and Host, which is exactly
+ * what is needed: the hostname does not route from here, the address does.
+ */
+function fetchPinned(address: string, path: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        host: address,
+        servername: 'play.google.com',
+        path,
+        headers: {
+          host: 'play.google.com',
+          'user-agent': UA,
+          'accept-language': 'en-US,en;q=0.9'
+        },
+        timeout: 20000
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') })
+        );
+      }
+    );
+    req.on('timeout', () => req.destroy(new Error('timed out')));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 export async function checkPlayStore(name: string): Promise<CheckOutcome> {
   const path = `/store/search?q=${encodeURIComponent(name)}&c=apps&hl=en&gl=us`;
   const address = await resolveViaDoh('play.google.com');
   if (!address) return { status: 'unknown', detail: 'Could not resolve play.google.com' };
 
   try {
-    // Connect to the resolved address, but keep the Host header so TLS and
-    // routing still see play.google.com.
-    const response = await fetch(`https://${address}${path}`, {
-      headers: { 'user-agent': UA, host: 'play.google.com', 'accept-language': 'en-US,en;q=0.9' },
-      signal: AbortSignal.timeout(20000)
-    });
-    if (!response.ok) return { status: 'unknown', detail: `Play returned ${response.status}` };
+    const { status, body: html } = await fetchPinned(address, path);
+    if (status !== 200) return { status: 'unknown', detail: `Play returned ${status}` };
 
-    const $ = cheerio.load(await response.text());
+    const $ = cheerio.load(html);
     const titles = new Set<string>();
     $("a[href*='/store/apps/details?id=']").each((_, el) => {
       const text = $(el).text().trim();
@@ -60,7 +93,18 @@ export async function checkPlayStore(name: string): Promise<CheckOutcome> {
       if (first && first.length <= 60) titles.add(first);
     });
 
-    if (titles.size === 0) return { status: 'unknown', detail: 'No parseable Play results' };
+    if (titles.size === 0) {
+      /*
+       * No app links can mean two opposite things, and they must not share a
+       * verdict. Play states its own empty result — "didn't match any" — and
+       * when it does, a name with no listings is genuinely free. Without that
+       * marker we parsed nothing and simply do not know.
+       */
+      if (/didn'?t match any|couldn'?t find|no results/i.test(html)) {
+        return { status: 'clear', detail: 'No Play listings' };
+      }
+      return { status: 'unknown', detail: 'No parseable Play results' };
+    }
 
     const matches = [...titles].filter((t) => isBrandCollision(name, t));
     if (matches.length === 0) return { status: 'clear' };

@@ -3,6 +3,11 @@
  *
  * Two messages: a verification code, and the finished results. Both degrade
  * quietly — a run must never fail because mail could not be sent.
+ *
+ * The SDK does NOT throw on a rejected send. It resolves with `{ data, error }`,
+ * so a try/catch alone reports success on a 403 and the caller cheerfully says
+ * the mail went out. Every send here checks the returned error and passes the
+ * reason back, because "we could not tell you" must not look like "we told you".
  */
 
 import { Resend } from 'resend';
@@ -14,19 +19,25 @@ const client = () => {
   return key ? new Resend(key) : undefined;
 };
 
-export async function sendVerificationCode(to: string, code: string): Promise<boolean> {
+export interface SendResult {
+  sent: boolean;
+  reason?: string;
+}
+
+export async function sendVerificationCode(to: string, code: string): Promise<SendResult> {
   const resend = client();
-  if (!resend) return false;
+  if (!resend) return { sent: false, reason: 'No RESEND_API_KEY configured' };
   try {
-    await resend.emails.send({
+    const { error } = await resend.emails.send({
       from,
       to,
-      subject: `${code} is your Brandy verification code`,
+      subject: `${code} is your verification code`,
       text: `Your verification code is ${code}. It expires in 20 minutes.`
     });
-    return true;
-  } catch {
-    return false;
+    if (error) return { sent: false, reason: error.message };
+    return { sent: true };
+  } catch (e) {
+    return { sent: false, reason: (e as Error).message };
   }
 }
 
@@ -60,9 +71,9 @@ export async function sendResults(
   brief: string,
   rows: ResultRow[],
   url: string
-): Promise<boolean> {
+): Promise<SendResult> {
   const resend = client();
-  if (!resend) return false;
+  if (!resend) return { sent: false, reason: 'No RESEND_API_KEY configured' };
 
   const table = rows
     .slice(0, 60)
@@ -75,7 +86,7 @@ export async function sendResults(
     .join('');
 
   try {
-    await resend.emails.send({
+    const { error } = await resend.emails.send({
       from,
       to,
       subject: `${rows.length} names cleared for "${brief.slice(0, 40)}"`,
@@ -87,11 +98,12 @@ export async function sendResults(
           .join('')}</tr>${table}</table>` +
         (rows.length > 60 ? `<p>Showing 60 of ${rows.length}. Full list in the CSV.</p>` : ''),
       attachments: [
-        { filename: `brandy-${runId.slice(0, 8)}.csv`, content: Buffer.from(toCsv(rows)).toString('base64') }
+        { filename: `names-${runId.slice(0, 8)}.csv`, content: Buffer.from(toCsv(rows)).toString('base64') }
       ]
     });
-    return true;
-  } catch {
-    return false;
+    if (error) return { sent: false, reason: error.message };
+    return { sent: true };
+  } catch (e) {
+    return { sent: false, reason: (e as Error).message };
   }
 }

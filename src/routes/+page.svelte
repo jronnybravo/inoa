@@ -12,7 +12,6 @@
   let requirePlayStore = $state(data.run?.requirePlayStore ?? true);
   let requireGoogle = $state(data.run?.requireGoogle ?? false);
   let email = $state(data.run?.email ?? '');
-  let targetCount = $state(data.run?.targetCount ?? 1000);
 
   let submitting = $state(false);
   let problem = $state('');
@@ -40,7 +39,7 @@
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           brief, strategies, requireCom, requireAppStore,
-          requirePlayStore, requireGoogle, email, targetCount
+          requirePlayStore, requireGoogle, email
         })
       });
       if (!response.ok) throw new Error((await response.json()).message ?? 'Could not start');
@@ -170,20 +169,12 @@
       </div>
     </div>
 
-    <div class="grid gap-4 sm:grid-cols-2">
-      <div>
-        <label for="email" class="block text-sm font-medium">Email</label>
-        <input id="email" bind:value={email} type="email" placeholder="you@example.com"
-          class="mt-2 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm
-                 dark:border-stone-700 dark:bg-stone-950" />
-        <p class="mt-1 text-xs text-stone-500">Verified once, then used to send the finished results.</p>
-      </div>
-      <div>
-        <label for="count" class="block text-sm font-medium">Names to generate</label>
-        <input id="count" bind:value={targetCount} type="number" min="50" max="2000" step="50"
-          class="mt-2 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm
-                 dark:border-stone-700 dark:bg-stone-950" />
-      </div>
+    <div>
+      <label for="email" class="block text-sm font-medium">Email</label>
+      <input id="email" bind:value={email} type="email" placeholder="you@example.com"
+        class="mt-2 w-full max-w-sm rounded-lg border border-stone-300 px-3 py-2 text-sm
+               dark:border-stone-700 dark:bg-stone-950" />
+      <p class="mt-1 text-xs text-stone-500">Verified once, then used to send the finished results.</p>
     </div>
   </fieldset>
 

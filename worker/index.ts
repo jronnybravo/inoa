@@ -60,11 +60,25 @@ async function processRun(run: Run): Promise<void> {
   console.log(`\n[${run.id.slice(0, 8)}] ${run.brief.slice(0, 60)}`);
   console.log(`  generating ${run.targetCount} names...`);
 
+  // Names are stored as each batch arrives rather than at the end, so the page
+  // fills in while generation is still running.
+  let stored_count = 0;
   const generated = await generateNames(
     run.brief,
     run.strategies as never,
     run.targetCount,
-    async (total) => {
+    async (fresh, total) => {
+      if (fresh.length > 0) {
+        await candidates.insert(
+          fresh.map((g, i) => ({
+            runId: run.id,
+            name: g.name,
+            rationale: g.rationale,
+            position: stored_count + i
+          }))
+        );
+        stored_count += fresh.length;
+      }
       await runs.update(run.id, { generatedCount: total });
       console.log(`  generated ${total}`);
     }
@@ -79,14 +93,6 @@ async function processRun(run: Run): Promise<void> {
     return;
   }
 
-  await candidates.insert(
-    generated.map((g, i) => ({
-      runId: run.id,
-      name: g.name,
-      rationale: g.rationale,
-      position: i
-    }))
-  );
   await runs.update(run.id, { status: 'checking', generatedCount: generated.length });
 
   const required = {

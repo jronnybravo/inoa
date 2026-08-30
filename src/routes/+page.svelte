@@ -21,7 +21,12 @@
 
   let run = $state<any>(data.run ?? null);
   let candidates = $state<any[]>([]);
-  let onlyPassed = $state(true);
+  /**
+   * Filtering to winners is right for a finished run and wrong for a live one:
+   * nothing passes until every required check has answered, so a run in
+   * progress renders as an empty table and looks broken.
+   */
+  let onlyPassed = $state(data.run?.status === 'done');
   let selected = $state<Record<string, boolean>>({});
 
   const options = [
@@ -272,7 +277,17 @@
             </tr>
           {:else}
             <tr><td colspan="6" class="px-3 py-8 text-center text-stone-500">
-              {run.status === 'queued' ? 'Queued. Results appear here as they are checked.' : 'Nothing yet.'}
+              {#if run.status === 'queued'}
+                Queued. Waiting for the worker to pick this up.
+              {:else if run.status === 'generating'}
+                Generating {run.targetCount} names. This takes 20–35 minutes; they
+                appear here in batches as they are written.
+              {:else if onlyPassed}
+                Nothing has cleared every required check yet. Untick “only names
+                that passed” to watch the checks land.
+              {:else}
+                Nothing yet.
+              {/if}
             </td></tr>
           {/each}
         </tbody>

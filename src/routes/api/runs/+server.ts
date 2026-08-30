@@ -1,3 +1,4 @@
+import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { randomInt } from 'node:crypto';
 import { z } from 'zod';
@@ -20,7 +21,7 @@ const Body = z.object({
   targetCount: z.number().int().min(50).max(2000).default(1000)
 });
 
-export async function POST({ request }) {
+export const POST: RequestHandler = async ({ request }) => {
   const parsed = Body.safeParse(await request.json());
   if (!parsed.success) error(400, parsed.error.issues[0]?.message ?? 'Invalid request');
 
@@ -42,4 +43,4 @@ export async function POST({ request }) {
 
   const sent = await sendVerificationCode(run.email, code);
   return json({ id: run.id, emailSent: sent });
-}
+};

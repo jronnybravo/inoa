@@ -20,10 +20,18 @@ import { RunEntity, type Run } from '../src/lib/server/entities/run.ts';
 import { CandidateEntity } from '../src/lib/server/entities/candidate.ts';
 import { generateNames } from './generate.ts';
 import { checkCandidate } from './pipeline.ts';
+import { drainWebQueue } from './webqueue.ts';
 import { closeBrowser } from './checks/web.ts';
 import { sendResults } from '../src/lib/server/email.ts';
 import { sleep } from './checks/shared.ts';
-import { CHECK_ORDER } from '../src/lib/types.ts';
+import type { CheckKind } from '../src/lib/types.ts';
+
+/**
+ * Everything except the web check. The web check is drained afterwards on a
+ * much slower clock, because search engines punish volume without warning and
+ * the penalty outlasts the run — see worker/webqueue.ts.
+ */
+const FAST_CHECKS: CheckKind[] = ['com', 'appStore', 'playStore'];
 
 const POLL_MS = 5000;
 const APP_URL = process.env.PUBLIC_APP_URL ?? 'http://localhost:5173';
@@ -92,12 +100,13 @@ async function processRun(run: Run): Promise<void> {
   const stored = await candidates.find({ where: { runId: run.id }, order: { position: 'ASC' } });
 
   for (const candidate of stored) {
-    const result = await checkCandidate(candidate.name, required);
+    const result = await checkCandidate(candidate.name, required, FAST_CHECKS);
     await candidates.update(candidate.id, {
-      com: result.statuses.com,
-      appStore: result.statuses.appStore,
-      playStore: result.statuses.playStore,
-      google: result.statuses.google,
+      com: result.statuses.com!,
+      appStore: result.statuses.appStore!,
+      playStore: result.statuses.playStore!,
+      // A name dropped by an earlier gate never reaches the web queue.
+      google: result.droppedBy ? 'skipped' : 'pending',
       detail: result.detail,
       passed: result.passed,
       droppedBy: result.droppedBy,
@@ -106,6 +115,23 @@ async function processRun(run: Run): Promise<void> {
     checked++;
     await runs.update(run.id, { checkedCount: checked });
     if (checked % 10 === 0) console.log(`  checked ${checked}/${stored.length}`);
+  }
+
+  // Phase two. Only survivors are here, which is what makes a minute apiece
+  // affordable — the funnel has already removed most of the field.
+  const queued = stored.length - (await candidates.countBy({ runId: run.id, google: 'skipped' }));
+  if (queued > 0) {
+    console.log(`  web queue: ${queued} names, one per interval`);
+    const { resolved, abandoned } = await drainWebQueue(
+      candidates,
+      run.id,
+      required,
+      async (done, total, note) => {
+        if (note) console.log(`  web queue: ${note}`);
+        else if (done % 5 === 0) console.log(`  web queue ${done}/${total}`);
+      }
+    );
+    console.log(`  web queue done — ${resolved} resolved${abandoned ? `, ${abandoned} abandoned` : ''}`);
   }
 
   const survivors = await candidates.find({

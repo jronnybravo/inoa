@@ -1,3 +1,4 @@
+import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { RunEntity } from '$lib/server/entities/run';
@@ -5,7 +6,7 @@ import { VerificationEntity } from '$lib/server/entities/verification';
 
 const MAX_ATTEMPTS = 6;
 
-export async function POST({ request }) {
+export const POST: RequestHandler = async ({ request }) => {
   const { runId, code } = (await request.json()) as { runId?: string; code?: string };
   if (!runId || !code) error(400, 'Missing runId or code');
 
@@ -34,4 +35,4 @@ export async function POST({ request }) {
     .update(runId, { emailVerified: true, status: 'queued' });
 
   return json({ ok: true });
-}
+};

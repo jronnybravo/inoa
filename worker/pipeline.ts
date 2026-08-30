@@ -14,6 +14,9 @@
  * 'unknown' never drops a name and never counts as a pass. We did not find a
  * collision, but we did not establish there isn't one, and quietly promoting
  * that to 'clear' is exactly the bug that let 500 names through unchecked.
+ *
+ * The web check does not run here. It is drained separately and far more
+ * slowly — see worker/webqueue.ts for why.
  */
 
 import { CHECK_ORDER, type CheckKind, type CheckStatus } from '../src/lib/types.ts';
@@ -46,21 +49,42 @@ export interface Requirements {
 }
 
 export interface CandidateResult {
-  statuses: Record<CheckKind, CheckStatus>;
+  statuses: Partial<Record<CheckKind, CheckStatus>>;
   detail: Partial<Record<CheckKind, string>>;
-  passed: boolean;
+  /** null while a required check has not answered yet. */
+  passed: boolean | null;
   droppedBy: CheckKind | null;
+}
+
+/**
+ * Did every required check positively clear this name?
+ *
+ * A check still pending is not a pass, so this returns null while any required
+ * check has yet to answer — which is what keeps a name out of the results
+ * email until the slow web queue has actually reached it.
+ */
+export function computePassed(
+  statuses: Partial<Record<CheckKind, CheckStatus>>,
+  required: Requirements
+): boolean | null {
+  const relevant = CHECK_ORDER.filter((kind) => required[kind]);
+  if (relevant.some((kind) => (statuses[kind] ?? 'pending') === 'pending')) return null;
+  return relevant.every((kind) => statuses[kind] === 'clear');
 }
 
 export async function checkCandidate(
   name: string,
-  required: Requirements
+  required: Requirements,
+  kinds: CheckKind[] = CHECK_ORDER
 ): Promise<CandidateResult> {
   const statuses = {} as Record<CheckKind, CheckStatus>;
   const detail: Partial<Record<CheckKind, string>> = {};
   let droppedBy: CheckKind | null = null;
 
   for (const kind of CHECK_ORDER) {
+    // Checks this pass is not responsible for keep whatever state they hold.
+    if (!kinds.includes(kind)) continue;
+
     if (droppedBy) {
       statuses[kind] = 'skipped';
       continue;
@@ -74,11 +98,5 @@ export async function checkCandidate(
     await sleep(jitter(PACE[kind]));
   }
 
-  // Passing means every REQUIRED check positively cleared it. Unknowns and
-  // unrequired collisions are reported but do not certify the name.
-  const passed =
-    !droppedBy &&
-    CHECK_ORDER.every((kind) => !required[kind] || statuses[kind] === 'clear');
-
-  return { statuses, detail, passed, droppedBy };
+  return { statuses, detail, passed: computePassed(statuses, required), droppedBy };
 }

@@ -1,3 +1,4 @@
+import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { RunEntity } from '$lib/server/entities/run';
 
@@ -6,7 +7,7 @@ import { RunEntity } from '$lib/server/entities/run';
  * an editable form; with it the same fields render locked, above the results as
  * they arrive.
  */
-export async function load({ url }) {
+export const load: PageServerLoad = async ({ url }) => {
   const id = url.searchParams.get('requestid');
   if (!id) return { run: null };
 
@@ -20,4 +21,4 @@ export async function load({ url }) {
     // A missing DATABASE_URL should show the form, not a 500.
     return { run: null };
   }
-}
+};

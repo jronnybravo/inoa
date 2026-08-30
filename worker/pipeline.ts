@@ -24,7 +24,10 @@ import { checkCom } from './checks/domain.ts';
 import { checkAppStore } from './checks/appstore.ts';
 import { checkPlayStore } from './checks/playstore.ts';
 import { checkWeb } from './checks/web.ts';
-import { jitter, sleep, type CheckOutcome } from './checks/shared.ts';
+import { type CheckOutcome } from './checks/shared.ts';
+import { appleLimit, playLimit, webLimit } from './checks/limiter.ts';
+import { hasSearchApi } from './checks/web.ts';
+import type { RateLimit } from './checks/limiter.ts';
 
 const RUNNERS: Record<CheckKind, (name: string) => Promise<CheckOutcome>> = {
   com: checkCom,
@@ -33,13 +36,28 @@ const RUNNERS: Record<CheckKind, (name: string) => Promise<CheckOutcome>> = {
   google: checkWeb
 };
 
-/** Apple is the tightest limit, so it sets the pace between names. */
-const PACE: Record<CheckKind, number> = {
-  com: 150,
-  appStore: 3200,
-  playStore: 1200,
-  google: 800
+/**
+ * Which shared limiter each check queues against.
+ *
+ * The .com check has none: it is DNS and one request against a different host
+ * every time, with nobody's quota to exhaust.
+ */
+const LIMITS: Partial<Record<CheckKind, RateLimit>> = {
+  appStore: appleLimit,
+  playStore: playLimit,
+  google: webLimit
 };
+
+/**
+ * The checks that run in the main funnel.
+ *
+ * The web check joins them whenever a search API is configured, because then
+ * it costs about a second. Without a key it needs a browser at roughly a name
+ * a minute, and it is deferred to the slow queue instead — see webqueue.ts.
+ */
+export function fastChecks(): CheckKind[] {
+  return hasSearchApi() ? CHECK_ORDER : CHECK_ORDER.filter((k) => k !== 'google');
+}
 
 export interface Requirements {
   com: boolean;
@@ -90,12 +108,15 @@ export async function checkCandidate(
       continue;
     }
 
+    // Wait for a slot on the shared schedule, not a private timer — otherwise
+    // concurrent names all call the same service simultaneously.
+    await LIMITS[kind]?.take();
+
     const outcome = await RUNNERS[kind](name);
     statuses[kind] = outcome.status;
     if (outcome.detail) detail[kind] = outcome.detail;
 
     if (required[kind] && outcome.status === 'taken') droppedBy = kind;
-    await sleep(jitter(PACE[kind]));
   }
 
   return { statuses, detail, passed: computePassed(statuses, required), droppedBy };

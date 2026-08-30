@@ -19,7 +19,7 @@ import { db } from '../src/lib/server/db.ts';
 import { RunEntity, type Run } from '../src/lib/server/entities/run.ts';
 import { CandidateEntity } from '../src/lib/server/entities/candidate.ts';
 import { generateNames } from './generate.ts';
-import { checkCandidate } from './pipeline.ts';
+import { checkCandidate, fastChecks } from './pipeline.ts';
 import { drainWebQueue } from './webqueue.ts';
 import { closeBrowser } from './checks/web.ts';
 import { sendResults } from '../src/lib/server/email.ts';
@@ -28,11 +28,14 @@ import { makeLogger } from './log.ts';
 import { CHECK_LABEL, type CheckKind } from '../src/lib/types.ts';
 
 /**
- * Everything except the web check. The web check is drained afterwards on a
- * much slower clock, because search engines punish volume without warning and
- * the penalty outlasts the run — see worker/webqueue.ts.
+ * How many names are checked at once.
+ *
+ * Each name is almost entirely spent waiting on somebody else's server, and
+ * the services have their own shared limiters, so this is about keeping those
+ * limiters saturated rather than about this machine's capacity. Serially, one
+ * name occupied the whole pipeline for the length of its slowest wait.
  */
-const FAST_CHECKS: CheckKind[] = ['com', 'appStore', 'playStore'];
+const CHECK_CONCURRENCY = Number(process.env.BRANDY_CHECK_CONCURRENCY ?? 8);
 
 const POLL_MS = 5000;
 
@@ -92,16 +95,22 @@ async function processRun(run: Run): Promise<void> {
   }
 
   async function runProcess() {
-  // Anything left by a previous, abandoned attempt is cleared: partial
-  // candidates would be checked twice and counted twice.
+  /**
+   * Resume rather than start over where that is possible.
+   *
+   * Generation is the expensive half. An attempt that already produced the
+   * full set and died during checking should carry on checking; only a
+   * half-generated set has to be discarded, because topping it up would need
+   * the exclusion list that died with the process.
+   */
   const leftover = await candidates.countBy({ runId: run.id });
-  if (leftover > 0) {
-    await candidates.delete({ runId: run.id });
-    await log(`Restarting — discarded ${leftover} names from an interrupted attempt`, 'warn');
-  }
-  await runs.update(run.id, { generatedCount: 0, checkedCount: 0 });
+  const resuming = leftover >= run.targetCount;
 
-  await log(`Generating ${run.targetCount} names`);
+  if (leftover > 0 && !resuming) {
+    await candidates.delete({ runId: run.id });
+    await log(`Restarting — discarded ${leftover} partial names from an interrupted attempt`, 'warn');
+    await runs.update(run.id, { generatedCount: 0, checkedCount: 0 });
+  }
 
   /**
    * Generation and checking run together.
@@ -111,10 +120,22 @@ async function processRun(run: Run): Promise<void> {
    * sequence they added up; run together the checking is nearly free, because
    * it happens inside time that was already being spent waiting.
    */
-  let generationDone = false;
-  let stored_count = 0;
+  let generationDone = resuming;
+  let stored_count = leftover;
 
-  const generating = generateNames(
+  if (resuming) {
+    await log(`Resuming — ${leftover} names already generated`, 'success');
+  } else {
+    await log(`Generating ${run.targetCount} names`);
+  }
+
+  const generating = resuming
+    ? Promise.resolve(
+        (await candidates.find({ where: { runId: run.id }, order: { position: 'ASC' } })).map(
+          (c) => ({ name: c.name, rationale: c.rationale ?? '' })
+        )
+      )
+    : generateNames(
     run.brief,
     run.strategies as never,
     run.targetCount,
@@ -133,8 +154,8 @@ async function processRun(run: Run): Promise<void> {
       await runs.update(run.id, { generatedCount: total });
       await log(`Generated ${total} of ${run.targetCount}`);
     },
-    async (reason) => log(`Generation: ${reason}`, 'warn')
-  );
+        async (reason) => log(`Generation: ${reason}`, 'warn')
+      );
 
   const required = {
     com: run.requireCom,
@@ -145,14 +166,44 @@ async function processRun(run: Run): Promise<void> {
 
   let checked = 0;
 
+  const kinds = fastChecks();
+  const deferWeb = !kinds.includes('google');
+
   /** Drain names as they appear, and keep draining until generation is over. */
   const checking = (async () => {
-    await log(`Checking as names arrive — ${FAST_CHECKS.map((k) => CHECK_LABEL[k]).join(', ')}`);
+    await log(`Checking as names arrive — ${kinds.map((k) => CHECK_LABEL[k]).join(', ')}`);
+
+    const one = async (candidate: { id: string; name: string }) => {
+      const result = await checkCandidate(candidate.name, required, kinds);
+      await candidates.update(candidate.id, {
+        com: result.statuses.com!,
+        appStore: result.statuses.appStore!,
+        playStore: result.statuses.playStore!,
+        // A name dropped by an earlier gate never reaches the web check at all.
+        google: result.droppedBy
+          ? 'skipped'
+          : deferWeb
+            ? 'pending'
+            : result.statuses.google!,
+        detail: result.detail,
+        passed: result.passed,
+        droppedBy: result.droppedBy,
+        checkedAt: new Date()
+      });
+      checked++;
+      // Written per name, not per batch: the page polls this, and a counter
+      // that only moves every two dozen names reads as a stall.
+      await runs.update(run.id, { checkedCount: checked });
+      if (result.droppedBy) {
+        await log(`${candidate.name} — dropped, ${CHECK_LABEL[result.droppedBy]} taken`);
+      }
+    };
+
     for (;;) {
       const batch = await candidates.find({
         where: { runId: run.id, com: 'pending' as never },
         order: { position: 'ASC' },
-        take: 25
+        take: CHECK_CONCURRENCY * 3
       });
 
       if (batch.length === 0) {
@@ -161,26 +212,15 @@ async function processRun(run: Run): Promise<void> {
         continue;
       }
 
-      for (const candidate of batch) {
-        const result = await checkCandidate(candidate.name, required, FAST_CHECKS);
-        await candidates.update(candidate.id, {
-          com: result.statuses.com!,
-          appStore: result.statuses.appStore!,
-          playStore: result.statuses.playStore!,
-          // A name dropped by an earlier gate never reaches the web queue.
-          google: result.droppedBy ? 'skipped' : 'pending',
-          detail: result.detail,
-          passed: result.passed,
-          droppedBy: result.droppedBy,
-          checkedAt: new Date()
-        });
-        checked++;
-        await runs.update(run.id, { checkedCount: checked });
-        if (result.droppedBy) {
-          await log(`${candidate.name} — dropped, ${CHECK_LABEL[result.droppedBy]} taken`);
-        }
-        if (checked % 25 === 0) await log(`Checked ${checked}`);
-      }
+      // Fixed pool: as one name finishes, the next starts. The shared limiters
+      // keep each service to its own pace regardless of how many are in flight.
+      let cursor = 0;
+      await Promise.all(
+        Array.from({ length: Math.min(CHECK_CONCURRENCY, batch.length) }, async () => {
+          while (cursor < batch.length) await one(batch[cursor++]!);
+        })
+      );
+      await log(`Checked ${checked}`);
     }
   })();
 
@@ -201,7 +241,7 @@ async function processRun(run: Run): Promise<void> {
   // Phase two. Only survivors are here, which is what makes a minute apiece
   // affordable — the funnel has already removed most of the field.
   const queued = stored.length - (await candidates.countBy({ runId: run.id, google: 'skipped' }));
-  if (queued > 0) {
+  if (deferWeb && queued > 0) {
     await log(`Web check queue: ${queued} names survived the earlier gates`, 'success');
     const { resolved, abandoned } = await drainWebQueue(
       candidates,

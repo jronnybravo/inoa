@@ -16,13 +16,14 @@ import { DataSource } from 'typeorm';
 import { RunEntity } from './entities/run.ts';
 import { CandidateEntity } from './entities/candidate.ts';
 import { VerificationEntity } from './entities/verification.ts';
+import { RunEventEntity } from './entities/event.ts';
 
 const url = process.env.DATABASE_URL;
 
 export const dataSource = new DataSource({
   type: 'postgres',
   url,
-  entities: [RunEntity, CandidateEntity, VerificationEntity],
+  entities: [RunEntity, CandidateEntity, VerificationEntity, RunEventEntity],
   // Schema changes go through `npm run db:sync`, never implicitly on boot:
   // a synchronize-on-start in a serverless function races itself.
   synchronize: false,

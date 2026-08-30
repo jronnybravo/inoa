@@ -28,6 +28,14 @@ npm run dev               # the app
 npm run worker            # in a second terminal, on your machine
 ```
 
+To try it without Neon, any local Postgres will do:
+
+```bash
+docker run -d --name brandy-pg -e POSTGRES_PASSWORD=brandy -e POSTGRES_DB=brandy -p 55432:5432 postgres:16-alpine
+```
+
+then set `DATABASE_URL=postgresql://postgres:brandy@localhost:55432/brandy`.
+
 The worker needs a signed-in CLI: `claude login`.
 
 ## How a name is judged

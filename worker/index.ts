@@ -24,7 +24,8 @@ import { drainWebQueue } from './webqueue.ts';
 import { closeBrowser } from './checks/web.ts';
 import { sendResults } from '../src/lib/server/email.ts';
 import { sleep } from './checks/shared.ts';
-import type { CheckKind } from '../src/lib/types.ts';
+import { makeLogger } from './log.ts';
+import { CHECK_LABEL, type CheckKind } from '../src/lib/types.ts';
 
 /**
  * Everything except the web check. The web check is drained afterwards on a
@@ -58,7 +59,8 @@ async function processRun(run: Run): Promise<void> {
   const candidates = source.getRepository(CandidateEntity);
 
   console.log(`\n[${run.id.slice(0, 8)}] ${run.brief.slice(0, 60)}`);
-  console.log(`  generating ${run.targetCount} names...`);
+  const log = makeLogger(source, run.id);
+  await log(`Generating ${run.targetCount} names`);
 
   // Names are stored as each batch arrives rather than at the end, so the page
   // fills in while generation is still running.
@@ -80,20 +82,22 @@ async function processRun(run: Run): Promise<void> {
         stored_count += fresh.length;
       }
       await runs.update(run.id, { generatedCount: total });
-      console.log(`  generated ${total}`);
+      await log(`Generated ${total} of ${run.targetCount}`);
     }
   );
 
   if (generated.length === 0) {
-    await runs.update(run.id, {
-      status: 'failed',
-      error: 'Generation produced no names. Is the Claude CLI signed in? Try `claude login`.',
-      finishedAt: new Date()
-    });
+    const reason = 'Generation produced no names. Is the Claude CLI signed in? Try `claude login`.';
+    await log(reason, 'error');
+    await runs.update(run.id, { status: 'failed', error: reason, finishedAt: new Date() });
     return;
   }
 
   await runs.update(run.id, { status: 'checking', generatedCount: generated.length });
+  await log(
+    `Checking ${generated.length} names — ${FAST_CHECKS.map((k) => CHECK_LABEL[k]).join(', ')}`,
+    'success'
+  );
 
   const required = {
     com: run.requireCom,
@@ -120,24 +124,30 @@ async function processRun(run: Run): Promise<void> {
     });
     checked++;
     await runs.update(run.id, { checkedCount: checked });
-    if (checked % 10 === 0) console.log(`  checked ${checked}/${stored.length}`);
+    if (result.droppedBy) {
+      await log(`${candidate.name} — dropped, ${CHECK_LABEL[result.droppedBy]} taken`);
+    }
+    if (checked % 25 === 0) await log(`Checked ${checked} of ${stored.length}`);
   }
 
   // Phase two. Only survivors are here, which is what makes a minute apiece
   // affordable — the funnel has already removed most of the field.
   const queued = stored.length - (await candidates.countBy({ runId: run.id, google: 'skipped' }));
   if (queued > 0) {
-    console.log(`  web queue: ${queued} names, one per interval`);
+    await log(`Web check queue: ${queued} names survived the earlier gates`, 'success');
     const { resolved, abandoned } = await drainWebQueue(
       candidates,
       run.id,
       required,
       async (done, total, note) => {
-        if (note) console.log(`  web queue: ${note}`);
-        else if (done % 5 === 0) console.log(`  web queue ${done}/${total}`);
+        if (note) await log(note, 'warn');
+        else if (done % 10 === 0) await log(`Web check ${done} of ${total}`);
       }
     );
-    console.log(`  web queue done — ${resolved} resolved${abandoned ? `, ${abandoned} abandoned` : ''}`);
+    await log(
+      `Web checks done — ${resolved} resolved` + (abandoned ? `, ${abandoned} left unverified` : ''),
+      abandoned ? 'warn' : 'success'
+    );
   }
 
   const survivors = await candidates.find({
@@ -162,10 +172,9 @@ async function processRun(run: Run): Promise<void> {
   );
   if (mail.sent) await runs.update(run.id, { notifiedAt: new Date() });
 
-  console.log(
-    `  done — ${survivors.length} passed of ${stored.length}` +
-      (mail.sent ? ', emailed' : `, EMAIL FAILED: ${mail.reason}`)
-  );
+  await log(`Finished — ${survivors.length} of ${stored.length} names passed every requirement`, 'success');
+  if (!mail.sent) await log(`Results email failed: ${mail.reason}`, 'error');
+  else await log(`Results emailed to ${run.email}`, 'success');
 }
 
 async function main() {

@@ -35,10 +35,14 @@
  *
  * TIER 2 has two implementations, tried in order.
  *
- * The Brave Search API is the reliable one: structured JSON, no scraping, no
- * decoys, and a free tier of about 2,000 queries a month. Because tier 1
- * already resolves every obviously-taken name for free, only the ambiguous
- * remainder spends that quota.
+ * A search API is the reliable one: structured JSON, no scraping, no decoys.
+ * Because tier 1 already resolves every obviously-taken name for free, only the
+ * ambiguous remainder spends the quota. Set whichever key you have:
+ *
+ *   TAVILY_API_KEY  1,000 searches a month, no card, so it cannot bill you
+ *   EXA_API_KEY     $10 of credit a month, no card
+ *   SERPER_API_KEY  2,500 free once, then $0.30 per 1,000
+ *   BRAVE_API_KEY   $5 credit a month, CARD REQUIRED, then $5 per 1,000
  *
  * A real browser against Google is the fallback when no key is configured. It
  * gives a genuinely better answer than any scraper — Google states "did not
@@ -127,37 +131,131 @@ function pertains(name: string, hits: Hit[]): boolean {
 // Tier 2 — a real browser
 // ---------------------------------------------------------------------------
 
+interface ApiProvider {
+  label: string;
+  key: () => string | undefined;
+  search: (query: string, key: string) => Promise<Hit[] | null>;
+}
+
+async function postJson(url: string, headers: HeadersInit, body: unknown): Promise<any | null> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20000)
+  });
+  return response.ok ? response.json() : null;
+}
+
 /**
- * Brave Search API — the dependable tier 2.
+ * Tier-2 providers, in preference order.
  *
- * Returns null when no key is set or the call fails, so the caller falls
+ * Tavily leads because its free allowance renews monthly and takes no card, so
+ * a runaway loop cannot produce a bill. Brave is last: its free tier ended in
+ * February 2026 and the card it collects at signup now actually gets charged.
+ */
+export const API_PROVIDERS: ApiProvider[] = [
+  {
+    label: 'Tavily',
+    key: () => process.env.TAVILY_API_KEY,
+    search: async (query, key) => {
+      const data = await postJson(
+        'https://api.tavily.com/search',
+        { authorization: `Bearer ${key}` },
+        { query, max_results: 20, search_depth: 'basic' }
+      );
+      const results = data?.results;
+      if (!Array.isArray(results)) return null;
+      return results.map((r: any) => ({
+        title: r.title ?? '',
+        url: r.url ?? '',
+        snippet: r.content ?? ''
+      }));
+    }
+  },
+  {
+    label: 'Serper',
+    key: () => process.env.SERPER_API_KEY,
+    search: async (query, key) => {
+      const data = await postJson(
+        'https://google.serper.dev/search',
+        { 'x-api-key': key },
+        { q: query, num: 20 }
+      );
+      const results = data?.organic;
+      if (!Array.isArray(results)) return null;
+      return results.map((r: any) => ({
+        title: r.title ?? '',
+        url: r.link ?? '',
+        snippet: r.snippet ?? ''
+      }));
+    }
+  },
+  {
+    label: 'Exa',
+    key: () => process.env.EXA_API_KEY,
+    search: async (query, key) => {
+      const data = await postJson(
+        'https://api.exa.ai/search',
+        { 'x-api-key': key },
+        { query, numResults: 20, type: 'auto', contents: { text: { maxCharacters: 300 } } }
+      );
+      const results = data?.results;
+      if (!Array.isArray(results)) return null;
+      return results.map((r: any) => ({
+        title: r.title ?? '',
+        url: r.url ?? '',
+        snippet: r.text ?? ''
+      }));
+    }
+  },
+  {
+    label: 'Brave',
+    key: () => process.env.BRAVE_API_KEY,
+    search: async (query, key) => {
+      const response = await fetch(
+        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=20`,
+        {
+          headers: { Accept: 'application/json', 'X-Subscription-Token': key },
+          signal: AbortSignal.timeout(20000)
+        }
+      );
+      if (!response.ok) return null;
+      const data = (await response.json()) as any;
+      const results = data?.web?.results;
+      if (!Array.isArray(results)) return null;
+      return results.map((r: any) => ({
+        title: r.title ?? '',
+        url: r.url ?? '',
+        snippet: r.description ?? ''
+      }));
+    }
+  }
+];
+
+/** True when any tier-2 API is configured — the queue paces on this. */
+export function hasSearchApi(): boolean {
+  return API_PROVIDERS.some((p) => p.key());
+}
+
+/**
+ * The first configured provider that answers.
+ *
+ * Returns null when none is configured or the call fails, so the caller falls
  * through to the browser rather than treating an outage as a clear.
  */
-async function braveSearch(query: string): Promise<Hit[] | null> {
-  const key = process.env.BRAVE_API_KEY;
-  if (!key) return null;
-  try {
-    const response = await fetch(
-      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=20`,
-      {
-        headers: { Accept: 'application/json', 'X-Subscription-Token': key },
-        signal: AbortSignal.timeout(15000)
-      }
-    );
-    if (!response.ok) return null;
-    const data = (await response.json()) as {
-      web?: { results?: { title?: string; url?: string; description?: string }[] };
-    };
-    const results = data.web?.results;
-    if (!Array.isArray(results)) return null;
-    return results.map((r) => ({
-      title: r.title ?? '',
-      url: r.url ?? '',
-      snippet: r.description ?? ''
-    }));
-  } catch {
-    return null;
+async function apiSearch(query: string): Promise<{ hits: Hit[]; label: string } | null> {
+  for (const provider of API_PROVIDERS) {
+    const key = provider.key();
+    if (!key) continue;
+    try {
+      const hits = await provider.search(query, key);
+      if (hits) return { hits, label: provider.label };
+    } catch {
+      // Try the next configured provider rather than failing the check.
+    }
   }
+  return null;
 }
 
 let browser: Browser | undefined;
@@ -247,17 +345,17 @@ export async function checkWeb(name: string): Promise<CheckOutcome> {
   }
 
   // Tier 1 could not be believed. Only this path spends tier-2 budget.
-  const brave = await braveSearch(query);
-  if (brave) {
+  const api = await apiSearch(query);
+  if (api) {
     const matches = [
-      ...new Set(brave.map((h) => h.title).filter((t) => isBrandCollision(name, t)))
+      ...new Set(api.hits.map((h) => h.title).filter((t) => isBrandCollision(name, t)))
     ];
     if (matches.length > 0) {
-      return { status: 'taken', detail: `${matches.slice(0, 4).join(' | ')} (Brave)` };
+      return { status: 'taken', detail: `${matches.slice(0, 4).join(' | ')} (${api.label})` };
     }
-    // Brave answered the question, so an absence of collisions is real evidence
-    // — unlike the same absence from a tier-1 engine that may have ignored us.
-    return { status: 'clear', detail: 'No competing brand found (Brave)' };
+    // The API answered the question, so an absence of collisions is real
+    // evidence — unlike the same absence from a tier-1 engine that ignored us.
+    return { status: 'clear', detail: `No competing brand found (${api.label})` };
   }
 
   await sleep(jitter(700));

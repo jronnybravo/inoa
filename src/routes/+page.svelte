@@ -16,6 +16,7 @@
   let submitting = $state(false);
   let problem = $state('');
   let pendingRunId = $state('');
+  let emailProblem = $state('');
   let code = $state('');
 
   let run = $state<any>(data.run ?? null);
@@ -42,8 +43,11 @@
           requirePlayStore, requireGoogle, email
         })
       });
-      if (!response.ok) throw new Error((await response.json()).message ?? 'Could not start');
-      pendingRunId = (await response.json()).id;
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? 'Could not start');
+      pendingRunId = payload.id;
+      // A code that was never sent must not look like one still in transit.
+      emailProblem = payload.emailSent ? '' : (payload.emailProblem ?? 'The code could not be sent.');
     } catch (e) {
       problem = (e as Error).message;
     } finally {
@@ -186,7 +190,14 @@
   {#if !locked}
     {#if pendingRunId}
       <div class="mt-6 rounded-lg border border-stone-200 p-4 dark:border-stone-800">
-        <p class="text-sm">We sent a six-digit code to <b>{email}</b>. Enter it to start the run.</p>
+        {#if emailProblem}
+          <p class="text-sm font-medium text-rose-700 dark:text-rose-400">
+            The code could not be sent to <b>{email}</b>.
+          </p>
+          <p class="mt-1 text-xs text-rose-700/80 dark:text-rose-400/80">{emailProblem}</p>
+        {:else}
+          <p class="text-sm">We sent a six-digit code to <b>{email}</b>. Enter it to start the run.</p>
+        {/if}
         <div class="mt-3 flex gap-2">
           <input bind:value={code} inputmode="numeric" maxlength="6" placeholder="000000"
             class="w-32 rounded-lg border border-stone-300 px-3 py-2 text-sm tracking-widest

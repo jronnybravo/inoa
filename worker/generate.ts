@@ -233,6 +233,16 @@ export async function generateNames(
     let failures = 0;
     const ABANDON_AFTER = 4;
 
+    /*
+     * Batches are small enough that every approach gets one.
+     *
+     * A batch asks for a single approach, so a target smaller than one batch
+     * would spend the whole run on whichever approach happened to go first —
+     * asking for thirty names across two approaches produced thirty
+     * combinations and no invented words at all.
+     */
+    const batchSize = Math.min(BATCH_SIZE, Math.max(10, Math.ceil(target / strategies.length)));
+
     let nextId = 0;
     const pool = new Map<number, Promise<BatchOutcome>>();
 
@@ -250,7 +260,7 @@ export async function generateNames(
         const id = nextId++;
         // The list is never empty: a run cannot be created without one.
         const strategy = strategies[turn++ % strategies.length] ?? 'compound';
-        const want = Math.min(BATCH_SIZE, Math.max(10, target - all.length));
+        const want = Math.min(batchSize, Math.max(10, target - all.length));
         // The exclusion list is read HERE, at launch, so a batch starting now knows
         // everything every earlier batch has already returned.
         const avoid = [...seen];
@@ -277,17 +287,28 @@ export async function generateNames(
             fresh.push(candidate);
         }
         barren = fresh.length === 0 ? barren + 1 : 0;
-        if (fresh.length) {
-            all.push(...fresh);
-            await onBatch?.(fresh, all.length);
+
+        /*
+         * Never hand back more than was asked for.
+         *
+         * Batches run concurrently, so the last few land after the target is
+         * met. Trimming the returned array was not enough — the caller stores
+         * each batch as it arrives, so the extras were already saved and only
+         * the count disagreed. The cap belongs here, before anything is
+         * handed over.
+         */
+        const room = target - all.length;
+        const kept = fresh.slice(0, Math.max(0, room));
+        if (kept.length > 0) {
+            all.push(...kept);
+            await onBatch?.(kept, all.length);
         }
     };
 
     while (all.length < target && barren < GIVE_UP_AFTER && failures < ABANDON_AFTER) {
-        while (
-            pool.size < CONCURRENCY &&
-            all.length + pool.size * BATCH_SIZE < target + BATCH_SIZE
-        ) {
+        // Only launch what is still needed: a batch started past the target
+        // is generation nobody asked for and its output is thrown away.
+        while (pool.size < CONCURRENCY && all.length + pool.size * batchSize < target) {
             spawn();
         }
         if (pool.size === 0) {
@@ -323,14 +344,5 @@ export async function generateNames(
         await absorb(top.names, top.failed);
     }
 
-    /*
-     * Everything generated is returned, including any overshoot.
-     *
-     * Batches run concurrently, so the last wave lands after the target is met
-     * and a run finishes slightly over. Trimming to the target discarded names
-     * already paid for — and because batches are now one approach each, it
-     * discarded them by approach: a 20-name target that produced 20 invented
-     * and 20 compound kept only the invented ones. The target is a floor.
-     */
     return all;
 }

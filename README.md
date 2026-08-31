@@ -76,6 +76,11 @@ then set `DATABASE_URL=postgresql://postgres:brandy@localhost:55432/brandy`.
 
 The worker needs a signed-in CLI: `claude login`.
 
+**Restart the worker after changing its code or `.env`.** Node does not reload
+a running process, so a worker started before a change keeps the old behaviour
+while the repository shows the new one — which looks exactly like a bug in the
+new code.
+
 ## Contributing
 
 ```bash

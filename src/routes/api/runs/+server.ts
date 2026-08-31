@@ -17,11 +17,17 @@ const Body = z.object({
   requireAppStore: z.boolean(),
   requirePlayStore: z.boolean(),
   requireGoogle: z.boolean(),
-  email: z.string().email()
+  email: z.string().email(),
+  /**
+   * A cost control, not a preference.
+   *
+   * Roughly half of every run's names reach the paid search tier — measured at
+   * 585 of 1052 on a real run — and a free Tavily allowance is 1,000 searches
+   * a month. The size of a run is therefore the main thing standing between a
+   * curious afternoon and an exhausted quota.
+   */
+  targetCount: z.number().int().min(50).max(2000)
 });
-
-/** Every run generates the same number. It is not a per-request choice. */
-const TARGET_COUNT = 1000;
 
 export const POST: RequestHandler = async ({ request }) => {
   const parsed = Body.safeParse(await request.json());
@@ -33,7 +39,7 @@ export const POST: RequestHandler = async ({ request }) => {
   const run = await runs.save(
     runs.create({
       ...parsed.data,
-      targetCount: TARGET_COUNT,
+      targetCount: parsed.data.targetCount,
       status: 'awaiting_verification',
       emailVerified: false
     })

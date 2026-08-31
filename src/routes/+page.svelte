@@ -3,9 +3,6 @@
         CHECK_LABEL,
         CHECK_ORDER,
         CHECK_SEARCH,
-        DISTINCTIVENESS,
-        DISTINCTIVENESS_LABEL,
-        SMILE,
         STRATEGIES,
         type CandidateView,
         type CheckKind,
@@ -70,8 +67,6 @@
      */
     let nameFilter = $state('');
     let approachFilter = $state('');
-    let distinctivenessFilter = $state('');
-    let smileFilter = $state('');
     let checkFilter = $state<Record<CheckKind, string>>({
         com: '',
         appStore: '',
@@ -80,12 +75,7 @@
     });
 
     const anyFilter = $derived(
-        Boolean(
-            nameFilter ||
-            approachFilter ||
-            distinctivenessFilter ||
-            Object.values(checkFilter).some(Boolean)
-        )
+        Boolean(nameFilter || approachFilter || Object.values(checkFilter).some(Boolean))
     );
 
     /** Escape clears the filters, from anywhere on the page. */
@@ -98,8 +88,6 @@
     function clearFilters() {
         nameFilter = '';
         approachFilter = '';
-        distinctivenessFilter = '';
-        smileFilter = '';
         checkFilter = { com: '', appStore: '', playStore: '', google: '' };
     }
     const selected = $state<Record<string, boolean>>({});
@@ -279,21 +267,6 @@
     const HEADER_EDGE =
         'shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)] dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]';
 
-    /**
-     * Weak marks are the finding worth surfacing.
-     *
-     * A generic or descriptive name can pass every availability check and
-     * still be unregistrable, so those read as a caution while the three
-     * inherently distinctive categories stay quiet.
-     */
-    const STRENGTH_CLASS: Record<string, string> = {
-        generic: 'text-rose-700/90 dark:text-rose-400/90',
-        descriptive: 'text-amber-700 dark:text-amber-400',
-        suggestive: 'text-stone-600 dark:text-stone-300',
-        arbitrary: 'text-stone-600 dark:text-stone-300',
-        fanciful: 'text-stone-600 dark:text-stone-300'
-    };
-
     const LEVEL: Record<string, string> = {
         info: 'text-stone-600 dark:text-stone-400',
         success: 'text-emerald-700 dark:text-emerald-400',
@@ -311,12 +284,6 @@
                 return false;
             }
             if (approachFilter && c.strategy !== approachFilter) {
-                return false;
-            }
-            if (distinctivenessFilter && c.distinctiveness !== distinctivenessFilter) {
-                return false;
-            }
-            if (smileFilter && !(c.smile ?? []).includes(smileFilter as never)) {
                 return false;
             }
             return CHECK_ORDER.every((k) => !checkFilter[k] || c[k] === checkFilter[k]);
@@ -850,11 +817,11 @@
                     <colgroup>
                         <col style="width: 2.25rem" />
                         <col style="width: 10rem" />
-                        <col style="width: 7.5rem" />
-                        <col style="width: 6.75rem" />
-                        <col style="width: 6.75rem" />
-                        <col style="width: 6.75rem" />
-                        <col style="width: 6.75rem" />
+                        <col style="width: 7rem" />
+                        <col style="width: 6.25rem" />
+                        <col style="width: 6.25rem" />
+                        <col style="width: 6.25rem" />
+                        <col style="width: 6.25rem" />
                         <col />
                     </colgroup>
                     <!--
@@ -912,63 +879,6 @@
                                         <button
                                             onclick={() => (approachFilter = '')}
                                             aria-label="Clear the approach filter"
-                                            class={CLEAR_BUTTON}>×</button
-                                        >
-                                    {/if}
-                                </div>
-                            </th>
-
-                            <th class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}">
-                                <span class="block pb-1 text-xs font-medium text-stone-500">
-                                    Strength
-                                </span>
-                                <div class="relative">
-                                    <select
-                                        bind:value={distinctivenessFilter}
-                                        aria-label="Filter by trademark strength"
-                                        class="{FILTER_INPUT} {distinctivenessFilter
-                                            ? FILTER_ACTIVE
-                                            : FILTER_IDLE} pr-6"
-                                    >
-                                        <option value="">Any</option>
-                                        {#each DISTINCTIVENESS as d (d.id)}
-                                            <option value={d.id}>{d.label}</option>
-                                        {/each}
-                                    </select>
-                                    {#if distinctivenessFilter}
-                                        <button
-                                            onclick={() => (distinctivenessFilter = '')}
-                                            aria-label="Clear the strength filter"
-                                            class={CLEAR_BUTTON}>×</button
-                                        >
-                                    {/if}
-                                </div>
-                            </th>
-
-                            <th class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}">
-                                <span
-                                    class="block pb-1 text-xs font-medium text-stone-500"
-                                    title="Alexandra Watkins' checklist: evocative, memorable, imagery, legs, emotional"
-                                >
-                                    SMILE
-                                </span>
-                                <div class="relative">
-                                    <select
-                                        bind:value={smileFilter}
-                                        aria-label="Filter by SMILE quality"
-                                        class="{FILTER_INPUT} {smileFilter
-                                            ? FILTER_ACTIVE
-                                            : FILTER_IDLE} pr-6"
-                                    >
-                                        <option value="">Any</option>
-                                        {#each SMILE as q (q.id)}
-                                            <option value={q.id}>{q.quality}</option>
-                                        {/each}
-                                    </select>
-                                    {#if smileFilter}
-                                        <button
-                                            onclick={() => (smileFilter = '')}
-                                            aria-label="Clear the SMILE filter"
                                             class={CLEAR_BUTTON}>×</button
                                         >
                                     {/if}
@@ -1073,28 +983,6 @@
                                 >
                                     {strategyLabel(c.strategy)}
                                 </td>
-                                <td class="px-3 py-1.5 whitespace-nowrap">
-                                    {#if c.distinctiveness}
-                                        <span
-                                            class={STRENGTH_CLASS[c.distinctiveness]}
-                                            title={c.distinctivenessWhy ?? ''}
-                                        >
-                                            {DISTINCTIVENESS_LABEL[c.distinctiveness]}
-                                        </span>
-                                    {:else}
-                                        <span class="text-stone-400 dark:text-stone-600">—</span>
-                                    {/if}
-                                </td>
-                                <td class="px-3 py-1.5 font-mono text-xs whitespace-nowrap">
-                                    {#each SMILE as q (q.id)}
-                                        <span
-                                            class={(c.smile ?? []).includes(q.id)
-                                                ? 'font-semibold text-stone-800 dark:text-stone-100'
-                                                : 'text-stone-300 dark:text-stone-700'}
-                                            title="{q.quality} — {q.hint}">{q.id}</span
-                                        >
-                                    {/each}
-                                </td>
                                 {#each CHECK_ORDER as k (k)}
                                     <td
                                         class="px-3 py-1.5 whitespace-nowrap {CELL[c[k]].class}"
@@ -1170,7 +1058,7 @@
                         {:else}
                             <tr
                                 ><td
-                                    colspan="10"
+                                    colspan="8"
                                     class="px-4 py-12 text-center text-sm text-stone-500"
                                 >
                                     {#if run.status === 'queued'}

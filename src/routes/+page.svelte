@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { CHECK_LABEL, CHECK_ORDER, CHECK_SEARCH, STRATEGIES, type CheckStatus } from '$lib/types';
 
   let { data } = $props();
@@ -35,6 +36,38 @@
   let consoleOpen = $state(true);
   let copied = $state(false);
   let logEl = $state<HTMLDivElement | null>(null);
+
+  /** Rows with a check in flight, so the button can say so. */
+  let rechecking = $state<Record<string, boolean>>({});
+  /**
+   * The open dropdown, positioned in viewport coordinates.
+   *
+   * The table scrolls inside its own panel, so a menu positioned against the
+   * row would be clipped by that container. Fixed coordinates taken from the
+   * button escape it.
+   */
+  let menu = $state<{ id: string; x: number; y: number } | null>(null);
+
+  async function recheck(candidate: { id: string }, kind?: string) {
+    menu = null;
+    rechecking = { ...rechecking, [candidate.id]: true };
+    try {
+      const response = await fetch(`/api/candidates/${candidate.id}/check`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(kind ? { kind } : {})
+      });
+      if (response.ok) {
+        const updated = await response.json();
+        // Patch the row in place rather than waiting for the next poll.
+        candidates = candidates.map((c) => (c.id === updated.id ? { ...c, ...updated } : c));
+      }
+    } catch {
+      // The next poll will show the truth either way.
+    } finally {
+      rechecking = { ...rechecking, [candidate.id]: false };
+    }
+  }
 
   const requirements = [
     { key: 'com', label: '.com', get: () => requireCom, set: (v: boolean) => (requireCom = v) },
@@ -93,7 +126,10 @@
         body: JSON.stringify({ runId: pendingRunId, code })
       });
       if (!response.ok) throw new Error((await response.json()).message ?? 'Could not verify');
-      window.location.search = `?requestid=${pendingRunId}`;
+      // Client-side navigation. Assigning to window.location threw the whole
+      // document away and rebuilt it, which reads as the app restarting at the
+      // exact moment the run begins.
+      await goto(`?requestid=${pendingRunId}`, { keepFocus: true, noScroll: true });
     } catch (e) {
       problem = (e as Error).message;
     } finally {
@@ -107,6 +143,9 @@
    */
   $effect(() => {
     if (!data.run) return;
+    // The component survives a client-side navigation, so state initialised
+    // from the first `data` would otherwise stay on the previous run.
+    run = data.run;
     let alive = true;
     (async () => {
       let since = '';
@@ -374,7 +413,7 @@
               {/each}
               <th class="px-3 py-2 text-right font-medium whitespace-nowrap
                          shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
-                         dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]">Check yourself</th>
+                         dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -402,23 +441,28 @@
                   </td>
                 {/each}
                 <!--
-                  Every verdict here is a machine's reading of somebody else's
-                  search results, and the interesting ones are worth confirming
-                  by eye. These run the same query a person would.
+                  One button for the ordinary case — run whatever this run
+                  requires — and a menu for the one check you actually doubt.
                 -->
                 <td class="px-3 py-1.5 text-right whitespace-nowrap">
-                  <span class="inline-flex gap-1">
-                    {#each CHECK_ORDER as k}
-                      <a href={CHECK_SEARCH[k](c.name)} target="_blank" rel="noopener noreferrer"
-                         title="Search {CHECK_LABEL[k]} for {c.name} yourself"
-                         class="rounded border border-stone-300 px-1.5 py-0.5 text-xs
-                                text-stone-600 transition-colors duration-100
-                                hover:border-stone-500 hover:bg-stone-100 hover:text-stone-900
-                                dark:border-stone-700 dark:text-stone-400
-                                dark:hover:border-stone-500 dark:hover:bg-stone-800
-                                dark:hover:text-stone-100"
-                      >{CHECK_LABEL[k]}</a>
-                    {/each}
+                  <span class="inline-flex overflow-hidden rounded border border-stone-300
+                               dark:border-stone-700">
+                    <button onclick={() => recheck(c)} disabled={rechecking[c.id]}
+                      title="Re-run the checks this run requires"
+                      class="px-2 py-0.5 text-xs transition-colors duration-100
+                             hover:bg-stone-100 disabled:opacity-50 dark:hover:bg-stone-800">
+                      {rechecking[c.id] ? 'Checking…' : 'Check'}
+                    </button>
+                    <button
+                      onclick={(e) => {
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        menu = menu?.id === c.id ? null : { id: c.id, x: r.right, y: r.bottom + 4 };
+                      }}
+                      disabled={rechecking[c.id]}
+                      aria-label="Check one thing for {c.name}"
+                      class="border-l border-stone-300 px-1.5 py-0.5 text-xs transition-colors
+                             duration-100 hover:bg-stone-100 disabled:opacity-50
+                             dark:border-stone-700 dark:hover:bg-stone-800">▾</button>
                   </span>
                 </td>
               </tr>
@@ -476,4 +520,43 @@
       {/if}
     </section>
   </div>
+
+  {#if menu}
+    {@const row = candidates.find((c) => c.id === menu!.id)}
+    <!--
+      Fixed, not absolute. The table scrolls inside its own panel, so a menu
+      anchored to the row would be clipped by that container's overflow.
+    -->
+    <div class="fixed inset-0 z-40" onclick={() => (menu = null)} role="presentation"></div>
+    <div class="fixed z-50 min-w-44 -translate-x-full rounded-lg border border-stone-200
+                bg-white py-1 shadow-lg shadow-stone-900/10 dark:border-stone-700
+                dark:bg-stone-900 dark:shadow-black/40"
+         style="left: {menu.x}px; top: {menu.y}px">
+      <p class="px-3 py-1 text-xs text-stone-500">Check one thing</p>
+      {#each CHECK_ORDER as k}
+        <button onclick={() => row && recheck(row, k)}
+          class="flex w-full items-center justify-between gap-4 px-3 py-1.5 text-left text-sm
+                 transition-colors duration-100 hover:bg-stone-100 dark:hover:bg-stone-800">
+          <span>{CHECK_LABEL[k]}</span>
+          {#if row}
+            <span class="text-xs {CELL[row[k] as CheckStatus].class}">
+              {CELL[row[k] as CheckStatus].text}
+            </span>
+          {/if}
+        </button>
+      {/each}
+      {#if row}
+        <div class="my-1 border-t border-stone-200 dark:border-stone-800"></div>
+        <p class="px-3 py-1 text-xs text-stone-500">Look for yourself</p>
+        {#each CHECK_ORDER as k}
+          <a href={CHECK_SEARCH[k](row.name)} target="_blank" rel="noopener noreferrer"
+             onclick={() => (menu = null)}
+             class="block px-3 py-1.5 text-sm transition-colors duration-100
+                    hover:bg-stone-100 dark:hover:bg-stone-800">
+            {CHECK_LABEL[k]} search ↗
+          </a>
+        {/each}
+      {/if}
+    </div>
+  {/if}
 {/if}

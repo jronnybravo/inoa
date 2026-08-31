@@ -84,6 +84,20 @@
     pending: { text: '·', class: 'text-stone-300 dark:text-stone-700' }
   };
 
+  /**
+   * What each verdict means, in the table rather than in someone's head.
+   *
+   * Five states is more than a table usually carries, and four of them are not
+   * self-evident: 'unverified' is not a soft no, and a dash is not a blank.
+   */
+  const LEGEND: { status: CheckStatus; note: string }[] = [
+    { status: 'clear', note: 'nothing found' },
+    { status: 'taken', note: 'someone is using it' },
+    { status: 'unknown', note: 'no trustworthy answer' },
+    { status: 'skipped', note: 'not run — dropped by an earlier check' },
+    { status: 'pending', note: 'not checked yet' }
+  ];
+
   const LEVEL: Record<string, string> = {
     info: 'text-stone-600 dark:text-stone-400',
     success: 'text-emerald-700 dark:text-emerald-400',
@@ -390,6 +404,15 @@
                  duration-150 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800">
           {copied ? 'Copied' : 'Copy CSV'}
         </button>
+      </div>
+
+      <div class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
+        {#each LEGEND as l}
+          <span class="whitespace-nowrap">
+            <span class="font-medium {CELL[l.status].class}">{CELL[l.status].text}</span>
+            <span class="ml-1">{l.note}</span>
+          </span>
+        {/each}
       </div>
 
       <!--

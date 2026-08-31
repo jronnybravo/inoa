@@ -49,12 +49,13 @@ interface ResultRow {
   google: CheckStatus;
 }
 
+/** The same words the page uses; a CSV row should not need the page to read. */
 const CELL: Record<CheckStatus, string> = {
   clear: 'free',
   taken: 'taken',
   unknown: 'not verified',
-  skipped: '—',
-  pending: '—'
+  skipped: 'skipped',
+  pending: 'waiting'
 };
 
 export function toCsv(rows: ResultRow[]): string {

@@ -80,8 +80,11 @@
     clear: { text: 'free', class: 'text-emerald-700 dark:text-emerald-400' },
     taken: { text: 'taken', class: 'text-rose-700/90 dark:text-rose-400/90' },
     unknown: { text: 'unverified', class: 'text-amber-700 dark:text-amber-400' },
-    skipped: { text: '–', class: 'text-stone-400 dark:text-stone-600' },
-    pending: { text: '·', class: 'text-stone-300 dark:text-stone-700' }
+    // Words, not symbols. A dash reads as an empty cell, and 'skipped' is a
+    // real verdict about the funnel — the name was disqualified before this
+    // check was worth spending a request on.
+    skipped: { text: 'skipped', class: 'text-stone-400 dark:text-stone-600' },
+    pending: { text: 'waiting', class: 'text-stone-300 dark:text-stone-700' }
   };
 
   /**
@@ -94,7 +97,7 @@
     { status: 'clear', note: 'nothing found' },
     { status: 'taken', note: 'someone is using it' },
     { status: 'unknown', note: 'no trustworthy answer' },
-    { status: 'skipped', note: 'not run — dropped by an earlier check' },
+    { status: 'skipped', note: 'dropped by an earlier check, so never run' },
     { status: 'pending', note: 'not checked yet' }
   ];
 

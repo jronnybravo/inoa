@@ -6,9 +6,9 @@
 
   /**
    * One route, two jobs. Without a request id you are composing a brief; with
-   * one you are watching it run. They want opposite layouts — a form wants a
+   * one you are watching it run. They want opposite layouts - a form wants a
    * narrow centred column, a running job wants width for the table and a
-   * second column for the console — so they are laid out separately rather
+   * second column for the console - so they are laid out separately rather
    * than one being a disabled version of the other.
    */
   const watching = $derived(Boolean(data.run));
@@ -135,7 +135,7 @@
     taken: { text: 'taken', class: 'text-rose-700/90 dark:text-rose-400/90' },
     unknown: { text: 'unverified', class: 'text-amber-700 dark:text-amber-400' },
     // Words, not symbols. A dash reads as an empty cell, and 'skipped' is a
-    // real verdict about the funnel — the name was disqualified before this
+    // real verdict about the funnel - the name was disqualified before this
     // check was worth spending a request on.
     skipped: { text: 'skipped', class: 'text-stone-400 dark:text-stone-600' },
     pending: { text: 'waiting', class: 'text-stone-300 dark:text-stone-700' }
@@ -155,6 +155,16 @@
     { status: 'pending', note: 'not checked yet' }
   ];
 
+  /** Short forms, because the column is narrow and the filter names them fully. */
+  const STRATEGY_LABEL: Record<string, string> = {
+    compound: 'Combination',
+    invented: 'Invented',
+    metaphor: 'Metaphor',
+    portmanteau: 'Blend',
+    foreign: 'Language',
+    short: 'Abstract'
+  };
+
   const LEVEL: Record<string, string> = {
     info: 'text-stone-600 dark:text-stone-400',
     success: 'text-emerald-700 dark:text-emerald-400',
@@ -172,16 +182,19 @@
       : candidates.filter((c) => strategyFilter.includes(c.strategy))
   );
 
-  /** How many names each approach produced, and how many of those cleared. */
+  /** Whole-run tallies from the server, so filtering does not distort them. */
+  let tallies = $state<{ strategy: string | null; total: number; passed: number }[]>([]);
+
   const byStrategy = $derived(
     STRATEGIES.map((s) => ({
       ...s,
-      total: candidates.filter((c) => c.strategy === s.id).length,
-      passed: candidates.filter((c) => c.strategy === s.id && c.passed === true).length
+      total: tallies.find((t) => t.strategy === s.id)?.total ?? 0,
+      passed: tallies.find((t) => t.strategy === s.id)?.passed ?? 0
     })).filter((s) => s.total > 0)
   );
 
-  const unattributed = $derived(candidates.filter((c) => !c.strategy).length);
+  const totalNames = $derived(tallies.reduce((sum, t) => sum + t.total, 0));
+  const unattributed = $derived(tallies.find((t) => !t.strategy)?.total ?? 0);
 
   const passedCount = $derived(candidates.filter((c) => c.passed === true).length);
   const finished = $derived(run?.status === 'done' || run?.status === 'failed');
@@ -250,6 +263,7 @@
             const payload = await r.json();
             run = payload.run;
             candidates = mergeCandidates(candidates, payload.candidates);
+            if (payload.tallies) tallies = payload.tallies;
             if (payload.events?.length) {
               const fresh = payload.events.filter((e: { id: string }) => !seenEvents.has(e.id));
               for (const e of fresh) seenEvents.add(e.id);
@@ -278,9 +292,10 @@
   }
 
   async function copyCsv() {
-    const header = ['Name', ...CHECK_ORDER.map((k) => CHECK_LABEL[k])].join(',');
+    const header = ['Name', 'Approach', ...CHECK_ORDER.map((k) => CHECK_LABEL[k])].join(',');
     const rows = visibleRows().map((c) =>
-      [c.name, ...CHECK_ORDER.map((k) => CELL[c[k] as CheckStatus].text)]
+      [c.name, STRATEGY_LABEL[c.strategy] ?? c.strategy ?? '',
+       ...CHECK_ORDER.map((k) => CELL[c[k] as CheckStatus].text)]
         .map((v) => `"${v}"`).join(',')
     );
     await navigator.clipboard.writeText([header, ...rows].join('\n'));
@@ -441,7 +456,7 @@
       {#each requirements.filter((r) => run[`require${r.key[0].toUpperCase()}${r.key.slice(1)}`]) as r}
         <span class="rounded bg-stone-100 px-1.5 py-0.5 dark:bg-stone-800">{r.label}</span>
       {:else}
-        <span class="italic">nothing — every name is reported</span>
+        <span class="italic">nothing - every name is reported</span>
       {/each}
       <span class="text-stone-300 dark:text-stone-700">·</span>
       <span>{run.email}</span>
@@ -482,7 +497,7 @@
   {/if}
 
   <!-- Table and console side by side: you read results while watching progress. -->
-  <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+  <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
     <section class="min-w-0">
       <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
         <label class="flex cursor-pointer items-center gap-2 text-sm">
@@ -503,7 +518,7 @@
                    {strategyFilter.length === 0
                      ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
                      : 'border-stone-300 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'}">
-            All {candidates.length}
+            All {totalNames}
           </button>
           {#each byStrategy as s}
             <button
@@ -556,14 +571,20 @@
           itself and nothing else.
         -->
         <table class="w-full table-fixed text-sm">
+          <!--
+            Only the name column flexes, so every other width is subtracted
+            from it. They previously summed to more than the panel and left it
+            fourteen pixels wide.
+          -->
           <colgroup>
-            <col style="width: 2.5rem" />
-            <col />
-            <col style="width: 6.5rem" />
-            <col style="width: 6.5rem" />
-            <col style="width: 6.5rem" />
-            <col style="width: 6.5rem" />
-            <col style="width: 9.5rem" />
+            <col style="width: 2.25rem" />
+            <col style="min-width: 9rem" />
+            <col style="width: 6rem" />
+            <col style="width: 5.25rem" />
+            <col style="width: 5.25rem" />
+            <col style="width: 5.25rem" />
+            <col style="width: 5.25rem" />
+            <col style="width: 7.5rem" />
           </colgroup>
           <thead class="sticky top-0 z-10 text-left">
             <tr class="bg-stone-100 dark:bg-stone-900">
@@ -571,6 +592,9 @@
                          dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]"></th>
               <th class="px-3 py-2 font-medium shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
                          dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]">Name</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap
+                         shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
+                         dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]">Approach</th>
               {#each CHECK_ORDER as k}
                 <th class="px-3 py-2 font-medium whitespace-nowrap
                            shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
@@ -605,6 +629,9 @@
                           onfocus={(e) => showHint(e as unknown as MouseEvent, c.rationale)}
                           onblur={() => (hint = null)}>{c.name}</button>
                 </td>
+                <td class="px-3 py-1.5 whitespace-nowrap text-stone-500 dark:text-stone-400">
+                  {STRATEGY_LABEL[c.strategy] ?? c.strategy ?? '—'}
+                </td>
                 {#each CHECK_ORDER as k}
                   <td class="px-3 py-1.5 whitespace-nowrap {CELL[c[k] as CheckStatus].class}"
                       title={c.detail?.[k] ?? ''}>
@@ -619,8 +646,8 @@
                   </td>
                 {/each}
                 <!--
-                  One button for the ordinary case — run whatever this run
-                  requires — and a menu for the one check you actually doubt.
+                  One button for the ordinary case - run whatever this run
+                  requires - and a menu for the one check you actually doubt.
                 -->
                 <td class="px-3 py-1.5 text-right whitespace-nowrap">
                   <span class="inline-flex overflow-hidden rounded border border-stone-300
@@ -645,12 +672,12 @@
                 </td>
               </tr>
             {:else}
-              <tr><td colspan="7" class="px-4 py-12 text-center text-sm text-stone-500">
+              <tr><td colspan="8" class="px-4 py-12 text-center text-sm text-stone-500">
                 {#if run.status === 'queued'}
                   Queued. Waiting for the worker to pick this up.
                 {:else if run.status === 'generating'}
                   Generating {run.targetCount} names. They appear here in batches as
-                  they are written — the first arrives in a few minutes.
+                  they are written - the first arrives in a few minutes.
                 {:else if onlyPassed}
                   Nothing has cleared every requirement yet.
                   Untick “only names that passed” to watch the checks land.
@@ -688,7 +715,7 @@
               {:else if finished}
                 This run recorded no console output.
               {:else}
-                No console output. The run is working — see the counters above —
+                No console output. The run is working - see the counters above -
                 but the worker process handling it started before console
                 recording existed, so it has no way to report its progress here.
               {/if}

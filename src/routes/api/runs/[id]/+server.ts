@@ -31,6 +31,20 @@ export const GET: RequestHandler = async ({ params, url }) => {
     take: 500
   });
 
+  /**
+   * Per-approach tallies for the whole run, not the current view.
+   *
+   * Counting these from the rows returned makes them meaningless the moment
+   * the page filters to winners: every approach then reads 227 of 227.
+   */
+  const tallies = await Candidate.createQueryBuilder('c')
+    .select('c.strategy', 'strategy')
+    .addSelect('COUNT(*)', 'total')
+    .addSelect('COUNT(CASE WHEN c.passed THEN 1 END)', 'passed')
+    .where('c.runId = :id', { id: run.id })
+    .groupBy('c.strategy')
+    .getRawMany<{ strategy: string | null; total: string; passed: string }>();
+
   const onlyPassed = url.searchParams.get('passed') === '1';
   const candidates = await Candidate.find({
     where: onlyPassed ? { runId: run.id, passed: true } : { runId: run.id },
@@ -42,6 +56,11 @@ export const GET: RequestHandler = async ({ params, url }) => {
   return json({
     run: { ...safe, email: email.replace(/(.).*(@.*)/, '$1•••$2') },
     events: events.map((e) => ({ id: e.id, at: e.at, level: e.level, message: e.message })),
+    tallies: tallies.map((t) => ({
+      strategy: t.strategy,
+      total: Number(t.total),
+      passed: Number(t.passed)
+    })),
     candidates: candidates.map((c) => ({
       id: c.id,
       name: c.name,

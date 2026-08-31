@@ -70,6 +70,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
             strategy: c.strategy,
             distinctiveness: c.distinctiveness,
             distinctivenessWhy: c.distinctivenessWhy,
+            smile: c.smile,
             com: c.com,
             appStore: c.appStore,
             playStore: c.playStore,

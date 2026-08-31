@@ -192,6 +192,7 @@ async function processRun(run: Run): Promise<void> {
                                       strategy: g.strategy,
                                       distinctiveness: local?.distinctiveness ?? g.distinctiveness,
                                       distinctivenessWhy: local?.why ?? null,
+                                      smile: g.smile,
                                       position: stored_count + i
                                   };
                               })

@@ -79,7 +79,11 @@ The worker needs a signed-in CLI: `claude login`.
 **Restart the worker after changing its code or `.env`.** Node does not reload
 a running process, so a worker started before a change keeps the old behaviour
 while the repository shows the new one — which looks exactly like a bug in the
-new code.
+new code, and is the single most common way to waste an hour on this project.
+
+While developing, `npm run worker:dev` restarts it on every file change. It is
+not the right thing in production: a restart mid-run abandons that run, and it
+is only reclaimed once its lease expires.
 
 ## Contributing
 
@@ -152,6 +156,24 @@ same response that generates the name. No extra call, no extra credit.
 
 This is an indication, not legal advice. The classification is a judgement, and
 where it can be proved rather than judged the tooltip says so.
+
+## SMILE
+
+Alongside distinctiveness, each name is judged against the SMILE checklist from
+Alexandra Watkins' _Hello, My Name Is Awesome_: **evocative**, **memorable**,
+**imagery**, **legs**, **emotional**. The column shows the mnemonic with the
+qualities a name actually has picked out, so `Terravin` reading `S_I__` means
+evocative and imagery, and nothing else claimed.
+
+A checklist, not scores. Counting qualities a name has is honest; inventing
+'memorability: 73' is not, and a number that cannot be argued with is worse
+than a letter that can. The model is told to be strict, and in practice names
+come back with one or two qualities rather than all five.
+
+Note that SMILE's 'suggestive' is not Abercrombie's. There it is a legal
+category about distance from describing the goods; here it means the name
+evokes the brand experience. It is labelled **Evocative** in this table so the
+two cannot be confused.
 
 ## Reusing verdicts
 

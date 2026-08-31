@@ -36,13 +36,13 @@
  * TIER 2 has two implementations, tried in order.
  *
  * A search API is the reliable one: structured JSON, no scraping, no decoys.
- * Because tier 1 already resolves every obviously-taken name for free, only the
- * ambiguous remainder spends the quota. Set whichever key you have:
+ * Set any of these, and the ones you set are used in rotation:
  *
- *   TAVILY_API_KEY  1,000 searches a month, no card, so it cannot bill you
- *   EXA_API_KEY     $10 of credit a month, no card
- *   SERPER_API_KEY  2,500 free once, then $0.30 per 1,000
- *   BRAVE_API_KEY   $5 credit a month, CARD REQUIRED, then $5 per 1,000
+ *   TAVILY_API_KEY     1,000 searches a month, no card, so it cannot bill you
+ *   FIRECRAWL_API_KEY  free monthly credits, no card
+ *   EXA_API_KEY        $10 of credit a month, no card
+ *   SERPER_API_KEY     2,500 free once, then $0.30 per 1,000
+ *   BRAVE_API_KEY      $5 credit a month, CARD REQUIRED, then $5 per 1,000
  *
  * A real browser against Google is the fallback when no key is configured. It
  * gives a genuinely better answer than any scraper — Google states "did not
@@ -147,11 +147,12 @@ async function postJson(url: string, headers: HeadersInit, body: unknown): Promi
 }
 
 /**
- * Tier-2 providers, in preference order.
+ * Tier-2 providers.
  *
- * Tavily leads because its free allowance renews monthly and takes no card, so
- * a runaway loop cannot produce a bill. Brave is last: its free tier ended in
- * February 2026 and the card it collects at signup now actually gets charged.
+ * Order is a preference, not a priority: whichever are configured are used in
+ * turn, so a run spreads its cost across every free allowance available rather
+ * than draining one and then failing. Brave is listed last because its free
+ * tier ended in February 2026 and the card it collects now gets charged.
  */
 export const API_PROVIDERS: ApiProvider[] = [
   {
@@ -169,6 +170,25 @@ export const API_PROVIDERS: ApiProvider[] = [
         title: r.title ?? '',
         url: r.url ?? '',
         snippet: r.content ?? ''
+      }));
+    }
+  },
+  {
+    label: 'Firecrawl',
+    key: () => process.env.FIRECRAWL_API_KEY,
+    search: async (query, key) => {
+      const data = await postJson(
+        'https://api.firecrawl.dev/v2/search',
+        { authorization: `Bearer ${key}` },
+        { query, limit: 20, sources: [{ type: 'web' }] }
+      );
+      // v2 nests results by source; older keys may still answer with an array.
+      const results = Array.isArray(data?.data) ? data.data : data?.data?.web;
+      if (!Array.isArray(results)) return null;
+      return results.map((r: any) => ({
+        title: r.title ?? '',
+        url: r.url ?? '',
+        snippet: r.description ?? ''
       }));
     }
   },
@@ -238,20 +258,31 @@ export function hasSearchApi(): boolean {
 }
 
 /**
- * The first configured provider that answers.
+ * Where the rotation is up to. Module-level, so every check in a run shares it.
+ */
+let rotation = 0;
+
+/**
+ * Ask the next provider in the rotation, falling through the others.
  *
- * Returns null when none is configured or the call fails, so the caller falls
- * through to the browser rather than treating an outage as a clear.
+ * Taking providers in turn rather than always preferring one spreads a run
+ * across every free allowance configured: three providers with a thousand
+ * searches each is three thousand searches, not one thousand and two idle
+ * accounts. A provider that fails is skipped and the next is tried, so an
+ * exhausted quota costs one wasted call rather than the rest of the run.
  */
 async function apiSearch(query: string): Promise<{ hits: Hit[]; label: string } | null> {
-  for (const provider of API_PROVIDERS) {
-    const key = provider.key();
-    if (!key) continue;
+  const configured = API_PROVIDERS.filter((p) => p.key());
+  if (configured.length === 0) return null;
+
+  const start = rotation++ % configured.length;
+  for (let i = 0; i < configured.length; i++) {
+    const provider = configured[(start + i) % configured.length]!;
     try {
-      const hits = await provider.search(query, key);
+      const hits = await provider.search(query, provider.key()!);
       if (hits) return { hits, label: provider.label };
     } catch {
-      // Try the next configured provider rather than failing the check.
+      // Try the next one rather than failing the check.
     }
   }
   return null;

@@ -106,14 +106,21 @@ positive statement of absence — but it does not survive volume, and it reports
 `unverified` the moment it is challenged rather than trying to look like
 something it isn't.
 
-The first configured provider wins:
+Configure as many as you like — they are used **in rotation**, so a run spreads
+across every allowance instead of draining one and then failing:
 
 | env var | free allowance | card |
 |---|---|---|
 | `TAVILY_API_KEY` | 1,000 searches/month, renews | no |
+| `FIRECRAWL_API_KEY` | free monthly credits | no |
 | `EXA_API_KEY` | $10 credit/month | no |
 | `SERPER_API_KEY` | 2,500 once, then $0.30/1,000 | for paid |
 | `BRAVE_API_KEY` | $5 credit/month, then $5/1,000 | yes |
+
+The cheap Bing tier resolves very little in practice — one web check out of 585
+on a full run — because a result set that never mentions the name is treated as
+no answer rather than a clean one. So most names reach a configured provider,
+and rotation is what keeps that affordable.
 
 Tavily is the default recommendation: the allowance renews monthly and there is
 no card on file, so a runaway loop cannot produce a bill. Brave is listed last

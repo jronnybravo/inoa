@@ -22,13 +22,6 @@
   let email = $state(data.run?.email ?? '');
   let targetCount = $state(data.run?.targetCount ?? 1000);
 
-  /**
-   * Measured, not guessed: 585 of 1052 names on a full run reached the paid
-   * search tier. The cheap tier almost never resolves anything, because a
-   * result set that does not mention the name is treated as no answer.
-   */
-  const searchesUsed = $derived(Math.round(targetCount * 0.56));
-
   let submitting = $state(false);
   let problem = $state('');
   let pendingRunId = $state('');
@@ -379,14 +372,7 @@
                  focus:border-stone-500 focus:outline-none focus:ring-2 focus:ring-stone-900/10
                  dark:border-stone-700 dark:bg-stone-950 dark:focus:ring-white/10" />
         <p class="mt-1 text-xs text-stone-500">
-          About <b>{searchesUsed}</b> of these will need a paid web search.
-          {#if searchesUsed > 1000}
-            <span class="text-amber-700 dark:text-amber-400">
-              That is past a free Tavily month.
-            </span>
-          {:else}
-            A free Tavily month covers 1,000.
-          {/if}
+          More names means a longer run and a broader shortlist.
         </p>
       </div>
 

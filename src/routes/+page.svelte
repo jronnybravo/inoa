@@ -334,13 +334,21 @@
             });
             const payload = (await response.json()) as {
                 id: string;
-                emailSent: boolean;
+                verified: boolean;
+                emailSent?: boolean;
                 emailProblem?: string;
                 message?: string;
             };
             if (!response.ok) {
                 throw new Error(payload.message ?? 'Could not start');
             }
+
+            // An address that has verified before starts immediately.
+            if (payload.verified) {
+                await openRun(payload.id);
+                return;
+            }
+
             pendingRunId = payload.id;
             emailProblem = payload.emailSent
                 ? ''
@@ -350,6 +358,17 @@
         } finally {
             submitting = false;
         }
+    }
+
+    /** Move to the run's own page, without discarding the document. */
+    async function openRun(id: string) {
+        const url = new URL(resolve('/'), location.origin);
+        url.searchParams.set('requestid', id);
+        // resolve() has already been applied to the path; the rule only
+        // recognises it as a bare argument, and a query string cannot be
+        // expressed through it.
+        // eslint-disable-next-line svelte/no-navigation-without-resolve
+        await goto(url, { keepFocus: true, noScroll: true });
     }
 
     async function verify() {
@@ -368,13 +387,7 @@
             // Client-side navigation. Assigning to window.location threw the whole
             // document away and rebuilt it, which reads as the app restarting at the
             // exact moment the run begins.
-            const url = new URL(resolve('/'), location.origin);
-            url.searchParams.set('requestid', pendingRunId);
-            // resolve() has already been applied to the path; the rule only
-            // recognises it as a bare argument, and a query string cannot be
-            // expressed through it.
-            // eslint-disable-next-line svelte/no-navigation-without-resolve
-            await goto(url, { keepFocus: true, noScroll: true });
+            await openRun(pendingRunId);
         } catch (e) {
             problem = (e as Error).message;
         } finally {

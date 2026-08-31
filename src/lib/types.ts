@@ -67,7 +67,11 @@ export type StrategyId = (typeof STRATEGIES)[number]['id'];
  */
 export const DISTINCTIVENESS = [
     { id: 'generic', label: 'Generic', hint: 'the category naming itself — never registrable' },
-    { id: 'descriptive', label: 'Descriptive', hint: 'describes what it does — weak until well known' },
+    {
+        id: 'descriptive',
+        label: 'Descriptive',
+        hint: 'describes what it does — weak until well known'
+    },
     { id: 'suggestive', label: 'Suggestive', hint: 'hints at the category — Netflix, Slack' },
     { id: 'arbitrary', label: 'Arbitrary', hint: 'a real word, unrelated — Apple for computers' },
     { id: 'fanciful', label: 'Fanciful', hint: 'invented outright — Xerox, Kodak' }

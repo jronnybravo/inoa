@@ -6,6 +6,8 @@ export interface Candidate {
   runId: string;
   name: string;
   rationale: string | null;
+  /** Which naming approach produced it. Null for runs made before this existed. */
+  strategy: string | null;
   position: number;
   com: CheckStatus;
   appStore: CheckStatus;
@@ -28,6 +30,7 @@ export const CandidateEntity = new EntitySchema<Candidate>({
     runId: { type: 'uuid' },
     name: { type: 'text' },
     rationale: { type: 'text', nullable: true },
+    strategy: { type: 'text', nullable: true },
     position: { type: 'int', default: 0 },
     com: { type: 'text', default: 'pending' },
     appStore: { type: 'text', default: 'pending' },

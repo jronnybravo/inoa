@@ -179,12 +179,18 @@ async function processRun(run: Run): Promise<void> {
         com: result.statuses.com!,
         appStore: result.statuses.appStore!,
         playStore: result.statuses.playStore!,
-        // A name dropped by an earlier gate never reaches the web check at all.
-        google: result.droppedBy
-          ? 'skipped'
-          : deferWeb
-            ? 'pending'
-            : result.statuses.google!,
+        /*
+         * When the web check runs here, its own verdict stands.
+         *
+         * This previously wrote 'skipped' whenever anything had dropped the
+         * name — including when the web check was itself the thing that
+         * dropped it. A name rejected for having four companies trading under
+         * it displayed as though the check had never been made.
+         *
+         * checkCandidate already marks the checks an earlier gate cut short as
+         * 'skipped', so its answer needs no correcting.
+         */
+        google: deferWeb ? (result.droppedBy ? 'skipped' : 'pending') : result.statuses.google!,
         detail: result.detail,
         passed: result.passed,
         droppedBy: result.droppedBy,

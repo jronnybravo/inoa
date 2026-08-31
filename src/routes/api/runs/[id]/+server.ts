@@ -46,6 +46,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
       id: c.id,
       name: c.name,
       rationale: c.rationale,
+      strategy: c.strategy,
       com: c.com,
       appStore: c.appStore,
       playStore: c.playStore,

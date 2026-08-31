@@ -132,7 +132,11 @@ async function processRun(run: Run): Promise<void> {
   const generating = resuming
     ? Promise.resolve(
         (await candidates.find({ where: { runId: run.id }, order: { position: 'ASC' } })).map(
-          (c) => ({ name: c.name, rationale: c.rationale ?? '' })
+          (c) => ({
+            name: c.name,
+            rationale: c.rationale ?? '',
+            strategy: (c.strategy ?? 'compound') as never
+          })
         )
       )
     : generateNames(
@@ -146,6 +150,7 @@ async function processRun(run: Run): Promise<void> {
             runId: run.id,
             name: g.name,
             rationale: g.rationale,
+            strategy: g.strategy,
             position: stored_count + i
           }))
         );
@@ -248,7 +253,13 @@ async function processRun(run: Run): Promise<void> {
     return;
   }
 
-  await runs.update(run.id, { status: 'checking', generatedCount: generated.length });
+  // The stored count, not the requested one: concurrent batches overshoot and
+  // every name they produced is kept, so '1042 of 1000' was the denominator
+  // being wrong rather than the numerator.
+  await runs.update(run.id, {
+    status: 'checking',
+    generatedCount: await candidates.countBy({ runId: run.id })
+  });
   await checking;
   const stored = await candidates.find({ where: { runId: run.id } });
 

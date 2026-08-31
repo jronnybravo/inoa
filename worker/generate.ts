@@ -61,25 +61,20 @@ const CONCURRENCY = Number(process.env.BRANDY_CONCURRENCY ?? 5);
 export interface GeneratedName {
   name: string;
   rationale: string;
+  /** The approach this batch was asked for. */
+  strategy: StrategyId;
 }
 
-function promptFor(
-  brief: string,
-  strategies: StrategyId[],
-  count: number,
-  avoid: string[]
-): string {
-  const wanted = STRATEGIES.filter((s) => strategies.includes(s.id))
-    .map((s) => `- ${s.label}: ${s.hint}`)
-    .join('\n');
+function promptFor(brief: string, strategy: StrategyId, count: number, avoid: string[]): string {
+  const chosen = STRATEGIES.find((s) => s.id === strategy);
 
   return [
     `Generate exactly ${count} candidate brand names for this brief:`,
     '',
     brief,
     '',
-    'Use these naming approaches, spread roughly evenly across them:',
-    wanted || '- Any approach that fits the brief',
+    'Use this naming approach for every name:',
+    chosen ? `- ${chosen.label}: ${chosen.hint}` : '- Any approach that fits the brief',
     '',
     'Rules:',
     '- One to three syllables. Pronounceable by an English speaker on sight.',
@@ -99,7 +94,7 @@ function promptFor(
     .join('\n');
 }
 
-function parse(output: string): GeneratedName[] {
+function parse(output: string, strategy: StrategyId): GeneratedName[] {
   const out: GeneratedName[] = [];
   for (const line of output.split('\n')) {
     const trimmed = line.trim();
@@ -108,21 +103,21 @@ function parse(output: string): GeneratedName[] {
     const name = (rawName ?? '').replace(/^[\d.)\-*\s]+/, '').trim();
     // Anything with punctuation or spaces left is commentary, not a name.
     if (!/^[A-Za-z]{3,16}$/.test(name)) continue;
-    out.push({ name, rationale: rest.join(' ').trim().slice(0, 160) });
+    out.push({ name, rationale: rest.join(' ').trim().slice(0, 160), strategy });
   }
   return out;
 }
 
 async function generateBatch(
   brief: string,
-  strategies: StrategyId[],
+  strategy: StrategyId,
   count: number,
   avoid: string[]
 ): Promise<GeneratedName[]> {
-  const args = ['-p', promptFor(brief, strategies, count, avoid), '--output-format', 'text'];
+  const args = ['-p', promptFor(brief, strategy, count, avoid), '--output-format', 'text'];
   if (MODEL) args.push('--model', MODEL);
   const { stdout } = await run('claude', args, CLI_OPTIONS);
-  return parse(stdout);
+  return parse(stdout, strategy);
 }
 
 /**
@@ -171,7 +166,7 @@ function describeFailure(error: unknown): string {
  */
 async function settledBatch(
   brief: string,
-  strategies: StrategyId[],
+  strategy: StrategyId,
   count: number,
   avoid: string[],
   onProblem?: (reason: string) => Promise<void> | void
@@ -179,7 +174,7 @@ async function settledBatch(
   const ATTEMPTS = 3;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     try {
-      return { names: await generateBatch(brief, strategies, count, avoid), failed: false };
+      return { names: await generateBatch(brief, strategy, count, avoid), failed: false };
     } catch (error) {
       const reason = describeFailure(error);
 
@@ -229,15 +224,26 @@ export async function generateNames(
   let nextId = 0;
   const pool = new Map<number, Promise<{ id: number; names: GeneratedName[] }>>();
 
+  /**
+   * One approach per batch, taken in turn.
+   *
+   * Asking a single batch to spread itself across several approaches leaves no
+   * way to tell afterwards which name came from which — and leaves the balance
+   * to the model, which favours whichever approach the brief suggests most
+   * readily. Round-robin gives an even spread and records the origin.
+   */
+  let turn = 0;
+
   const spawn = () => {
     const id = nextId++;
+    const strategy = strategies[turn++ % strategies.length]!;
     const want = Math.min(BATCH_SIZE, Math.max(10, target - all.length));
     // The exclusion list is read HERE, at launch, so a batch starting now knows
     // everything every earlier batch has already returned.
     const avoid = [...seen];
     pool.set(
       id,
-      settledBatch(brief, strategies, want, avoid, onProblem).then((r) => ({ id, ...r }))
+      settledBatch(brief, strategy, want, avoid, onProblem).then((r) => ({ id, ...r }))
     );
   };
 
@@ -285,9 +291,24 @@ export async function generateNames(
   if (all.length < target && barren < GIVE_UP_AFTER && failures < ABANDON_AFTER) {
     const shortfall = target - all.length;
     await onProblem?.(`Topping up the last ${shortfall}`);
-    const top = await settledBatch(brief, strategies, shortfall, [...seen], onProblem);
+    const top = await settledBatch(
+      brief,
+      strategies[turn++ % strategies.length]!,
+      shortfall,
+      [...seen],
+      onProblem
+    );
     await absorb(top.names, top.failed);
   }
 
-  return all.slice(0, target);
+  /*
+   * Everything generated is returned, including any overshoot.
+   *
+   * Batches run concurrently, so the last wave lands after the target is met
+   * and a run finishes slightly over. Trimming to the target discarded names
+   * already paid for — and because batches are now one approach each, it
+   * discarded them by approach: a 20-name target that produced 20 invented
+   * and 20 compound kept only the invented ones. The target is a floor.
+   */
+  return all;
 }

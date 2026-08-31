@@ -32,6 +32,8 @@
   let events = $state<{ id: string; at: string; level: string; message: string }[]>([]);
   const seenEvents = new Set<string>();
   let onlyPassed = $state(data.run?.status === 'done');
+  /** Empty means every approach; otherwise only these. */
+  let strategyFilter = $state<string[]>([]);
   let selected = $state<Record<string, boolean>>({});
   let consoleOpen = $state(true);
   let copied = $state(false);
@@ -159,6 +161,27 @@
     error: 'text-rose-700 dark:text-rose-400'
   };
 
+  /**
+   * Filtering happens here rather than in the query, because the counts beside
+   * each approach have to reflect the whole run, not the current filter.
+   */
+  const shown = $derived(
+    strategyFilter.length === 0
+      ? candidates
+      : candidates.filter((c) => strategyFilter.includes(c.strategy))
+  );
+
+  /** How many names each approach produced, and how many of those cleared. */
+  const byStrategy = $derived(
+    STRATEGIES.map((s) => ({
+      ...s,
+      total: candidates.filter((c) => c.strategy === s.id).length,
+      passed: candidates.filter((c) => c.strategy === s.id && c.passed === true).length
+    })).filter((s) => s.total > 0)
+  );
+
+  const unattributed = $derived(candidates.filter((c) => !c.strategy).length);
+
   const passedCount = $derived(candidates.filter((c) => c.passed === true).length);
   const finished = $derived(run?.status === 'done' || run?.status === 'failed');
 
@@ -249,7 +272,7 @@
   });
 
   function visibleRows() {
-    return candidates.filter((c) => selected[c.id] ?? true);
+    return shown.filter((c) => selected[c.id] ?? true);
   }
 
   async function copyCsv() {
@@ -460,6 +483,39 @@
         </button>
       </div>
 
+      {#if byStrategy.length > 1 || unattributed > 0}
+        <div class="mb-2 flex flex-wrap items-center gap-1.5">
+          <button onclick={() => (strategyFilter = [])}
+            class="rounded-lg border px-2.5 py-1 text-xs transition-colors duration-150
+                   {strategyFilter.length === 0
+                     ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
+                     : 'border-stone-300 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'}">
+            All {candidates.length}
+          </button>
+          {#each byStrategy as s}
+            <button
+              onclick={() => {
+                strategyFilter = strategyFilter.includes(s.id)
+                  ? strategyFilter.filter((x) => x !== s.id)
+                  : [...strategyFilter, s.id];
+              }}
+              title="{s.passed} of {s.total} cleared every requirement"
+              class="rounded-lg border px-2.5 py-1 text-xs transition-colors duration-150
+                     {strategyFilter.includes(s.id)
+                       ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
+                       : 'border-stone-300 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'}">
+              {s.label}
+              <span class="opacity-60">{s.passed}/{s.total}</span>
+            </button>
+          {/each}
+          {#if unattributed > 0}
+            <span class="text-xs text-stone-500">
+              {unattributed} from before approaches were recorded
+            </span>
+          {/if}
+        </div>
+      {/if}
+
       <div class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
         {#each LEGEND as l}
           <span class="whitespace-nowrap">
@@ -513,7 +569,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each candidates as c (c.id)}
+            {#each shown as c (c.id)}
               <tr class="border-t border-stone-100 transition-colors duration-100
                          hover:bg-stone-50 dark:border-stone-800/70 dark:hover:bg-stone-900">
                 <td class="px-3 py-1.5">

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CHECK_LABEL, CHECK_ORDER, STRATEGIES, type CheckStatus } from '$lib/types';
+  import { CHECK_LABEL, CHECK_ORDER, CHECK_SEARCH, STRATEGIES, type CheckStatus } from '$lib/types';
 
   let { data } = $props();
 
@@ -372,6 +372,9 @@
                            shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
                            dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]">{CHECK_LABEL[k]}</th>
               {/each}
+              <th class="px-3 py-2 text-right font-medium whitespace-nowrap
+                         shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
+                         dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]">Check yourself</th>
             </tr>
           </thead>
           <tbody>
@@ -387,11 +390,40 @@
                     title={c.rationale ?? ''}>{c.name}</td>
                 {#each CHECK_ORDER as k}
                   <td class="px-3 py-1.5 whitespace-nowrap {CELL[c[k] as CheckStatus].class}"
-                      title={c.detail?.[k] ?? ''}>{CELL[c[k] as CheckStatus].text}</td>
+                      title={c.detail?.[k] ?? ''}>
+                    {#if c.detail?.[k]}
+                      <!-- A verdict that found something links to what it found. -->
+                      <a href={CHECK_SEARCH[k](c.name)} target="_blank" rel="noopener noreferrer"
+                         class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                      >{CELL[c[k] as CheckStatus].text}</a>
+                    {:else}
+                      {CELL[c[k] as CheckStatus].text}
+                    {/if}
+                  </td>
                 {/each}
+                <!--
+                  Every verdict here is a machine's reading of somebody else's
+                  search results, and the interesting ones are worth confirming
+                  by eye. These run the same query a person would.
+                -->
+                <td class="px-3 py-1.5 text-right whitespace-nowrap">
+                  <span class="inline-flex gap-1">
+                    {#each CHECK_ORDER as k}
+                      <a href={CHECK_SEARCH[k](c.name)} target="_blank" rel="noopener noreferrer"
+                         title="Search {CHECK_LABEL[k]} for {c.name} yourself"
+                         class="rounded border border-stone-300 px-1.5 py-0.5 text-xs
+                                text-stone-600 transition-colors duration-100
+                                hover:border-stone-500 hover:bg-stone-100 hover:text-stone-900
+                                dark:border-stone-700 dark:text-stone-400
+                                dark:hover:border-stone-500 dark:hover:bg-stone-800
+                                dark:hover:text-stone-100"
+                      >{CHECK_LABEL[k]}</a>
+                    {/each}
+                  </span>
+                </td>
               </tr>
             {:else}
-              <tr><td colspan="6" class="px-4 py-12 text-center text-sm text-stone-500">
+              <tr><td colspan="7" class="px-4 py-12 text-center text-sm text-stone-500">
                 {#if run.status === 'queued'}
                   Queued. Waiting for the worker to pick this up.
                 {:else if run.status === 'generating'}

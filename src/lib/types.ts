@@ -18,11 +18,27 @@ export type CheckKind = 'com' | 'appStore' | 'playStore' | 'google';
 /** Order is the funnel: cheapest and least rate-limited first. */
 export const CHECK_ORDER: CheckKind[] = ['com', 'appStore', 'playStore', 'google'];
 
+/**
+ * The 'google' key is historical: the check asks a search API first, falls back
+ * to Bing, and only reaches a browser against Google when neither is available.
+ * The column is labelled for what it actually establishes — whether anyone is
+ * trading under the name on the open web — rather than for one of the engines
+ * that might answer.
+ */
 export const CHECK_LABEL: Record<CheckKind, string> = {
   com: '.com',
   appStore: 'App Store',
   playStore: 'Play Store',
-  google: 'Google'
+  google: 'Web'
+};
+
+/** Where a person can go and look for themselves, per check. */
+export const CHECK_SEARCH: Record<CheckKind, (name: string) => string> = {
+  com: (n) => `https://${n.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
+  appStore: (n) => `https://www.apple.com/us/search/${encodeURIComponent(n)}?src=globalnav`,
+  playStore: (n) => `https://play.google.com/store/search?q=${encodeURIComponent(n)}&c=apps`,
+  google: (n) =>
+    `https://www.google.com/search?q=${encodeURIComponent(`"${n}" (app OR software OR platform OR company)`)}`
 };
 
 export type RunStatus =

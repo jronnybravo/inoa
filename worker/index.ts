@@ -201,7 +201,13 @@ async function processRun(run: Run): Promise<void> {
       // that only moves every two dozen names reads as a stall.
       await runs.update(run.id, { checkedCount: checked });
       if (result.droppedBy) {
-        await log(`${candidate.name} — dropped, ${CHECK_LABEL[result.droppedBy]} taken`);
+        // Name what was found, not just that something was. A line saying a
+        // name is taken is an assertion; one naming the listing is evidence.
+        const found = result.detail[result.droppedBy]?.split(' | ')[0]?.slice(0, 60);
+        await log(
+          `${candidate.name} — taken on ${CHECK_LABEL[result.droppedBy]}` +
+            (found ? `: ${found}` : '')
+        );
       }
     };
 

@@ -2,8 +2,8 @@
 // here keeps the dev server on that same path instead of routing dev through
 // SvelteKit's $env modules, which the standalone worker cannot import.
 import 'dotenv/config';
-import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({

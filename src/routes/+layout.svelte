@@ -1,6 +1,8 @@
 <script lang="ts">
+    import type { Snippet } from 'svelte';
     import '../app.css';
-    let { children } = $props();
+
+    const { children }: { children: Snippet } = $props();
 </script>
 
 <div class="min-h-screen bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-100">

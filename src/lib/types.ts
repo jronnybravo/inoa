@@ -55,3 +55,61 @@ export const STRATEGIES = [
 ] as const;
 
 export type StrategyId = (typeof STRATEGIES)[number]['id'];
+
+/**
+ * The shapes the API actually returns.
+ *
+ * Declared rather than inferred so the page is type-checked against the
+ * server's answer instead of trusting whatever arrives. Dates cross as ISO
+ * strings, which is the one place these differ from the entities.
+ */
+export interface CandidateView {
+    id: string;
+    name: string;
+    rationale: string | null;
+    strategy: StrategyId | null;
+    com: CheckStatus;
+    appStore: CheckStatus;
+    playStore: CheckStatus;
+    google: CheckStatus;
+    detail: Partial<Record<CheckKind, string>> | null;
+    passed: boolean | null;
+    droppedBy: CheckKind | null;
+}
+
+export interface RunView {
+    id: string;
+    brief: string;
+    strategies: StrategyId[] | null;
+    requireCom: boolean;
+    requireAppStore: boolean;
+    requirePlayStore: boolean;
+    requireGoogle: boolean;
+    email: string;
+    status: RunStatus;
+    targetCount: number;
+    generatedCount: number;
+    checkedCount: number;
+    error: string | null;
+}
+
+export interface RunEventView {
+    id: string;
+    at: string;
+    level: 'info' | 'warn' | 'error' | 'success';
+    message: string;
+}
+
+export interface StrategyTally {
+    strategy: StrategyId | null;
+    total: number;
+    passed: number;
+}
+
+/** What GET /api/runs/[id] answers with. */
+export interface RunPayload {
+    run: RunView;
+    events: RunEventView[];
+    tallies: StrategyTally[];
+    candidates: CandidateView[];
+}

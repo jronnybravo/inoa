@@ -109,7 +109,9 @@ export async function sendResults(
             attachments: [
                 {
                     filename: `names-${runId.slice(0, 8)}.csv`,
-                    content: Buffer.from(toCsv(rows)).toString('base64')
+                    // Resend's types accept a string here; the base64 form is
+                    // what its API documents for an attachment.
+                    content: Buffer.from(toCsv(rows), 'utf8').toString('base64')
                 }
             ]
         });

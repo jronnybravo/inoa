@@ -1,10 +1,10 @@
-import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { MoreThan } from 'typeorm';
 import { db } from '$lib/server/db';
-import { Run } from '$lib/server/entities/run';
 import { Candidate } from '$lib/server/entities/candidate';
 import { RunEvent } from '$lib/server/entities/event';
+import { Run } from '$lib/server/entities/run';
+import type { RequestHandler } from './$types';
 
 /**
  * The polling endpoint. Deliberately a plain read: a streaming response would

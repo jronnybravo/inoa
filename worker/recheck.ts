@@ -15,15 +15,15 @@
 
 import 'dotenv/config';
 import { db } from '../src/lib/server/db.ts';
-import { Run } from '../src/lib/server/entities/run.ts';
 import { Candidate } from '../src/lib/server/entities/candidate.ts';
+import { Run } from '../src/lib/server/entities/run.ts';
 import { CHECK_ORDER, type CheckKind } from '../src/lib/types.ts';
-import { checkCom } from './checks/domain.ts';
 import { checkAppStore } from './checks/appstore.ts';
+import { checkCom } from './checks/domain.ts';
 import { checkPlayStore } from './checks/playstore.ts';
+import { jitter, sleep, type CheckOutcome } from './checks/shared.ts';
 import { checkWeb, closeBrowser, hasSearchApi } from './checks/web.ts';
 import { computePassed } from './pipeline.ts';
-import { jitter, sleep, type CheckOutcome } from './checks/shared.ts';
 
 const RUNNERS: Record<CheckKind, (name: string) => Promise<CheckOutcome>> = {
     com: checkCom,

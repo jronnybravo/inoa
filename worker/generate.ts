@@ -143,7 +143,7 @@ async function generateBatch(
 function isUsageLimit(error: unknown): boolean {
     const e = error as Error & { stderr?: string; stdout?: string };
     return /usage limit|rate limit|limit reached|too many requests|429|quota exceeded/i.test(
-        `${e.stderr ?? ''} ${e.stdout ?? ''} ${e.message ?? ''}`
+        `${e.stderr ?? ''} ${e.stdout ?? ''} ${e.message}`
     );
 }
 
@@ -170,6 +170,12 @@ function describeFailure(error: unknown): string {
  * again; a batch that succeeded and returned only duplicates means the brief is
  * exhausted, and only that should end the run.
  */
+interface BatchOutcome {
+    id: number;
+    names: GeneratedName[];
+    failed: boolean;
+}
+
 async function settledBatch(
     brief: string,
     strategy: StrategyId,
@@ -228,7 +234,7 @@ export async function generateNames(
     const ABANDON_AFTER = 4;
 
     let nextId = 0;
-    const pool = new Map<number, Promise<{ id: number; names: GeneratedName[] }>>();
+    const pool = new Map<number, Promise<BatchOutcome>>();
 
     /**
      * One approach per batch, taken in turn.
@@ -242,7 +248,8 @@ export async function generateNames(
 
     const spawn = () => {
         const id = nextId++;
-        const strategy = strategies[turn++ % strategies.length]!;
+        // The list is never empty: a run cannot be created without one.
+        const strategy = strategies[turn++ % strategies.length] ?? 'compound';
         const want = Math.min(BATCH_SIZE, Math.max(10, target - all.length));
         // The exclusion list is read HERE, at launch, so a batch starting now knows
         // everything every earlier batch has already returned.
@@ -308,7 +315,7 @@ export async function generateNames(
         await onProblem?.(`Topping up the last ${shortfall}`);
         const top = await settledBatch(
             brief,
-            strategies[turn++ % strategies.length]!,
+            strategies[turn++ % strategies.length] ?? 'compound',
             shortfall,
             [...seen],
             onProblem

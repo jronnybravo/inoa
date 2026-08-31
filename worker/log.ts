@@ -6,8 +6,8 @@
  * A failure to record must never take down a run, so writes are best effort.
  */
 
-import type { DataSource } from 'typeorm';
 import { RunEvent } from '../src/lib/server/entities/event.ts';
+import type { DataSource } from 'typeorm';
 
 export type Level = RunEvent['level'];
 

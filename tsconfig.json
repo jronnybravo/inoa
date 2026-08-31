@@ -10,11 +10,22 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "strict": true,
+    // Reading past the end of an array yields undefined, and saying so is
+    // what turns a class of runtime crash into a compile error.
+    "noUncheckedIndexedAccess": true,
     "moduleResolution": "bundler"
-  }
-  // Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
-  // except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
-  //
-  // To make changes to top-level options such as include and exclude, we recommend extending
-  // the generated config; see https://svelte.dev/docs/kit/configuration#typescript
+  },
+  // The generated config only covers src. The worker and its scripts live
+  // outside it and still need type-checking and type-aware linting.
+  "include": [
+    ".svelte-kit/ambient.d.ts",
+    ".svelte-kit/env.d.ts",
+    ".svelte-kit/non-ambient.d.ts",
+    ".svelte-kit/types/**/$types.d.ts",
+    "vite.config.ts",
+    "src/**/*.js",
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "worker/**/*.ts"
+  ]
 }

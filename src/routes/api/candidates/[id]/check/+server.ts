@@ -1,10 +1,10 @@
 import { json, error } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
-import { Run } from '$lib/server/entities/run';
 import { Candidate } from '$lib/server/entities/candidate';
-import { CHECK_ORDER, type CheckKind } from '$lib/types';
+import { Run } from '$lib/server/entities/run';
+import { CHECK_ORDER, type CheckKind, type CheckStatus } from '$lib/types';
 import { checkCandidate, computePassed } from '../../../../../../worker/pipeline.ts';
+import type { RequestHandler } from './$types';
 
 /**
  * Re-run the checks for one name, on demand.
@@ -47,12 +47,18 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
     const result = await checkCandidate(candidate.name, required, kinds);
 
-    // Only the checks that ran are overwritten; the rest keep their verdicts.
+    /*
+     * Only the checks that ran are overwritten; the rest keep their verdicts.
+     * A check this pass did not make comes back as 'pending', which is not a
+     * verdict and must not replace one.
+     */
+    const kept = (ran: CheckStatus, existing: CheckStatus) => (ran === 'pending' ? existing : ran);
+
     const merged = {
-        com: result.statuses.com ?? candidate.com,
-        appStore: result.statuses.appStore ?? candidate.appStore,
-        playStore: result.statuses.playStore ?? candidate.playStore,
-        google: result.statuses.google ?? candidate.google
+        com: kept(result.statuses.com, candidate.com),
+        appStore: kept(result.statuses.appStore, candidate.appStore),
+        playStore: kept(result.statuses.playStore, candidate.playStore),
+        google: kept(result.statuses.google, candidate.google)
     };
 
     await Candidate.update(candidate.id, {

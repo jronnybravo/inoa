@@ -1,6 +1,6 @@
-import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
 import { Run } from '$lib/server/entities/run';
+import type { PageServerLoad } from './$types';
 
 /**
  * The page is one route in two states, keyed on ?requestid=. Without it you get

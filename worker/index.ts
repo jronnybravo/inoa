@@ -17,16 +17,16 @@
 import 'dotenv/config';
 import { LessThan } from 'typeorm';
 import { db } from '../src/lib/server/db.ts';
-import { Run } from '../src/lib/server/entities/run.ts';
+import { sendResults } from '../src/lib/server/email.ts';
 import { Candidate } from '../src/lib/server/entities/candidate.ts';
+import { Run } from '../src/lib/server/entities/run.ts';
+import { CHECK_LABEL } from '../src/lib/types.ts';
+import { sleep } from './checks/shared.ts';
+import { closeBrowser } from './checks/web.ts';
 import { generateNames } from './generate.ts';
+import { makeLogger } from './log.ts';
 import { checkCandidate, fastChecks } from './pipeline.ts';
 import { drainWebQueue } from './webqueue.ts';
-import { closeBrowser } from './checks/web.ts';
-import { sendResults } from '../src/lib/server/email.ts';
-import { sleep } from './checks/shared.ts';
-import { makeLogger } from './log.ts';
-import { CHECK_LABEL } from '../src/lib/types.ts';
 
 /**
  * How many names are checked at once.
@@ -203,9 +203,9 @@ async function processRun(run: Run): Promise<void> {
             const one = async (candidate: { id: string; name: string }) => {
                 const result = await checkCandidate(candidate.name, required, kinds);
                 await Candidate.update(candidate.id, {
-                    com: result.statuses.com!,
-                    appStore: result.statuses.appStore!,
-                    playStore: result.statuses.playStore!,
+                    com: result.statuses.com,
+                    appStore: result.statuses.appStore,
+                    playStore: result.statuses.playStore,
                     /*
                      * When the web check runs here, its own verdict stands.
                      *
@@ -221,7 +221,7 @@ async function processRun(run: Run): Promise<void> {
                         ? result.droppedBy
                             ? 'skipped'
                             : 'pending'
-                        : result.statuses.google!,
+                        : result.statuses.google,
                     detail: result.detail,
                     passed: result.passed,
                     droppedBy: result.droppedBy,
@@ -262,8 +262,11 @@ async function processRun(run: Run): Promise<void> {
                 let cursor = 0;
                 await Promise.all(
                     Array.from({ length: Math.min(CHECK_CONCURRENCY, batch.length) }, async () => {
-                        while (cursor < batch.length) {
-                            await one(batch[cursor++]!);
+                        for (let next = cursor++; next < batch.length; next = cursor++) {
+                            const candidate = batch[next];
+                            if (candidate) {
+                                await one(candidate);
+                            }
                         }
                     })
                 );
@@ -372,9 +375,10 @@ async function main() {
     }
 }
 
-process.on('SIGINT', async () => {
-    await closeBrowser();
-    process.exit(0);
+process.on('SIGINT', () => {
+    void closeBrowser().finally(() => {
+        process.exit(0);
+    });
 });
 
-main();
+void main();

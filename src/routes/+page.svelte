@@ -32,7 +32,15 @@
   let candidates = $state<any[]>([]);
   let events = $state<{ id: string; at: string; level: string; message: string }[]>([]);
   const seenEvents = new Set<string>();
-  let onlyPassed = $state(data.run?.status === 'done');
+  /**
+   * Off by default, on every run.
+   *
+   * The whole table is the result; the winners are one view of it. Opening on
+   * a filtered subset hides how each rejected name was rejected, and on a run
+   * still in progress shows nothing at all, since nothing passes until every
+   * required check has answered.
+   */
+  let onlyPassed = $state(false);
   /** Empty means every approach; otherwise only these. */
   let strategyFilter = $state<string[]>([]);
   let selected = $state<Record<string, boolean>>({});
@@ -497,7 +505,7 @@
   {/if}
 
   <!-- Table and console side by side: you read results while watching progress. -->
-  <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
+  <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_27rem]">
     <section class="min-w-0">
       <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
         <label class="flex cursor-pointer items-center gap-2 text-sm">
@@ -574,17 +582,19 @@
           <!--
             Only the name column flexes, so every other width is subtracted
             from it. They previously summed to more than the panel and left it
-            fourteen pixels wide.
+            fourteen pixels wide. Every column is now sized to its contents,
+            and the console beside the table takes the remaining width rather
+            than leaving it as a gap inside the row.
           -->
           <colgroup>
             <col style="width: 2.25rem" />
-            <col style="min-width: 9rem" />
-            <col style="width: 6rem" />
+            <col style="width: 11rem" />
+            <col style="width: 6.5rem" />
             <col style="width: 5.25rem" />
             <col style="width: 5.25rem" />
             <col style="width: 5.25rem" />
             <col style="width: 5.25rem" />
-            <col style="width: 7.5rem" />
+            <col />
           </colgroup>
           <thead class="sticky top-0 z-10 text-left">
             <tr class="bg-stone-100 dark:bg-stone-900">

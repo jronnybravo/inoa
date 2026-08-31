@@ -21,6 +21,25 @@ an idea captured away from your desk.
 
 ## Running it
 
+### Databases
+
+Any database TypeORM supports. The driver is read from `DATABASE_URL`:
+
+```
+postgresql://user:pass@host/brandy     # Postgres — install pg
+mysql://user:pass@host:3306/brandy     # MySQL / MariaDB — install mysql2
+sqlite:./brandy.sqlite                 # SQLite — install better-sqlite3
+```
+
+Verified on Postgres 16, MySQL 8.4 and SQLite: schema creation, JSON columns,
+generated uuid keys, and the worker's claim query.
+
+Nothing is written in a dialect. Column types that differ — JSON, timestamps,
+uuid keys, and short strings that carry a default — resolve from the connection
+string in `src/lib/server/dialect.ts`. Date arithmetic happens in JavaScript
+rather than SQL, and the worker claims a run optimistically rather than with
+`FOR UPDATE SKIP LOCKED`, which SQLite does not have.
+
 ```bash
 cp .env.example .env      # fill in DATABASE_URL at minimum
 npm run db:sync           # create the tables

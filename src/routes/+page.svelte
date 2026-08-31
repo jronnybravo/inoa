@@ -20,6 +20,14 @@
   let requirePlayStore = $state(data.run?.requirePlayStore ?? true);
   let requireGoogle = $state(data.run?.requireGoogle ?? false);
   let email = $state(data.run?.email ?? '');
+  let targetCount = $state(data.run?.targetCount ?? 1000);
+
+  /**
+   * Measured, not guessed: 585 of 1052 names on a full run reached the paid
+   * search tier. The cheap tier almost never resolves anything, because a
+   * result set that does not mention the name is treated as no answer.
+   */
+  const searchesUsed = $derived(Math.round(targetCount * 0.56));
 
   let submitting = $state(false);
   let problem = $state('');
@@ -193,7 +201,8 @@
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          brief, strategies, requireCom, requireAppStore, requirePlayStore, requireGoogle, email
+          brief, strategies, requireCom, requireAppStore, requirePlayStore, requireGoogle,
+          email, targetCount
         })
       });
       const payload = await response.json();
@@ -361,6 +370,24 @@
             </label>
           {/each}
         </div>
+      </div>
+
+      <div>
+        <label for="count" class="block text-sm font-medium">How many names to generate</label>
+        <input id="count" bind:value={targetCount} type="number" min="50" max="2000" step="50"
+          class="mt-2 w-32 rounded-lg border border-stone-300 px-3 py-2 text-sm
+                 focus:border-stone-500 focus:outline-none focus:ring-2 focus:ring-stone-900/10
+                 dark:border-stone-700 dark:bg-stone-950 dark:focus:ring-white/10" />
+        <p class="mt-1 text-xs text-stone-500">
+          About <b>{searchesUsed}</b> of these will need a paid web search.
+          {#if searchesUsed > 1000}
+            <span class="text-amber-700 dark:text-amber-400">
+              That is past a free Tavily month.
+            </span>
+          {:else}
+            A free Tavily month covers 1,000.
+          {/if}
+        </p>
       </div>
 
       <div>

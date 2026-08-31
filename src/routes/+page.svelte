@@ -48,6 +48,41 @@
    */
   let menu = $state<{ id: string; x: number; y: number } | null>(null);
 
+  /**
+   * Fold a poll's rows into the ones on screen, keeping every unchanged row.
+   *
+   * Assigning the response wholesale replaced a thousand objects every two and
+   * a half seconds. The keyed each block kept the DOM nodes, but every cell's
+   * text and classes were reassigned, so the whole table repainted and visibly
+   * flashed. Reusing the previous object for a row whose verdicts have not
+   * moved lets Svelte skip it entirely.
+   */
+  function mergeCandidates(current: any[], incoming: any[]): any[] {
+    const previous = new Map(current.map((c) => [c.id, c]));
+    let changed = incoming.length !== current.length;
+
+    const next = incoming.map((row, i) => {
+      const before = previous.get(row.id);
+      if (
+        before &&
+        before.com === row.com &&
+        before.appStore === row.appStore &&
+        before.playStore === row.playStore &&
+        before.google === row.google &&
+        before.passed === row.passed &&
+        current[i]?.id === row.id
+      ) {
+        return before;
+      }
+      changed = true;
+      return row;
+    });
+
+    // An unchanged poll must not even reassign the array, or every derived
+    // value recomputes and the table repaints for nothing.
+    return changed ? next : current;
+  }
+
   async function recheck(candidate: { id: string }, kind?: string) {
     menu = null;
     rechecking = { ...rechecking, [candidate.id]: true };
@@ -173,7 +208,7 @@
           if (r.ok) {
             const payload = await r.json();
             run = payload.run;
-            candidates = payload.candidates;
+            candidates = mergeCandidates(candidates, payload.candidates);
             if (payload.events?.length) {
               const fresh = payload.events.filter((e: { id: string }) => !seenEvents.has(e.id));
               for (const e of fresh) seenEvents.add(e.id);
@@ -524,7 +559,7 @@
           class="h-72 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50 p-3
                  font-mono text-xs leading-relaxed lg:h-[calc(100vh-19rem)]
                  dark:border-stone-800 dark:bg-stone-950">
-          {#each events as e}
+          {#each events as e (e.id)}
             <div class="flex gap-2 py-px">
               <span class="shrink-0 text-stone-400 tabular-nums dark:text-stone-600">{time(e.at)}</span>
               <span class="{LEVEL[e.level] ?? LEVEL.info} break-words">{e.message}</span>

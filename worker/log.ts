@@ -12,19 +12,19 @@ import { RunEvent } from '../src/lib/server/entities/event.ts';
 export type Level = RunEvent['level'];
 
 const MARK: Record<Level, string> = {
-  info: ' ',
-  success: '✓',
-  warn: '!',
-  error: '×'
+    info: ' ',
+    success: '✓',
+    warn: '!',
+    error: '×'
 };
 
 export function makeLogger(_source: DataSource, runId: string) {
-  return async (message: string, level: Level = 'info') => {
-    console.log(`  ${MARK[level]} ${message}`);
-    try {
-      await RunEvent.insert({ runId, level, message });
-    } catch {
-      // A run must not fail because its narration could not be stored.
-    }
-  };
+    return async (message: string, level: Level = 'info') => {
+        console.log(`  ${MARK[level]} ${message}`);
+        try {
+            await RunEvent.insert({ runId, level, message });
+        } catch {
+            // A run must not fail because its narration could not be stored.
+        }
+    };
 }

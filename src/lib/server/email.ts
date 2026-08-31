@@ -15,96 +15,101 @@ import { CHECK_LABEL, CHECK_ORDER, type CheckStatus } from '../types.ts';
 
 const from = process.env.RESEND_FROM ?? 'Brandy <onboarding@resend.dev>';
 const client = () => {
-  const key = process.env.RESEND_API_KEY;
-  return key ? new Resend(key) : undefined;
+    const key = process.env.RESEND_API_KEY;
+    return key ? new Resend(key) : undefined;
 };
 
 export interface SendResult {
-  sent: boolean;
-  reason?: string;
+    sent: boolean;
+    reason?: string;
 }
 
 export async function sendVerificationCode(to: string, code: string): Promise<SendResult> {
-  const resend = client();
-  if (!resend) return { sent: false, reason: 'No RESEND_API_KEY configured' };
-  try {
-    const { error } = await resend.emails.send({
-      from,
-      to,
-      subject: `${code} is your verification code`,
-      text: `Your verification code is ${code}. It expires in 20 minutes.`
-    });
-    if (error) return { sent: false, reason: error.message };
-    return { sent: true };
-  } catch (e) {
-    return { sent: false, reason: (e as Error).message };
-  }
+    const resend = client();
+    if (!resend) return { sent: false, reason: 'No RESEND_API_KEY configured' };
+    try {
+        const { error } = await resend.emails.send({
+            from,
+            to,
+            subject: `${code} is your verification code`,
+            text: `Your verification code is ${code}. It expires in 20 minutes.`
+        });
+        if (error) return { sent: false, reason: error.message };
+        return { sent: true };
+    } catch (e) {
+        return { sent: false, reason: (e as Error).message };
+    }
 }
 
 interface ResultRow {
-  name: string;
-  com: CheckStatus;
-  appStore: CheckStatus;
-  playStore: CheckStatus;
-  google: CheckStatus;
+    name: string;
+    com: CheckStatus;
+    appStore: CheckStatus;
+    playStore: CheckStatus;
+    google: CheckStatus;
 }
 
 /** The same words the page uses; a CSV row should not need the page to read. */
 const CELL: Record<CheckStatus, string> = {
-  clear: 'free',
-  taken: 'taken',
-  unknown: 'not verified',
-  skipped: 'skipped',
-  pending: 'waiting'
+    clear: 'free',
+    taken: 'taken',
+    unknown: 'not verified',
+    skipped: 'skipped',
+    pending: 'waiting'
 };
 
 export function toCsv(rows: ResultRow[]): string {
-  const header = ['Name', ...CHECK_ORDER.map((k) => CHECK_LABEL[k])].join(',');
-  const body = rows.map((r) =>
-    [r.name, ...CHECK_ORDER.map((k) => CELL[r[k]])].map((v) => `"${v}"`).join(',')
-  );
-  return [header, ...body].join('\n');
+    const header = ['Name', ...CHECK_ORDER.map((k) => CHECK_LABEL[k])].join(',');
+    const body = rows.map((r) =>
+        [r.name, ...CHECK_ORDER.map((k) => CELL[r[k]])].map((v) => `"${v}"`).join(',')
+    );
+    return [header, ...body].join('\n');
 }
 
 export async function sendResults(
-  to: string,
-  runId: string,
-  brief: string,
-  rows: ResultRow[],
-  url: string
+    to: string,
+    runId: string,
+    brief: string,
+    rows: ResultRow[],
+    url: string
 ): Promise<SendResult> {
-  const resend = client();
-  if (!resend) return { sent: false, reason: 'No RESEND_API_KEY configured' };
+    const resend = client();
+    if (!resend) return { sent: false, reason: 'No RESEND_API_KEY configured' };
 
-  const table = rows
-    .slice(0, 60)
-    .map(
-      (r) =>
-        `<tr><td style="padding:4px 10px"><b>${r.name}</b></td>` +
-        CHECK_ORDER.map((k) => `<td style="padding:4px 10px">${CELL[r[k]]}</td>`).join('') +
-        '</tr>'
-    )
-    .join('');
+    const table = rows
+        .slice(0, 60)
+        .map(
+            (r) =>
+                `<tr><td style="padding:4px 10px"><b>${r.name}</b></td>` +
+                CHECK_ORDER.map((k) => `<td style="padding:4px 10px">${CELL[r[k]]}</td>`).join('') +
+                '</tr>'
+        )
+        .join('');
 
-  try {
-    const { error } = await resend.emails.send({
-      from,
-      to,
-      subject: `${rows.length} names cleared for "${brief.slice(0, 40)}"`,
-      html:
-        `<p>Your naming run finished. <a href="${url}">Open the full results</a>.</p>` +
-        `<table style="border-collapse:collapse;font-family:system-ui,sans-serif;font-size:14px">` +
-        `<tr>${['Name', ...CHECK_ORDER.map((k) => CHECK_LABEL[k])]
-          .map((h) => `<th align="left" style="padding:4px 10px">${h}</th>`)
-          .join('')}</tr>${table}</table>` +
-        (rows.length > 60 ? `<p>Showing 60 of ${rows.length}. Full list in the CSV.</p>` : ''),
-      attachments: [
-        { filename: `names-${runId.slice(0, 8)}.csv`, content: Buffer.from(toCsv(rows)).toString('base64') }
-      ]
-    });
-    if (error) return { sent: false, reason: error.message };
-    return { sent: true };
-  } catch (e) {
-    return { sent: false, reason: (e as Error).message };
-  }
+    try {
+        const { error } = await resend.emails.send({
+            from,
+            to,
+            subject: `${rows.length} names cleared for "${brief.slice(0, 40)}"`,
+            html:
+                `<p>Your naming run finished. <a href="${url}">Open the full results</a>.</p>` +
+                `<table style="border-collapse:collapse;font-family:system-ui,sans-serif;font-size:14px">` +
+                `<tr>${['Name', ...CHECK_ORDER.map((k) => CHECK_LABEL[k])]
+                    .map((h) => `<th align="left" style="padding:4px 10px">${h}</th>`)
+                    .join('')}</tr>${table}</table>` +
+                (rows.length > 60
+                    ? `<p>Showing 60 of ${rows.length}. Full list in the CSV.</p>`
+                    : ''),
+            attachments: [
+                {
+                    filename: `names-${runId.slice(0, 8)}.csv`,
+                    content: Buffer.from(toCsv(rows)).toString('base64')
+                }
+            ]
+        });
+        if (error) return { sent: false, reason: error.message };
+        return { sent: true };
+    } catch (e) {
+        return { sent: false, reason: (e as Error).message };
+    }
 }

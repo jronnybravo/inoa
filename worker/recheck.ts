@@ -26,75 +26,75 @@ import { computePassed } from './pipeline.ts';
 import { jitter, sleep, type CheckOutcome } from './checks/shared.ts';
 
 const RUNNERS: Record<CheckKind, (name: string) => Promise<CheckOutcome>> = {
-  com: checkCom,
-  appStore: checkAppStore,
-  playStore: checkPlayStore,
-  google: checkWeb
+    com: checkCom,
+    appStore: checkAppStore,
+    playStore: checkPlayStore,
+    google: checkWeb
 };
 
 const PACE: Record<CheckKind, number> = {
-  com: 150,
-  appStore: 3200,
-  playStore: 1200,
-  // The web check is the one that needs real distance when no API is set.
-  google: 800
+    com: 150,
+    appStore: 3200,
+    playStore: 1200,
+    // The web check is the one that needs real distance when no API is set.
+    google: 800
 };
 
 const [runId, only] = process.argv.slice(2);
 if (!runId) {
-  console.error('usage: npm run recheck -- <runId> [checkKind]');
-  process.exit(1);
+    console.error('usage: npm run recheck -- <runId> [checkKind]');
+    process.exit(1);
 }
 
 const kinds = only ? [only as CheckKind] : CHECK_ORDER;
 const source = await db();
 const run = await Run.findOneBy({ id: runId });
 if (!run) {
-  console.error(`no run ${runId}`);
-  process.exit(1);
+    console.error(`no run ${runId}`);
+    process.exit(1);
 }
 
 const required = {
-  com: run.requireCom,
-  appStore: run.requireAppStore,
-  playStore: run.requirePlayStore,
-  google: run.requireGoogle
+    com: run.requireCom,
+    appStore: run.requireAppStore,
+    playStore: run.requirePlayStore,
+    google: run.requireGoogle
 };
 
 for (const kind of kinds) {
-  const stuck = await Candidate.find({
-    where: { runId, [kind]: 'unknown' } as never,
-    order: { position: 'ASC' }
-  });
-  if (stuck.length === 0) {
-    console.log(`${kind}: nothing unknown`);
-    continue;
-  }
-
-  const interval = kind === 'google' && !hasSearchApi() ? 60_000 : PACE[kind];
-  console.log(`${kind}: re-checking ${stuck.length}`);
-
-  let resolved = 0;
-  for (const [i, candidate] of stuck.entries()) {
-    const outcome = await RUNNERS[kind](candidate.name);
-    const statuses = {
-      com: candidate.com,
-      appStore: candidate.appStore,
-      playStore: candidate.playStore,
-      google: candidate.google,
-      [kind]: outcome.status
-    };
-    await Candidate.update(candidate.id, {
-      [kind]: outcome.status,
-      detail: { ...candidate.detail, [kind]: outcome.detail ?? '' },
-      passed: computePassed(statuses, required),
-      checkedAt: new Date()
+    const stuck = await Candidate.find({
+        where: { runId, [kind]: 'unknown' } as never,
+        order: { position: 'ASC' }
     });
-    if (outcome.status !== 'unknown') resolved++;
-    if ((i + 1) % 10 === 0) console.log(`  ${i + 1}/${stuck.length}`);
-    if (i < stuck.length - 1) await sleep(jitter(interval));
-  }
-  console.log(`${kind}: ${resolved} of ${stuck.length} now answered`);
+    if (stuck.length === 0) {
+        console.log(`${kind}: nothing unknown`);
+        continue;
+    }
+
+    const interval = kind === 'google' && !hasSearchApi() ? 60_000 : PACE[kind];
+    console.log(`${kind}: re-checking ${stuck.length}`);
+
+    let resolved = 0;
+    for (const [i, candidate] of stuck.entries()) {
+        const outcome = await RUNNERS[kind](candidate.name);
+        const statuses = {
+            com: candidate.com,
+            appStore: candidate.appStore,
+            playStore: candidate.playStore,
+            google: candidate.google,
+            [kind]: outcome.status
+        };
+        await Candidate.update(candidate.id, {
+            [kind]: outcome.status,
+            detail: { ...candidate.detail, [kind]: outcome.detail ?? '' },
+            passed: computePassed(statuses, required),
+            checkedAt: new Date()
+        });
+        if (outcome.status !== 'unknown') resolved++;
+        if ((i + 1) % 10 === 0) console.log(`  ${i + 1}/${stuck.length}`);
+        if (i < stuck.length - 1) await sleep(jitter(interval));
+    }
+    console.log(`${kind}: ${resolved} of ${stuck.length} now answered`);
 }
 
 const passing = await Candidate.countBy({ runId, passed: true });

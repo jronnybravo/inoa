@@ -1,15 +1,22 @@
 <script lang="ts">
-    import { goto } from '$app/navigation';
-    import { resolve } from '$app/paths';
     import {
         CHECK_LABEL,
         CHECK_ORDER,
         CHECK_SEARCH,
         STRATEGIES,
-        type CheckStatus
+        type CandidateView,
+        type CheckKind,
+        type CheckStatus,
+        type RunEventView,
+        type RunPayload,
+        type RunView,
+        type StrategyTally
     } from '$lib/types';
+    import type { PageData } from './$types';
+    import { goto } from '$app/navigation';
+    import { resolve } from '$app/paths';
 
-    let { data } = $props();
+    const { data }: { data: PageData } = $props();
 
     /**
      * One route, two jobs. Without a request id you are composing a brief; with
@@ -35,9 +42,9 @@
     let emailProblem = $state('');
     let code = $state('');
 
-    let run = $state<any>(data.run ?? null);
-    let candidates = $state<any[]>([]);
-    let events = $state<{ id: string; at: string; level: string; message: string }[]>([]);
+    let run = $state<RunView | null>(data.run ?? null);
+    let candidates = $state<CandidateView[]>([]);
+    let events = $state<RunEventView[]>([]);
     // A seen-list, never rendered, so reactivity would cost updates and buy
     // nothing.
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -50,7 +57,7 @@
      * still in progress shows nothing at all, since nothing passes until every
      * required check has answered.
      */
-    let onlyPassed = $state(false);
+    let onlyPassed = $state<boolean>(false);
     /**
      * One filter per column, each empty meaning "any".
      *
@@ -60,7 +67,7 @@
      */
     let nameFilter = $state('');
     let approachFilter = $state('');
-    let checkFilter = $state<Record<string, string>>({
+    let checkFilter = $state<Record<CheckKind, string>>({
         com: '',
         appStore: '',
         playStore: '',
@@ -76,7 +83,7 @@
         approachFilter = '';
         checkFilter = { com: '', appStore: '', playStore: '', google: '' };
     }
-    let selected = $state<Record<string, boolean>>({});
+    const selected = $state<Record<string, boolean>>({});
     let consoleOpen = $state(true);
     let copied = $state(false);
     let logEl = $state<HTMLDivElement | null>(null);
@@ -119,7 +126,7 @@
      * flashed. Reusing the previous object for a row whose verdicts have not
      * moved lets Svelte skip it entirely.
      */
-    function mergeCandidates(current: any[], incoming: any[]): any[] {
+    function mergeCandidates(current: CandidateView[], incoming: CandidateView[]): CandidateView[] {
         const previous = new Map(current.map((c) => [c.id, c]));
         let changed = incoming.length !== current.length;
 
@@ -155,7 +162,7 @@
                 body: JSON.stringify(kind ? { kind } : {})
             });
             if (response.ok) {
-                const updated = await response.json();
+                const updated = (await response.json()) as CandidateView;
                 // Patch the row in place rather than waiting for the next poll.
                 candidates = candidates.map((c) =>
                     c.id === updated.id ? { ...c, ...updated } : c
@@ -166,6 +173,16 @@
         } finally {
             rechecking = { ...rechecking, [candidate.id]: false };
         }
+    }
+
+    /** Which checks a finished run actually required, read from the run itself. */
+    function requiredBy(r: RunView, kind: CheckKind): boolean {
+        return {
+            com: r.requireCom,
+            appStore: r.requireAppStore,
+            playStore: r.requirePlayStore,
+            google: r.requireGoogle
+        }[kind];
     }
 
     const requirements = [
@@ -216,6 +233,10 @@
     ];
 
     /** Short forms, because the column is narrow and the filter names them fully. */
+    function strategyLabel(id: string | null): string {
+        return id ? (STRATEGY_LABEL[id] ?? id) : '—';
+    }
+
     const STRATEGY_LABEL: Record<string, string> = {
         compound: 'Combination',
         invented: 'Invented',
@@ -253,7 +274,7 @@
     );
 
     /** Whole-run tallies from the server, so filtering does not distort them. */
-    let tallies = $state<{ strategy: string | null; total: number; passed: number }[]>([]);
+    let tallies = $state<StrategyTally[]>([]);
 
     const byStrategy = $derived(
         STRATEGIES.map((s) => ({
@@ -294,7 +315,12 @@
                     targetCount
                 })
             });
-            const payload = await response.json();
+            const payload = (await response.json()) as {
+                id: string;
+                emailSent: boolean;
+                emailProblem?: string;
+                message?: string;
+            };
             if (!response.ok) {
                 throw new Error(payload.message ?? 'Could not start');
             }
@@ -319,7 +345,8 @@
                 body: JSON.stringify({ runId: pendingRunId, code })
             });
             if (!response.ok) {
-                throw new Error((await response.json()).message ?? 'Could not verify');
+                const body = (await response.json()) as { message?: string };
+                throw new Error(body.message ?? 'Could not verify');
             }
             // Client-side navigation. Assigning to window.location threw the whole
             // document away and rebuilt it, which reads as the app restarting at the
@@ -349,31 +376,37 @@
         // The component survives a client-side navigation, so state initialised
         // from the first `data` would otherwise stay on the previous run.
         run = data.run;
-        let alive = true;
-        (async () => {
+        /*
+         * An AbortController rather than a boolean flag.
+         *
+         * Leaving the page mid-request used to let that request finish and
+         * write its result into state nobody was watching. Aborting cancels
+         * the fetch as well as ending the loop.
+         */
+        const polling = new AbortController();
+        // Deliberately not awaited: the effect returns its teardown below.
+        void (async () => {
             let since = '';
-            while (alive) {
+            while (!polling.signal.aborted) {
                 try {
                     const query = `passed=${onlyPassed ? 1 : 0}${since ? `&since=${encodeURIComponent(since)}` : ''}`;
-                    const r = await fetch(`/api/runs/${data.run.id}?${query}`);
+                    const r = await fetch(`/api/runs/${data.run.id}?${query}`, {
+                        signal: polling.signal
+                    });
                     if (r.ok) {
-                        const payload = await r.json();
+                        const payload = (await r.json()) as RunPayload;
                         run = payload.run;
                         candidates = mergeCandidates(candidates, payload.candidates);
-                        if (payload.tallies) {
-                            tallies = payload.tallies;
-                        }
-                        if (payload.events?.length) {
-                            const fresh = payload.events.filter(
-                                (e: { id: string }) => !seenEvents.has(e.id)
-                            );
+                        tallies = payload.tallies;
+                        if (payload.events.length > 0) {
+                            const fresh = payload.events.filter((e) => !seenEvents.has(e.id));
                             for (const e of fresh) {
                                 seenEvents.add(e.id);
                             }
                             if (fresh.length) {
                                 events = [...events, ...fresh].slice(-800);
                             }
-                            since = payload.events[payload.events.length - 1].at;
+                            since = payload.events.at(-1)?.at ?? since;
                         }
                         if (run.status === 'done' || run.status === 'failed') {
                             return;
@@ -386,7 +419,7 @@
             }
         })();
         return () => {
-            alive = false;
+            polling.abort();
         };
     });
 
@@ -406,11 +439,7 @@
     async function copyCsv() {
         const header = ['Name', 'Approach', ...CHECK_ORDER.map((k) => CHECK_LABEL[k])].join(',');
         const rows = visibleRows().map((c) =>
-            [
-                c.name,
-                STRATEGY_LABEL[c.strategy] ?? c.strategy ?? '',
-                ...CHECK_ORDER.map((k) => CELL[c[k] as CheckStatus].text)
-            ]
+            [c.name, strategyLabel(c.strategy), ...CHECK_ORDER.map((k) => CELL[c[k]].text)]
                 .map((v) => `"${v}"`)
                 .join(',')
         );
@@ -475,7 +504,7 @@
                                 class="mt-0.5 accent-stone-900 dark:accent-stone-100"
                                 checked={strategies.includes(s.id)}
                                 onchange={(e) => {
-                                    const on = (e.currentTarget as HTMLInputElement).checked;
+                                    const on = e.currentTarget.checked;
                                     strategies = on
                                         ? [...strategies, s.id]
                                         : strategies.filter((x) => x !== s.id);
@@ -511,8 +540,7 @@
                                 type="checkbox"
                                 class="accent-stone-900 dark:accent-stone-100"
                                 checked={r.get()}
-                                onchange={(e) =>
-                                    r.set((e.currentTarget as HTMLInputElement).checked)}
+                                onchange={(e) => r.set(e.currentTarget.checked)}
                             />
                             {r.label}
                         </label>
@@ -614,6 +642,7 @@
         </div>
     </section>
 {:else if run}
+    {@const watched = run}
     <!-- Watch: the brief collapses to a recap so the results get the room. -->
     <section
         class="mt-6 rounded-xl border border-stone-200 bg-white px-5 py-4
@@ -628,7 +657,7 @@
             {/each}
             <span class="text-stone-300 dark:text-stone-700">·</span>
             <span>requires</span>
-            {#each requirements.filter((r) => run[`require${r.key[0].toUpperCase()}${r.key.slice(1)}`]) as r (r.key)}
+            {#each requirements.filter((r) => requiredBy(watched, r.key as CheckKind)) as r (r.key)}
                 <span class="rounded bg-stone-100 px-1.5 py-0.5 dark:bg-stone-800">{r.label}</span>
             {:else}
                 <span class="italic">nothing - every name is reported</span>
@@ -796,7 +825,7 @@
                                 >
                                     <option value="">Any</option>
                                     {#each byStrategy as s (s.id)}<option value={s.id}
-                                            >{STRATEGY_LABEL[s.id] ?? s.label}</option
+                                            >{strategyLabel(s.id)}</option
                                         >{/each}
                                 </select>
                             </th>
@@ -847,10 +876,7 @@
                                         type="checkbox"
                                         class="accent-stone-900 dark:accent-stone-100"
                                         checked={selected[c.id] ?? true}
-                                        onchange={(e) =>
-                                            (selected[c.id] = (
-                                                e.currentTarget as HTMLInputElement
-                                            ).checked)}
+                                        onchange={(e) => (selected[c.id] = e.currentTarget.checked)}
                                     />
                                 </td>
                                 <td
@@ -869,23 +895,24 @@
                                         title={c.rationale ?? ''}
                                         class="cursor-help text-left decoration-stone-300 decoration-dotted
                                  underline-offset-4 hover:underline dark:decoration-stone-600"
-                                        onmouseenter={(e) => showHint(e, c.rationale)}
+                                        onmouseenter={(e) => {
+                                            showHint(e, c.rationale);
+                                        }}
                                         onmouseleave={() => (hint = null)}
-                                        onfocus={(e) =>
-                                            showHint(e as unknown as MouseEvent, c.rationale)}
+                                        onfocus={(e) => {
+                                            showHint(e as unknown as MouseEvent, c.rationale);
+                                        }}
                                         onblur={() => (hint = null)}>{c.name}</button
                                     >
                                 </td>
                                 <td
                                     class="px-3 py-1.5 whitespace-nowrap text-stone-500 dark:text-stone-400"
                                 >
-                                    {STRATEGY_LABEL[c.strategy] ?? c.strategy ?? '—'}
+                                    {strategyLabel(c.strategy)}
                                 </td>
                                 {#each CHECK_ORDER as k (k)}
                                     <td
-                                        class="px-3 py-1.5 whitespace-nowrap {CELL[
-                                            c[k] as CheckStatus
-                                        ].class}"
+                                        class="px-3 py-1.5 whitespace-nowrap {CELL[c[k]].class}"
                                         title={c.detail?.[k] ?? ''}
                                     >
                                         {#if c.detail?.[k]}
@@ -895,10 +922,10 @@
                                                 target="_blank"
                                                 rel="external noopener noreferrer"
                                                 class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                                                >{CELL[c[k] as CheckStatus].text}</a
+                                                >{CELL[c[k]].text}</a
                                             >
                                         {:else}
-                                            {CELL[c[k] as CheckStatus].text}
+                                            {CELL[c[k]].text}
                                         {/if}
                                     </td>
                                 {/each}
@@ -1023,7 +1050,8 @@
     {/if}
 
     {#if menu}
-        {@const row = candidates.find((c) => c.id === menu!.id)}
+        {@const openFor = menu.id}
+        {@const row = candidates.find((c) => c.id === openFor)}
         <!--
       Fixed, not absolute. The table scrolls inside its own panel, so a menu
       anchored to the row would be clipped by that container's overflow.
@@ -1044,8 +1072,8 @@
                 >
                     <span>{CHECK_LABEL[k]}</span>
                     {#if row}
-                        <span class="text-xs {CELL[row[k] as CheckStatus].class}">
-                            {CELL[row[k] as CheckStatus].text}
+                        <span class="text-xs {CELL[row[k]].class}">
+                            {CELL[row[k]].text}
                         </span>
                     {/if}
                 </button>

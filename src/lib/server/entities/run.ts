@@ -19,13 +19,13 @@ import {
     UUID_LENGTH,
     UUID_TYPE
 } from '../dialect.ts';
-import type { RunStatus } from '../../types.ts';
+import type { RunStatus, StrategyId } from '../../types.ts';
 
 export class Run extends BaseEntity {
     id!: string;
     brief!: string;
     /** Null rather than defaulted: MySQL forbids a DEFAULT on a TEXT column. */
-    strategies!: string[] | null;
+    strategies!: StrategyId[] | null;
     requireCom!: boolean;
     requireAppStore!: boolean;
     requirePlayStore!: boolean;

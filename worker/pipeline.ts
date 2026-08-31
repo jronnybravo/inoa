@@ -20,13 +20,12 @@
  */
 
 import { CHECK_ORDER, type CheckKind, type CheckStatus } from '../src/lib/types.ts';
-import { checkCom } from './checks/domain.ts';
 import { checkAppStore } from './checks/appstore.ts';
-import { checkPlayStore } from './checks/playstore.ts';
-import { checkWeb } from './checks/web.ts';
-import { type CheckOutcome } from './checks/shared.ts';
+import { checkCom } from './checks/domain.ts';
 import { appleLimit, playLimit, webLimit } from './checks/limiter.ts';
-import { hasSearchApi } from './checks/web.ts';
+import { checkPlayStore } from './checks/playstore.ts';
+import { type CheckOutcome } from './checks/shared.ts';
+import { checkWeb, hasSearchApi } from './checks/web.ts';
 import type { RateLimit } from './checks/limiter.ts';
 
 const RUNNERS: Record<CheckKind, (name: string) => Promise<CheckOutcome>> = {
@@ -67,7 +66,14 @@ export interface Requirements {
 }
 
 export interface CandidateResult {
-    statuses: Partial<Record<CheckKind, CheckStatus>>;
+    /**
+     * Every check has a state, including the ones this pass did not run.
+     *
+     * A partial record forced each caller to assert the keys back into
+     * existence, which is a lie the type system cannot check. 'pending' is the
+     * honest value for a check nobody made.
+     */
+    statuses: Record<CheckKind, CheckStatus>;
     detail: Partial<Record<CheckKind, string>>;
     /** null while a required check has not answered yet. */
     passed: boolean | null;
@@ -97,7 +103,12 @@ export async function checkCandidate(
     required: Requirements,
     kinds: CheckKind[] = CHECK_ORDER
 ): Promise<CandidateResult> {
-    const statuses = {} as Record<CheckKind, CheckStatus>;
+    const statuses: Record<CheckKind, CheckStatus> = {
+        com: 'pending',
+        appStore: 'pending',
+        playStore: 'pending',
+        google: 'pending'
+    };
     const detail: Partial<Record<CheckKind, string>> = {};
     let droppedBy: CheckKind | null = null;
 

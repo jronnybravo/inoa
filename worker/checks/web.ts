@@ -142,14 +142,44 @@ interface ApiProvider {
     search: (query: string, key: string) => Promise<Hit[] | null>;
 }
 
-async function postJson(url: string, headers: HeadersInit, body: unknown): Promise<any | null> {
+/**
+ * One search result, as some provider spells it.
+ *
+ * Every provider returns the same three facts under different names, so each
+ * declares only the keys it actually uses and `toHits` normalises them. The
+ * fields are optional because they come from somebody else's service and a
+ * missing one is a bad response, not a crash.
+ */
+interface RawResult {
+    title?: string;
+    url?: string;
+    link?: string;
+    content?: string;
+    description?: string;
+    snippet?: string;
+    text?: string;
+}
+
+function toHits(results: RawResult[]): Hit[] {
+    return results.map((r) => ({
+        title: r.title ?? '',
+        url: r.url ?? r.link ?? '',
+        snippet: r.content ?? r.description ?? r.snippet ?? r.text ?? ''
+    }));
+}
+
+async function postJson<T>(
+    url: string,
+    headers: Record<string, string>,
+    body: unknown
+): Promise<T | null> {
     const response = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...headers },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(20000)
     });
-    return response.ok ? response.json() : null;
+    return response.ok ? ((await response.json()) as T) : null;
 }
 
 /**
@@ -165,81 +195,50 @@ export const API_PROVIDERS: ApiProvider[] = [
         label: 'Tavily',
         key: () => process.env.TAVILY_API_KEY,
         search: async (query, key) => {
-            const data = await postJson(
+            const data = await postJson<{ results?: RawResult[] }>(
                 'https://api.tavily.com/search',
                 { authorization: `Bearer ${key}` },
                 { query, max_results: 20, search_depth: 'basic' }
             );
-            const results = data?.results;
-            if (!Array.isArray(results)) {
-                return null;
-            }
-            return results.map((r: any) => ({
-                title: r.title ?? '',
-                url: r.url ?? '',
-                snippet: r.content ?? ''
-            }));
+            return Array.isArray(data?.results) ? toHits(data.results) : null;
         }
     },
     {
         label: 'Firecrawl',
         key: () => process.env.FIRECRAWL_API_KEY,
         search: async (query, key) => {
-            const data = await postJson(
+            const data = await postJson<{ data?: RawResult[] | { web?: RawResult[] } }>(
                 'https://api.firecrawl.dev/v2/search',
                 { authorization: `Bearer ${key}` },
                 { query, limit: 20, sources: [{ type: 'web' }] }
             );
             // v2 nests results by source; older keys may still answer with an array.
             const results = Array.isArray(data?.data) ? data.data : data?.data?.web;
-            if (!Array.isArray(results)) {
-                return null;
-            }
-            return results.map((r: any) => ({
-                title: r.title ?? '',
-                url: r.url ?? '',
-                snippet: r.description ?? ''
-            }));
+            return Array.isArray(results) ? toHits(results) : null;
         }
     },
     {
         label: 'Serper',
         key: () => process.env.SERPER_API_KEY,
         search: async (query, key) => {
-            const data = await postJson(
+            const data = await postJson<{ organic?: RawResult[] }>(
                 'https://google.serper.dev/search',
                 { 'x-api-key': key },
                 { q: query, num: 20 }
             );
-            const results = data?.organic;
-            if (!Array.isArray(results)) {
-                return null;
-            }
-            return results.map((r: any) => ({
-                title: r.title ?? '',
-                url: r.link ?? '',
-                snippet: r.snippet ?? ''
-            }));
+            return Array.isArray(data?.organic) ? toHits(data.organic) : null;
         }
     },
     {
         label: 'Exa',
         key: () => process.env.EXA_API_KEY,
         search: async (query, key) => {
-            const data = await postJson(
+            const data = await postJson<{ results?: RawResult[] }>(
                 'https://api.exa.ai/search',
                 { 'x-api-key': key },
                 { query, numResults: 20, type: 'auto', contents: { text: { maxCharacters: 300 } } }
             );
-            const results = data?.results;
-            if (!Array.isArray(results)) {
-                return null;
-            }
-            return results.map((r: any) => ({
-                title: r.title ?? '',
-                url: r.url ?? '',
-                snippet: r.text ?? ''
-            }));
+            return Array.isArray(data?.results) ? toHits(data.results) : null;
         }
     },
     {
@@ -256,16 +255,9 @@ export const API_PROVIDERS: ApiProvider[] = [
             if (!response.ok) {
                 return null;
             }
-            const data = (await response.json()) as any;
-            const results = data?.web?.results;
-            if (!Array.isArray(results)) {
-                return null;
-            }
-            return results.map((r: any) => ({
-                title: r.title ?? '',
-                url: r.url ?? '',
-                snippet: r.description ?? ''
-            }));
+            const data = (await response.json()) as { web?: { results?: RawResult[] } };
+            const results = data.web?.results;
+            return Array.isArray(results) ? toHits(results) : null;
         }
     }
 ];
@@ -297,9 +289,13 @@ async function apiSearch(query: string): Promise<{ hits: Hit[]; label: string } 
 
     const start = rotation++ % configured.length;
     for (let i = 0; i < configured.length; i++) {
-        const provider = configured[(start + i) % configured.length]!;
+        const provider = configured[(start + i) % configured.length];
+        const key = provider?.key();
+        if (!provider || !key) {
+            continue;
+        }
         try {
-            const hits = await provider.search(query, provider.key()!);
+            const hits = await provider.search(query, key);
             if (hits) {
                 return { hits, label: provider.label };
             }
@@ -355,7 +351,7 @@ async function browserSearch(name: string): Promise<CheckOutcome> {
         const url = `https://www.google.com/search?q=${encodeURIComponent(queryFor(name))}&num=20`;
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
 
-        const body = await page.evaluate(() => document.body?.innerText ?? '');
+        const body = await page.evaluate(() => document.body.innerText);
 
         if (CHALLENGED.test(body) || CHALLENGED.test(page.url()) || response?.status() === 429) {
             return {
@@ -371,7 +367,7 @@ async function browserSearch(name: string): Promise<CheckOutcome> {
         // Titles are what a competing brand looks like; body text merely mentioning
         // the word is not a collision.
         const titles = await page.evaluate(() =>
-            Array.from(document.querySelectorAll('h3')).map((h) => h.textContent?.trim() ?? '')
+            Array.from(document.querySelectorAll('h3')).map((h) => h.textContent.trim())
         );
         const matches = [...new Set(titles.filter((t) => t && isBrandCollision(name, t)))];
 

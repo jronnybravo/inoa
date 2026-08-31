@@ -1,8 +1,8 @@
-import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { Run } from '$lib/server/entities/run';
 import { Verification } from '$lib/server/entities/verification';
+import type { RequestHandler } from './$types';
 
 const MAX_ATTEMPTS = 6;
 

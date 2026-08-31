@@ -85,8 +85,19 @@ npm run check     # svelte-check, which also typechecks the worker
 ```
 
 Four-space indent, single quotes, 100 columns — all enforced by Prettier, so
-none of it is worth arguing about in review. Build output is excluded from
-both tools.
+none of it is worth arguing about in review.
+
+The ESLint config is the project's own, not a published style guide. Two
+goals: **strict**, meaning every rule catches a defect rather than a
+preference, with type-aware checking on because most defects worth catching
+are invisible without types; and **stable**, meaning Prettier owns every
+question of layout so the two cannot disagree, and rule sets are named rather
+than spread from `all` so a dependency bump cannot introduce a rule nobody
+chose. Build output is excluded from both.
+
+Braces on every branch, including single statements. Stricter than most
+guides allow, because the compact form reads fine right up until somebody
+adds a second statement and it quietly falls outside the branch.
 
 Comments explain _why_, not what. Most of the surprising code here exists
 because something failed in a specific way, and the comment is where that

@@ -1,23 +1,23 @@
-import type { RequestHandler } from './$types';
-import { json, error } from '@sveltejs/kit';
 import { randomInt } from 'node:crypto';
+import { json, error } from '@sveltejs/kit';
 import { z } from 'zod';
 import { db } from '$lib/server/db';
+import { sendVerificationCode } from '$lib/server/email';
 import { Run } from '$lib/server/entities/run';
 import { Verification } from '$lib/server/entities/verification';
-import { sendVerificationCode } from '$lib/server/email';
-import { STRATEGIES } from '$lib/types';
+import { STRATEGIES, type StrategyId } from '$lib/types';
+import type { RequestHandler } from './$types';
 
-const ids = STRATEGIES.map((s) => s.id);
+const ids = STRATEGIES.map((s) => s.id) as [StrategyId, ...StrategyId[]];
 
 const Body = z.object({
     brief: z.string().min(12).max(2000),
-    strategies: z.array(z.enum(ids as [string, ...string[]])).min(1),
+    strategies: z.array(z.enum(ids)).min(1),
     requireCom: z.boolean(),
     requireAppStore: z.boolean(),
     requirePlayStore: z.boolean(),
     requireGoogle: z.boolean(),
-    email: z.string().email(),
+    email: z.email(),
     /**
      * A cost control, not a preference.
      *

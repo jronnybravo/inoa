@@ -14,10 +14,10 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { connectionOptions, DIALECT } from './config.ts';
-import { Run, RunSchema } from './entities/run.ts';
 import { Candidate, CandidateSchema } from './entities/candidate.ts';
-import { Verification, VerificationSchema } from './entities/verification.ts';
 import { RunEvent, RunEventSchema } from './entities/event.ts';
+import { Run, RunSchema } from './entities/run.ts';
+import { Verification, VerificationSchema } from './entities/verification.ts';
 
 export const dataSource = new DataSource({
     type: DIALECT as 'postgres',
@@ -27,7 +27,7 @@ export const dataSource = new DataSource({
     // a synchronize-on-start in a serverless function races itself.
     synchronize: false,
     logging: false
-} as never);
+});
 
 let initializing: Promise<DataSource> | undefined;
 
@@ -37,7 +37,9 @@ export async function db(): Promise<DataSource> {
     }
     initializing ??= dataSource.initialize().then((source) => {
         // Without this, Run.find() has no connection to run against.
-        BaseEntities.forEach((entity) => entity.useDataSource(source));
+        BaseEntities.forEach((entity) => {
+            entity.useDataSource(source);
+        });
         return source;
     });
     return initializing;

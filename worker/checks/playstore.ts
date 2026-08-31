@@ -65,13 +65,13 @@ function fetchPinned(address: string, path: string): Promise<{ status: number; b
             },
             (res) => {
                 const chunks: Buffer[] = [];
-                res.on('data', (c) => chunks.push(c));
-                res.on('end', () =>
+                res.on('data', (chunk: Buffer) => chunks.push(chunk));
+                res.on('end', () => {
                     resolve({
                         status: res.statusCode ?? 0,
                         body: Buffer.concat(chunks).toString('utf8')
-                    })
-                );
+                    });
+                });
             }
         );
         req.on('timeout', () => req.destroy(new Error('timed out')));

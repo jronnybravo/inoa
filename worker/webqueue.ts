@@ -28,10 +28,10 @@
  */
 
 import { Candidate } from '../src/lib/server/entities/candidate.ts';
-import type { CheckKind, CheckStatus } from '../src/lib/types.ts';
+import { jitter, sleep } from './checks/shared.ts';
 import { checkWeb, hasSearchApi } from './checks/web.ts';
 import { computePassed, type Requirements } from './pipeline.ts';
-import { jitter, sleep } from './checks/shared.ts';
+import type { CheckKind, CheckStatus } from '../src/lib/types.ts';
 
 /** One a minute when we are driving a browser; seconds when Brave answers. */
 const BROWSER_INTERVAL_MS = Number(process.env.WEB_CHECK_INTERVAL_MS ?? 60_000);
@@ -77,7 +77,10 @@ export async function drainWebQueue(
     // spend the queue during the very window we are waiting out.
     let index = 0;
     while (index < pending.length) {
-        const candidate = pending[index]!;
+        const candidate = pending[index];
+        if (!candidate) {
+            break;
+        }
         const outcome = await checkWeb(candidate.name);
 
         if (outcome.status === 'unknown' && CHALLENGED.test(outcome.detail ?? '')) {

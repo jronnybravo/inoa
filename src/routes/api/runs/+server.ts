@@ -3,8 +3,8 @@ import { json, error } from '@sveltejs/kit';
 import { randomInt } from 'node:crypto';
 import { z } from 'zod';
 import { db } from '$lib/server/db';
-import { RunEntity } from '$lib/server/entities/run';
-import { VerificationEntity } from '$lib/server/entities/verification';
+import { Run } from '$lib/server/entities/run';
+import { Verification } from '$lib/server/entities/verification';
 import { sendVerificationCode } from '$lib/server/email';
 import { STRATEGIES } from '$lib/types';
 
@@ -33,26 +33,22 @@ export const POST: RequestHandler = async ({ request }) => {
   const parsed = Body.safeParse(await request.json());
   if (!parsed.success) error(400, parsed.error.issues[0]?.message ?? 'Invalid request');
 
-  const source = await db();
-  const runs = source.getRepository(RunEntity);
+  await db();
 
-  const run = await runs.save(
-    runs.create({
-      ...parsed.data,
-      targetCount: parsed.data.targetCount,
-      status: 'awaiting_verification',
-      emailVerified: false
-    })
-  );
+  const run = await Run.create({
+    ...parsed.data,
+    status: 'awaiting_verification' as const,
+    emailVerified: false
+  }).save();
 
   // Six digits, from a CSPRNG rather than Math.random.
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-  await source.getRepository(VerificationEntity).save({
+  await Verification.create({
     runId: run.id,
     email: run.email,
     code,
     expiresAt: new Date(Date.now() + 20 * 60_000)
-  });
+  }).save();
 
   const { sent, reason } = await sendVerificationCode(run.email, code);
   // The reason travels to the client: a run whose code never arrived is

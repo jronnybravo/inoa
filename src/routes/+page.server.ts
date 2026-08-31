@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { db } from '$lib/server/db';
-import { RunEntity } from '$lib/server/entities/run';
+import { Run } from '$lib/server/entities/run';
 
 /**
  * The page is one route in two states, keyed on ?requestid=. Without it you get
@@ -12,8 +12,8 @@ export const load: PageServerLoad = async ({ url }) => {
   if (!id) return { run: null };
 
   try {
-    const source = await db();
-    const run = await source.getRepository(RunEntity).findOneBy({ id });
+    await db();
+    const run = await Run.findOneBy({ id });
     if (!run) return { run: null, notFound: true };
     const { email, ...safe } = run;
     return { run: { ...safe, email: email.replace(/(.).*(@.*)/, '$1•••$2') } };

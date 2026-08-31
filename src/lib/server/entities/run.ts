@@ -1,4 +1,16 @@
-import { EntitySchema } from 'typeorm';
+/**
+ * ActiveRecord without decorators.
+ *
+ * The class extends BaseEntity so it carries its own queries — Run.find()
+ * rather than a repository passed around — and the mapping lives in an
+ * EntitySchema whose `target` is that class. Decorators would express the same
+ * thing more briefly, but they are not erasable syntax: Node's type stripping
+ * rejects them outright, and Vite emits them into the server bundle untouched,
+ * where they become a syntax error with no filename attached. This gets the
+ * ergonomics with none of that.
+ */
+
+import { BaseEntity, EntitySchema } from 'typeorm';
 import {
   JSON_TYPE,
   SHORT_TEXT,
@@ -7,33 +19,34 @@ import {
   UUID_LENGTH,
   UUID_TYPE
 } from '../dialect.ts';
+import type { RunStatus } from '../../types.ts';
 
-import type { CheckStatus, RunStatus } from '../../types.ts';
-
-export interface Run {
-  id: string;
-  brief: string;
-  strategies: string[] | null;
-  requireCom: boolean;
-  requireAppStore: boolean;
-  requirePlayStore: boolean;
-  requireGoogle: boolean;
-  email: string;
-  emailVerified: boolean;
-  status: RunStatus;
-  targetCount: number;
-  generatedCount: number;
-  checkedCount: number;
-  error: string | null;
-  /** Set when a worker takes ownership, so two workers cannot both run it. */
-  claimedAt: Date | null;
-  notifiedAt: Date | null;
-  createdAt: Date;
-  finishedAt: Date | null;
+export class Run extends BaseEntity {
+  id!: string;
+  brief!: string;
+  /** Null rather than defaulted: MySQL forbids a DEFAULT on a TEXT column. */
+  strategies!: string[] | null;
+  requireCom!: boolean;
+  requireAppStore!: boolean;
+  requirePlayStore!: boolean;
+  requireGoogle!: boolean;
+  email!: string;
+  emailVerified!: boolean;
+  status!: RunStatus;
+  targetCount!: number;
+  generatedCount!: number;
+  checkedCount!: number;
+  error!: string | null;
+  /** Set when a worker takes ownership, and renewed while it works. */
+  claimedAt!: Date | null;
+  notifiedAt!: Date | null;
+  createdAt!: Date;
+  finishedAt!: Date | null;
 }
 
-export const RunEntity = new EntitySchema<Run>({
+export const RunSchema = new EntitySchema<Run>({
   name: 'Run',
+  target: Run,
   tableName: 'runs',
   columns: {
     id: { type: UUID_TYPE, length: UUID_LENGTH, primary: true, generated: 'uuid' },
@@ -57,5 +70,3 @@ export const RunEntity = new EntitySchema<Run>({
   },
   indices: [{ name: 'idx_runs_status', columns: ['status'] }]
 });
-
-export type { CheckStatus };

@@ -1,13 +1,5 @@
-import { EntitySchema } from 'typeorm';
-import {
-  JSON_TYPE,
-  SHORT_TEXT,
-  SHORT_TEXT_LENGTH,
-  TIMESTAMP_TYPE,
-  UUID_LENGTH,
-  UUID_TYPE
-} from '../dialect.ts';
-
+import { BaseEntity, EntitySchema } from 'typeorm';
+import { SHORT_TEXT, SHORT_TEXT_LENGTH, TIMESTAMP_TYPE, UUID_LENGTH, UUID_TYPE } from '../dialect.ts';
 
 /**
  * A line of the worker's console, kept so the browser can watch a run.
@@ -16,16 +8,17 @@ import {
  * reachable from the page. Persisting each line is what lets someone who
  * queued a run from their phone see what it is actually doing.
  */
-export interface RunEvent {
-  id: string;
-  runId: string;
-  level: 'info' | 'warn' | 'error' | 'success';
-  message: string;
-  at: Date;
+export class RunEvent extends BaseEntity {
+  id!: string;
+  runId!: string;
+  level!: 'info' | 'warn' | 'error' | 'success';
+  message!: string;
+  at!: Date;
 }
 
-export const RunEventEntity = new EntitySchema<RunEvent>({
+export const RunEventSchema = new EntitySchema<RunEvent>({
   name: 'RunEvent',
+  target: RunEvent,
   tableName: 'run_events',
   columns: {
     id: { type: UUID_TYPE, length: UUID_LENGTH, primary: true, generated: 'uuid' },

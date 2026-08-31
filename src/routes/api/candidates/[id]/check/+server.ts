@@ -1,8 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
-import { RunEntity } from '$lib/server/entities/run';
-import { CandidateEntity } from '$lib/server/entities/candidate';
+import { Run } from '$lib/server/entities/run';
+import { Candidate } from '$lib/server/entities/candidate';
 import { CHECK_ORDER, type CheckKind } from '$lib/types';
 import { checkCandidate, computePassed } from '../../../../../../worker/pipeline.ts';
 
@@ -18,13 +18,11 @@ import { checkCandidate, computePassed } from '../../../../../../worker/pipeline
  * With no body it runs whatever the run requires. Pass a kind to run one.
  */
 export const POST: RequestHandler = async ({ params, request }) => {
-  const source = await db();
-  const candidates = source.getRepository(CandidateEntity);
-
-  const candidate = await candidates.findOneBy({ id: params.id });
+  await db();
+  const candidate = await Candidate.findOneBy({ id: params.id });
   if (!candidate) error(404, 'No such candidate');
 
-  const run = await source.getRepository(RunEntity).findOneBy({ id: candidate.runId });
+  const run = await Run.findOneBy({ id: candidate.runId });
   if (!run) error(404, 'No such run');
 
   const body = (await request.json().catch(() => ({}))) as { kind?: CheckKind };
@@ -53,7 +51,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
     google: result.statuses.google ?? candidate.google
   };
 
-  await candidates.update(candidate.id, {
+  await Candidate.update(candidate.id, {
     ...merged,
     detail: { ...candidate.detail, ...result.detail },
     passed: computePassed(merged, required),

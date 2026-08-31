@@ -13,21 +13,7 @@
  *     value everywhere, and TypeORM still generates it.
  */
 
-export type Dialect = 'postgres' | 'mysql' | 'mariadb' | 'sqlite' | 'better-sqlite3';
-
-/** Read the driver from DATABASE_URL, defaulting to Postgres. */
-export function dialectFrom(url: string | undefined): Dialect {
-  if (!url) return 'postgres';
-  const scheme = url.split(':')[0]?.toLowerCase() ?? '';
-  if (scheme.startsWith('mysql')) return 'mysql';
-  if (scheme.startsWith('mariadb')) return 'mariadb';
-  if (scheme.startsWith('sqlite') || url.endsWith('.sqlite') || url.endsWith('.db')) {
-    return 'better-sqlite3';
-  }
-  return 'postgres';
-}
-
-export const DIALECT = dialectFrom(process.env.DATABASE_URL);
+import { DIALECT } from './config.ts';
 
 const isPostgres = DIALECT === 'postgres';
 

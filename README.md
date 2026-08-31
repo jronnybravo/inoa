@@ -23,16 +23,35 @@ an idea captured away from your desk.
 
 ### Databases
 
-Any database TypeORM supports. The driver is read from `DATABASE_URL`:
+Any database TypeORM supports. Configure it either way:
 
-```
-postgresql://user:pass@host/brandy     # Postgres — install pg
-mysql://user:pass@host:3306/brandy     # MySQL / MariaDB — install mysql2
-sqlite:./brandy.sqlite                 # SQLite — install better-sqlite3
+```bash
+DB_TYPE=mysql            # postgres | mysql | mariadb | sqlite
+DB_HOST=localhost
+DB_PORT=3306
+DB_USERNAME=brandy
+DB_PASSWORD=secret
+DB_DATABASE=brandy
 ```
 
-Verified on Postgres 16, MySQL 8.4 and SQLite: schema creation, JSON columns,
-generated uuid keys, and the worker's claim query.
+```bash
+DATABASE_URL=postgresql://user:pass@host/brandy   # or just this
+```
+
+SQLite needs only `DB_TYPE=sqlite` and `DB_DATABASE=./brandy.sqlite`. Install
+the driver you use: `pg`, `mysql2`, or `better-sqlite3` (the last two are
+optional dependencies, so a Postgres deployment does not build SQLite).
+
+Verified on Postgres 16, MySQL 8.4 and SQLite — schema creation, JSON columns,
+generated uuid keys, the claim query, and two workers racing for one run.
+
+Entities are ActiveRecord style, so they carry their own queries:
+
+```ts
+const run = await Run.create({ brief, email }).save();
+const waiting = await Run.find({ where: { status: 'queued' } });
+await Candidate.update(id, { com: 'clear' });
+```
 
 Nothing is written in a dialect. Column types that differ — JSON, timestamps,
 uuid keys, and short strings that carry a default — resolve from the connection

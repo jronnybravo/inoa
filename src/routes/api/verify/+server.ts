@@ -1,8 +1,8 @@
 import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
-import { RunEntity } from '$lib/server/entities/run';
-import { VerificationEntity } from '$lib/server/entities/verification';
+import { Run } from '$lib/server/entities/run';
+import { Verification } from '$lib/server/entities/verification';
 
 const MAX_ATTEMPTS = 6;
 
@@ -10,9 +10,8 @@ export const POST: RequestHandler = async ({ request }) => {
   const { runId, code } = (await request.json()) as { runId?: string; code?: string };
   if (!runId || !code) error(400, 'Missing runId or code');
 
-  const source = await db();
-  const verifications = source.getRepository(VerificationEntity);
-  const record = await verifications.findOne({
+  await db();
+  const record = await Verification.findOne({
     where: { runId },
     order: { createdAt: 'DESC' }
   });
@@ -24,15 +23,13 @@ export const POST: RequestHandler = async ({ request }) => {
   if (record.attempts >= MAX_ATTEMPTS) error(429, 'Too many attempts; start a new request');
 
   if (record.code !== code.trim()) {
-    await verifications.update(record.id, { attempts: record.attempts + 1 });
+    await Verification.update(record.id, { attempts: record.attempts + 1 });
     error(400, 'That code is not right');
   }
 
-  await verifications.update(record.id, { consumedAt: new Date() });
+  await Verification.update(record.id, { consumedAt: new Date() });
   // Verification is what moves a run into the worker's queue.
-  await source
-    .getRepository(RunEntity)
-    .update(runId, { emailVerified: true, status: 'queued' });
+  await Run.update(runId, { emailVerified: true, status: 'queued' });
 
   return json({ ok: true });
 };

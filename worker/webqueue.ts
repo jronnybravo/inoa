@@ -27,8 +27,7 @@
  * and is paced in seconds, not minutes.
  */
 
-import type { Repository } from 'typeorm';
-import { CandidateEntity, type Candidate } from '../src/lib/server/entities/candidate.ts';
+import { Candidate } from '../src/lib/server/entities/candidate.ts';
 import type { CheckKind, CheckStatus } from '../src/lib/types.ts';
 import { checkWeb, hasSearchApi } from './checks/web.ts';
 import { computePassed, type Requirements } from './pipeline.ts';
@@ -59,7 +58,7 @@ export interface QueueProgress {
  * gave up are reported as 'unknown' rather than silently passing.
  */
 export async function drainWebQueue(
-  candidates: Repository<Candidate>,
+  candidates: typeof Candidate,
   runId: string,
   required: Requirements,
   onProgress?: QueueProgress

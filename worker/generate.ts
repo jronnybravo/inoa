@@ -126,11 +126,48 @@ async function generateBatch(
 }
 
 /**
- * One batch, whose failure is reported rather than swallowed.
+ * What actually went wrong, rather than the last thing printed.
  *
- * An earlier version returned an empty array on error. Three batches failed in
- * a row, generation stopped at 234 names of 1000, and nothing anywhere said
- * why — the same silence this whole tool exists to eliminate.
+ * The CLI writes advisory notices to stderr — a warning about stdin among them
+ * — so taking the final line reported the notice and hid the failure. Prefer a
+ * line that reads like an error, and keep the exit code either way.
+ */
+/**
+ * A usage limit is not a transient hiccup and should not be described as one.
+ *
+ * It presents as every batch failing at once, which is indistinguishable from
+ * an outage unless you read the message. It also resets on a clock rather than
+ * on a retry, so a short backoff cannot help — the run has to say so and stop.
+ */
+function isUsageLimit(error: unknown): boolean {
+  const e = error as Error & { stderr?: string; stdout?: string };
+  return /usage limit|rate limit|limit reached|too many requests|429|quota exceeded/i.test(
+    `${e.stderr ?? ''} ${e.stdout ?? ''} ${e.message ?? ''}`
+  );
+}
+
+function describeFailure(error: unknown): string {
+  const e = error as Error & { stderr?: string; stdout?: string; code?: number };
+  const lines = `${e.stderr ?? ''}\n${e.stdout ?? ''}`
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .filter((l) => !/^Warning: no stdin data received/.test(l));
+  const meaningful = lines.find((l) => /error|limit|denied|refus|unauth|quota|overload/i.test(l));
+  return `${meaningful ?? lines.at(-1) ?? e.message} (exit ${e.code ?? '?'})`;
+}
+
+/**
+ * One batch, retried before it is given up on.
+ *
+ * Batch failures are usually transient — a rate limit, a hiccup under
+ * concurrency. An earlier version returned an empty array on the first error
+ * and counted it as exhaustion, so a passing squall stopped a whole run: ten
+ * batches failed at once and generation produced nothing at all.
+ *
+ * Distinguishing the two cases matters. A batch that FAILED should be tried
+ * again; a batch that succeeded and returned only duplicates means the brief is
+ * exhausted, and only that should end the run.
  */
 async function settledBatch(
   brief: string,
@@ -138,14 +175,31 @@ async function settledBatch(
   count: number,
   avoid: string[],
   onProblem?: (reason: string) => Promise<void> | void
-): Promise<GeneratedName[]> {
-  try {
-    return await generateBatch(brief, strategies, count, avoid);
-  } catch (error) {
-    const raw = (error as Error & { stderr?: string }).stderr ?? (error as Error).message;
-    await onProblem?.(raw.split('\n').filter(Boolean).slice(-1)[0] ?? 'unknown error');
-    return [];
+): Promise<{ names: GeneratedName[]; failed: boolean }> {
+  const ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    try {
+      return { names: await generateBatch(brief, strategies, count, avoid), failed: false };
+    } catch (error) {
+      const reason = describeFailure(error);
+
+      // Retrying a usage limit only spends the next window's allowance.
+      if (isUsageLimit(error)) {
+        await onProblem?.(
+          `Claude usage limit reached — generation cannot continue until it resets. ${reason}`
+        );
+        return { names: [], failed: true };
+      }
+
+      if (attempt === ATTEMPTS) {
+        await onProblem?.(`batch failed after ${ATTEMPTS} attempts — ${reason}`);
+        return { names: [], failed: true };
+      }
+      await onProblem?.(`batch failed, retrying in ${attempt * 15}s — ${reason}`);
+      await new Promise((r) => setTimeout(r, attempt * 15_000));
+    }
   }
+  return { names: [], failed: true };
 }
 
 export async function generateNames(
@@ -164,9 +218,13 @@ export async function generateNames(
   const seen = new Set<string>();
   const all: GeneratedName[] = [];
 
-  /** Consecutive finished batches that contributed nothing new. */
+  /** Consecutive batches that SUCCEEDED but contributed nothing new. */
   let barren = 0;
   const GIVE_UP_AFTER = 6;
+
+  /** Consecutive batches that could not run at all, even after retries. */
+  let failures = 0;
+  const ABANDON_AFTER = 4;
 
   let nextId = 0;
   const pool = new Map<number, Promise<{ id: number; names: GeneratedName[] }>>();
@@ -179,11 +237,17 @@ export async function generateNames(
     const avoid = [...seen];
     pool.set(
       id,
-      settledBatch(brief, strategies, want, avoid, onProblem).then((names) => ({ id, names }))
+      settledBatch(brief, strategies, want, avoid, onProblem).then((r) => ({ id, ...r }))
     );
   };
 
-  const absorb = async (names: GeneratedName[]) => {
+  const absorb = async (names: GeneratedName[], failed: boolean) => {
+    if (failed) {
+      failures++;
+      return;
+    }
+    failures = 0;
+
     const fresh: GeneratedName[] = [];
     for (const candidate of names) {
       const key = candidate.name.toLowerCase();
@@ -198,18 +262,18 @@ export async function generateNames(
     }
   };
 
-  while (all.length < target && barren < GIVE_UP_AFTER) {
+  while (all.length < target && barren < GIVE_UP_AFTER && failures < ABANDON_AFTER) {
     while (pool.size < CONCURRENCY && all.length + pool.size * BATCH_SIZE < target + BATCH_SIZE) {
       spawn();
     }
     if (pool.size === 0) break;
-    const { id, names } = await Promise.race(pool.values());
+    const { id, names, failed } = await Promise.race(pool.values());
     pool.delete(id);
-    await absorb(names);
+    await absorb(names, failed);
   }
 
   // Whatever is still in flight has already been paid for; keep its output.
-  for (const settled of await Promise.all(pool.values())) await absorb(settled.names);
+  for (const settled of await Promise.all(pool.values())) await absorb(settled.names, settled.failed);
 
   /**
    * A final, sequential attempt at the shortfall.
@@ -218,10 +282,11 @@ export async function generateNames(
    * little short once duplicates are removed. This last call knows every name
    * produced and asks only for what is missing.
    */
-  if (all.length < target && barren < GIVE_UP_AFTER) {
+  if (all.length < target && barren < GIVE_UP_AFTER && failures < ABANDON_AFTER) {
     const shortfall = target - all.length;
     await onProblem?.(`Topping up the last ${shortfall}`);
-    await absorb(await settledBatch(brief, strategies, shortfall, [...seen], onProblem));
+    const top = await settledBatch(brief, strategies, shortfall, [...seen], onProblem);
+    await absorb(top.names, top.failed);
   }
 
   return all.slice(0, target);

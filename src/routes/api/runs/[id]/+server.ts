@@ -68,6 +68,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
             name: c.name,
             rationale: c.rationale,
             strategy: c.strategy,
+            distinctiveness: c.distinctiveness,
+            distinctivenessWhy: c.distinctivenessWhy,
             com: c.com,
             appStore: c.appStore,
             playStore: c.playStore,

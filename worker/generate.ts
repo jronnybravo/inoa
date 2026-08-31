@@ -25,7 +25,12 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { STRATEGIES, type StrategyId } from '../src/lib/types.ts';
+import {
+    DISTINCTIVENESS,
+    STRATEGIES,
+    type Distinctiveness,
+    type StrategyId
+} from '../src/lib/types.ts';
 
 const run = promisify(execFile);
 
@@ -63,6 +68,8 @@ export interface GeneratedName {
     rationale: string;
     /** The approach this batch was asked for. */
     strategy: StrategyId;
+    /** The model's reading of where this sits on the Abercrombie spectrum. */
+    distinctiveness: Distinctiveness | null;
 }
 
 function promptFor(brief: string, strategy: StrategyId, count: number, avoid: string[]): string {
@@ -87,12 +94,23 @@ function promptFor(brief: string, strategy: StrategyId, count: number, avoid: st
             ? `- Do not repeat any of these already-generated names: ${avoid.slice(-400).join(', ')}`
             : '',
         '',
-        'Output format: one name per line, then a tab, then a six-word reason.',
+        'For each name, also say where it sits on the trademark distinctiveness',
+        'spectrum FOR THIS BRIEF — one of:',
+        '  generic      the category naming itself',
+        '  descriptive  describes what the product does',
+        '  suggestive   hints at the category without describing it (Netflix, Slack)',
+        '  arbitrary    a real word with no connection to the category (Apple)',
+        '  fanciful     an invented word (Xerox, Kodak)',
+        '',
+        'Output format: one name per line, as three tab-separated fields:',
+        'name<TAB>distinctiveness<TAB>six-word reason',
         'No numbering, no preamble, no commentary, no blank lines.'
     ]
         .filter(Boolean)
         .join('\n');
 }
+
+const CATEGORIES = new Set(DISTINCTIVENESS.map((d) => d.id as string));
 
 function parse(output: string, strategy: StrategyId): GeneratedName[] {
     const out: GeneratedName[] = [];
@@ -107,7 +125,19 @@ function parse(output: string, strategy: StrategyId): GeneratedName[] {
         if (!/^[A-Za-z]{3,16}$/.test(name)) {
             continue;
         }
-        out.push({ name, rationale: rest.join(' ').trim().slice(0, 160), strategy });
+
+        // The category is its own field, but a model that skips it should cost
+        // us the classification, not the name.
+        const maybe = (rest[0] ?? '').trim().toLowerCase();
+        const classified = CATEGORIES.has(maybe);
+        const reason = (classified ? rest.slice(1) : rest).join(' ').trim();
+
+        out.push({
+            name,
+            rationale: reason.slice(0, 160),
+            strategy,
+            distinctiveness: classified ? (maybe as Distinctiveness) : null
+        });
     }
     return out;
 }

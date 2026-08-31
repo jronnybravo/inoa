@@ -24,6 +24,7 @@ import { CHECK_LABEL } from '../src/lib/types.ts';
 import { priorVerdict } from './checks/reuse.ts';
 import { sleep } from './checks/shared.ts';
 import { closeBrowser } from './checks/web.ts';
+import { briefVocabulary, classifyLocally } from './distinctiveness.ts';
 import { generateNames } from './generate.ts';
 import { makeLogger } from './log.ts';
 import { checkCandidate, fastChecks } from './pipeline.ts';
@@ -146,6 +147,9 @@ async function processRun(run: Run): Promise<void> {
         let generationDone = resuming;
         let stored_count = leftover;
 
+        // The brief's own words, for spotting a name that merely repeats them.
+        const vocabulary = briefVocabulary(run.brief);
+
         if (resuming) {
             await log(`Resuming — ${leftover} names already generated`, 'success');
         } else {
@@ -169,13 +173,28 @@ async function processRun(run: Run): Promise<void> {
                   async (fresh, total) => {
                       if (fresh.length > 0) {
                           await Candidate.insert(
-                              fresh.map((g, i) => ({
-                                  runId: run.id,
-                                  name: g.name,
-                                  rationale: g.rationale,
-                                  strategy: g.strategy,
-                                  position: stored_count + i
-                              }))
+                              fresh.map((g, i) => {
+                                  /*
+                                   * The dictionary wins where it is certain.
+                                   *
+                                   * An invented word is fanciful whatever
+                                   * anyone thinks, and a name assembled from
+                                   * the brief's own vocabulary is describing
+                                   * the category. The model is asked only for
+                                   * the judgement that needs meaning:
+                                   * suggestive against arbitrary.
+                                   */
+                                  const local = classifyLocally(g.name, vocabulary);
+                                  return {
+                                      runId: run.id,
+                                      name: g.name,
+                                      rationale: g.rationale,
+                                      strategy: g.strategy,
+                                      distinctiveness: local?.distinctiveness ?? g.distinctiveness,
+                                      distinctivenessWhy: local?.why ?? null,
+                                      position: stored_count + i
+                                  };
+                              })
                           );
                           stored_count += fresh.length;
                       }

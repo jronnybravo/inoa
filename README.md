@@ -131,6 +131,28 @@ The third one is not decoration. A boolean cannot tell "it is free" apart from
 broken check disguises itself as a working one — which is exactly what happened
 in the tool this replaces, silently, across 500 names.
 
+## Trademark strength
+
+Every name is placed on the Abercrombie spectrum — the taxonomy US trademark
+law uses for distinctiveness, from _Abercrombie & Fitch v. Hunting World_
+(1976). Weakest first: **generic**, **descriptive**, **suggestive**,
+**arbitrary**, **fanciful**.
+
+It answers a different question from the availability checks. Those say whether
+a name is taken; this says whether it could be owned, and the two come apart. A
+name can be free on the domain, both stores and the web and still be too
+descriptive to register or defend.
+
+Two ends are decided here, with no model and no API call. A name with no
+dictionary root is invented, so it is fanciful whatever anyone thinks. A name
+built from the brief's own vocabulary is describing the category — `Namekeep`
+for a naming tool is descriptive however it is dressed up. The middle,
+suggestive against arbitrary, turns on meaning, so the model supplies it in the
+same response that generates the name. No extra call, no extra credit.
+
+This is an indication, not legal advice. The classification is a judgement, and
+where it can be proved rather than judged the tooltip says so.
+
 ## Reusing verdicts
 
 The same name comes up across runs, and re-checking one costs an Apple call, a

@@ -15,6 +15,7 @@
  */
 
 import 'dotenv/config';
+import { LessThan } from 'typeorm';
 import { db } from '../src/lib/server/db.ts';
 import { RunEntity, type Run } from '../src/lib/server/entities/run.ts';
 import { CandidateEntity } from '../src/lib/server/entities/candidate.ts';
@@ -52,27 +53,46 @@ const HEARTBEAT_MS = 30_000;
 const LEASE_SECONDS = 150;
 const APP_URL = process.env.PUBLIC_APP_URL ?? 'http://localhost:5173';
 
+/**
+ * Take the next run that needs a worker.
+ *
+ * Deliberately no row locking. 'FOR UPDATE SKIP LOCKED' is the neat way to do
+ * this, but SQLite has no such thing and RETURNING is not portable either, so
+ * a query written that way limits where this can be deployed.
+ *
+ * Instead the claim is optimistic: find a candidate, then update it only if it
+ * still looks the way it did when we read it. Losing that race means another
+ * worker took it, which costs one wasted statement and a retry. The cutoff is
+ * computed here rather than in SQL, because every database spells date
+ * arithmetic differently.
+ */
 async function claimNext(): Promise<Run | null> {
   const source = await db();
-  // Claim atomically: two workers on one run would double every API call.
-  const claimed = await source
-    .createQueryBuilder()
-    .update(RunEntity)
-    .set({ status: 'generating', claimedAt: new Date() })
-    .where(
-      `id = (SELECT id FROM runs
-             WHERE "emailVerified" = true
-               AND (
-                 status = 'queued'
-                 -- Or its worker stopped renewing the lease and is gone.
-                 OR (status IN ('generating', 'checking')
-                     AND "claimedAt" < now() - interval '${LEASE_SECONDS} seconds')
-               )
-             ORDER BY "createdAt" LIMIT 1 FOR UPDATE SKIP LOCKED)`
-    )
-    .returning('*')
-    .execute();
-  return (claimed.raw?.[0] as Run) ?? null;
+  const runs = source.getRepository(RunEntity);
+  const cutoff = new Date(Date.now() - LEASE_SECONDS * 1000);
+
+  const waiting = await runs.find({
+    where: [
+      { emailVerified: true, status: 'queued' },
+      // Or a worker took it and stopped renewing the lease.
+      { emailVerified: true, status: 'generating', claimedAt: LessThan(cutoff) },
+      { emailVerified: true, status: 'checking', claimedAt: LessThan(cutoff) }
+    ],
+    order: { createdAt: 'ASC' },
+    take: 5
+  });
+
+  for (const run of waiting) {
+    const taken = await runs.update(
+      // The same conditions again: if they no longer hold, somebody else won.
+      run.status === 'queued'
+        ? { id: run.id, status: 'queued' }
+        : { id: run.id, status: run.status, claimedAt: LessThan(cutoff) },
+      { status: 'generating', claimedAt: new Date() }
+    );
+    if (taken.affected === 1) return { ...run, status: 'generating' };
+  }
+  return null;
 }
 
 async function processRun(run: Run): Promise<void> {
@@ -141,7 +161,7 @@ async function processRun(run: Run): Promise<void> {
       )
     : generateNames(
     run.brief,
-    run.strategies as never,
+    (run.strategies ?? ['compound']) as never,
     run.targetCount,
     async (fresh, total) => {
       if (fresh.length > 0) {

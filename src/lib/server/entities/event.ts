@@ -1,4 +1,13 @@
 import { EntitySchema } from 'typeorm';
+import {
+  JSON_TYPE,
+  SHORT_TEXT,
+  SHORT_TEXT_LENGTH,
+  TIMESTAMP_TYPE,
+  UUID_LENGTH,
+  UUID_TYPE
+} from '../dialect.ts';
+
 
 /**
  * A line of the worker's console, kept so the browser can watch a run.
@@ -19,11 +28,11 @@ export const RunEventEntity = new EntitySchema<RunEvent>({
   name: 'RunEvent',
   tableName: 'run_events',
   columns: {
-    id: { type: 'uuid', primary: true, generated: 'uuid' },
-    runId: { type: 'uuid' },
-    level: { type: 'text', default: 'info' },
+    id: { type: UUID_TYPE, length: UUID_LENGTH, primary: true, generated: 'uuid' },
+    runId: { type: UUID_TYPE, length: UUID_LENGTH },
+    level: { type: SHORT_TEXT, length: SHORT_TEXT_LENGTH, default: 'info' },
     message: { type: 'text' },
-    at: { type: 'timestamptz', createDate: true }
+    at: { type: TIMESTAMP_TYPE, createDate: true }
   },
   indices: [{ name: 'idx_run_events_run', columns: ['runId', 'at'] }]
 });

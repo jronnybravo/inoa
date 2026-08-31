@@ -431,7 +431,7 @@
                   dark:border-stone-800 dark:bg-stone-900">
     <p class="text-sm leading-relaxed text-stone-800 dark:text-stone-200">{run.brief}</p>
     <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-stone-500">
-      {#each run.strategies as s}
+      {#each run.strategies ?? [] as s}
         <span class="rounded bg-stone-100 px-1.5 py-0.5 dark:bg-stone-800">
           {STRATEGIES.find((x) => x.id === s)?.label ?? s}
         </span>

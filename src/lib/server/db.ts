@@ -17,18 +17,30 @@ import { RunEntity } from './entities/run.ts';
 import { CandidateEntity } from './entities/candidate.ts';
 import { VerificationEntity } from './entities/verification.ts';
 import { RunEventEntity } from './entities/event.ts';
+import { DIALECT } from './dialect.ts';
 
 const url = process.env.DATABASE_URL;
+const sqlite = DIALECT === 'better-sqlite3' || DIALECT === 'sqlite';
 
+/**
+ * The driver comes from the connection string, so a deployment runs on
+ * whatever database it already has. SQLite takes a file path rather than a
+ * URL, which is the one shape that does not fit the others.
+ */
 export const dataSource = new DataSource({
-  type: 'postgres',
-  url,
+  type: DIALECT as 'postgres',
+  ...(sqlite
+    ? { database: (url ?? 'brandy.sqlite').replace(/^sqlite:(\/\/)?/, '') }
+    : { url }),
   entities: [RunEntity, CandidateEntity, VerificationEntity, RunEventEntity],
   // Schema changes go through `npm run db:sync`, never implicitly on boot:
   // a synchronize-on-start in a serverless function races itself.
   synchronize: false,
   logging: false,
-  ssl: url?.includes('localhost') ? false : { rejectUnauthorized: false }
+  // SSL is a networked-database concern; a local file has no transport.
+  ...(sqlite || url?.includes('localhost')
+    ? {}
+    : { ssl: { rejectUnauthorized: false } })
 });
 
 let initializing: Promise<DataSource> | undefined;

@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { json, error } from '@sveltejs/kit';
+import { IsNull, Not } from 'typeorm';
 import { z } from 'zod';
 import { db } from '$lib/server/db';
 import { sendVerificationCode } from '$lib/server/email';
@@ -37,6 +38,27 @@ export const POST: RequestHandler = async ({ request }) => {
 
     await db();
 
+    /*
+     * An address that has already proved itself does not prove itself again.
+     *
+     * The code exists so nobody can queue work against somebody else's inbox.
+     * Once an address has consumed one, that is established, and asking again
+     * on every run is a chore that protects nothing.
+     */
+    const proven = await Verification.findOne({
+        where: { email: parsed.data.email, consumedAt: Not(IsNull()) },
+        order: { consumedAt: 'DESC' }
+    });
+
+    if (proven) {
+        const run = await Run.create({
+            ...parsed.data,
+            status: 'queued' as const,
+            emailVerified: true
+        }).save();
+        return json({ id: run.id, verified: true });
+    }
+
     const run = await Run.create({
         ...parsed.data,
         status: 'awaiting_verification' as const,
@@ -55,5 +77,5 @@ export const POST: RequestHandler = async ({ request }) => {
     const { sent, reason } = await sendVerificationCode(run.email, code);
     // The reason travels to the client: a run whose code never arrived is
     // otherwise indistinguishable from one the user simply has not opened yet.
-    return json({ id: run.id, emailSent: sent, emailProblem: reason });
+    return json({ id: run.id, verified: false, emailSent: sent, emailProblem: reason });
 };

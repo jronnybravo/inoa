@@ -41,8 +41,28 @@
    * required check has answered.
    */
   let onlyPassed = $state(false);
-  /** Empty means every approach; otherwise only these. */
-  let strategyFilter = $state<string[]>([]);
+  /**
+   * One filter per column, each empty meaning "any".
+   *
+   * Kept beside the headings rather than above the table: the question a
+   * person has is always about a column ("which of these are free on the
+   * .com?"), so the control belongs where the answer is.
+   */
+  let nameFilter = $state('');
+  let approachFilter = $state('');
+  let checkFilter = $state<Record<string, string>>({
+    com: '', appStore: '', playStore: '', google: ''
+  });
+
+  const anyFilter = $derived(
+    Boolean(nameFilter || approachFilter || Object.values(checkFilter).some(Boolean))
+  );
+
+  function clearFilters() {
+    nameFilter = '';
+    approachFilter = '';
+    checkFilter = { com: '', appStore: '', playStore: '', google: '' };
+  }
   let selected = $state<Record<string, boolean>>({});
   let consoleOpen = $state(true);
   let copied = $state(false);
@@ -173,6 +193,10 @@
     short: 'Abstract'
   };
 
+  /** The hairline under a sticky header, which a border would scroll away from. */
+  const HEADER_EDGE =
+    'shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)] dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]';
+
   const LEVEL: Record<string, string> = {
     info: 'text-stone-600 dark:text-stone-400',
     success: 'text-emerald-700 dark:text-emerald-400',
@@ -185,9 +209,11 @@
    * each approach have to reflect the whole run, not the current filter.
    */
   const shown = $derived(
-    strategyFilter.length === 0
-      ? candidates
-      : candidates.filter((c) => strategyFilter.includes(c.strategy))
+    candidates.filter((c) => {
+      if (nameFilter && !c.name.toLowerCase().includes(nameFilter.toLowerCase())) return false;
+      if (approachFilter && c.strategy !== approachFilter) return false;
+      return CHECK_ORDER.every((k) => !checkFilter[k] || c[k] === checkFilter[k]);
+    })
   );
 
   /** Whole-run tallies from the server, so filtering does not distort them. */
@@ -505,7 +531,7 @@
   {/if}
 
   <!-- Table and console side by side: you read results while watching progress. -->
-  <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_27rem]">
+  <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_23rem]">
     <section class="min-w-0">
       <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
         <label class="flex cursor-pointer items-center gap-2 text-sm">
@@ -519,35 +545,14 @@
         </button>
       </div>
 
-      {#if byStrategy.length > 1 || unattributed > 0}
-        <div class="mb-2 flex flex-wrap items-center gap-1.5">
-          <button onclick={() => (strategyFilter = [])}
-            class="rounded-lg border px-2.5 py-1 text-xs transition-colors duration-150
-                   {strategyFilter.length === 0
-                     ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
-                     : 'border-stone-300 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'}">
-            All {totalNames}
-          </button>
+      {#if byStrategy.length > 0}
+        <div class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
+          <span>{totalNames} names</span>
           {#each byStrategy as s}
-            <button
-              onclick={() => {
-                strategyFilter = strategyFilter.includes(s.id)
-                  ? strategyFilter.filter((x) => x !== s.id)
-                  : [...strategyFilter, s.id];
-              }}
-              title="{s.passed} of {s.total} cleared every requirement"
-              class="rounded-lg border px-2.5 py-1 text-xs transition-colors duration-150
-                     {strategyFilter.includes(s.id)
-                       ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
-                       : 'border-stone-300 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'}">
-              {s.label}
-              <span class="opacity-60">{s.passed}/{s.total}</span>
-            </button>
+            <span>{s.label} <b class="font-medium">{s.passed}</b>/{s.total}</span>
           {/each}
           {#if unattributed > 0}
-            <span class="text-xs text-stone-500">
-              {unattributed} from before approaches were recorded
-            </span>
+            <span>{unattributed} without a recorded approach</span>
           {/if}
         </div>
       {/if}
@@ -588,31 +593,61 @@
           -->
           <colgroup>
             <col style="width: 2.25rem" />
-            <col style="width: 11rem" />
-            <col style="width: 6.5rem" />
-            <col style="width: 5.25rem" />
-            <col style="width: 5.25rem" />
-            <col style="width: 5.25rem" />
-            <col style="width: 5.25rem" />
+            <col style="width: 10rem" />
+            <col style="width: 7.5rem" />
+            <col style="width: 6.75rem" />
+            <col style="width: 6.75rem" />
+            <col style="width: 6.75rem" />
+            <col style="width: 6.75rem" />
             <col />
           </colgroup>
           <thead class="sticky top-0 z-10 text-left">
             <tr class="bg-stone-100 dark:bg-stone-900">
-              <th class="w-9 px-3 py-2 shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
-                         dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]"></th>
-              <th class="px-3 py-2 font-medium shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
-                         dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]">Name</th>
-              <th class="px-3 py-2 font-medium whitespace-nowrap
-                         shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
-                         dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]">Approach</th>
+              <th class="px-3 pt-2 pb-2 align-top {HEADER_EDGE}"></th>
+
+              <th class="px-3 pt-2 pb-2 text-left align-top font-medium {HEADER_EDGE}">
+                Name
+                <input bind:value={nameFilter} type="search" placeholder="contains…"
+                  aria-label="Filter names"
+                  class="mt-1 w-full rounded border border-stone-300 bg-white px-1.5 py-0.5
+                         text-xs font-normal placeholder:text-stone-400 focus:border-stone-500
+                         focus:outline-none dark:border-stone-700 dark:bg-stone-950
+                         dark:placeholder:text-stone-600" />
+              </th>
+
+              <th class="px-3 pt-2 pb-2 text-left align-top font-medium whitespace-nowrap {HEADER_EDGE}">
+                Approach
+                <select bind:value={approachFilter} aria-label="Filter by approach"
+                  class="mt-1 w-full rounded border border-stone-300 bg-white px-1 py-0.5
+                         text-xs font-normal focus:border-stone-500 focus:outline-none
+                         dark:border-stone-700 dark:bg-stone-950">
+                  <option value="">Any</option>
+                  {#each byStrategy as s}<option value={s.id}>{STRATEGY_LABEL[s.id] ?? s.label}</option>{/each}
+                </select>
+              </th>
+
               {#each CHECK_ORDER as k}
-                <th class="px-3 py-2 font-medium whitespace-nowrap
-                           shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
-                           dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]">{CHECK_LABEL[k]}</th>
+                <th class="px-3 pt-2 pb-2 text-left align-top font-medium whitespace-nowrap {HEADER_EDGE}">
+                  {CHECK_LABEL[k]}
+                  <select bind:value={checkFilter[k]} aria-label="Filter by {CHECK_LABEL[k]}"
+                    class="mt-1 w-full rounded border border-stone-300 bg-white px-1 py-0.5
+                           text-xs font-normal focus:border-stone-500 focus:outline-none
+                           dark:border-stone-700 dark:bg-stone-950">
+                    <option value="">Any</option>
+                    {#each LEGEND as l}<option value={l.status}>{CELL[l.status].text}</option>{/each}
+                  </select>
+                </th>
               {/each}
-              <th class="px-3 py-2 text-right font-medium whitespace-nowrap
-                         shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
-                         dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]">Action</th>
+
+              <th class="px-3 pt-2 pb-2 text-right align-top font-medium whitespace-nowrap {HEADER_EDGE}">
+                Action
+                {#if anyFilter}
+                  <button onclick={clearFilters}
+                    class="mt-1 block w-full rounded border border-stone-300 px-1 py-0.5 text-xs
+                           font-normal transition-colors duration-100 hover:bg-stone-200
+                           dark:border-stone-700 dark:hover:bg-stone-800">Clear filters</button>
+                {/if}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -688,6 +723,8 @@
                 {:else if run.status === 'generating'}
                   Generating {run.targetCount} names. They appear here in batches as
                   they are written - the first arrives in a few minutes.
+                {:else if anyFilter}
+                  No name matches these filters.
                 {:else if onlyPassed}
                   Nothing has cleared every requirement yet.
                   Untick “only names that passed” to watch the checks land.

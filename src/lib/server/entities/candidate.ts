@@ -16,11 +16,6 @@ export class Candidate extends BaseEntity {
     rationale!: string | null;
     /** Which naming approach produced it. Null for runs made before this existed. */
     strategy!: string | null;
-    /** Where the name sits on the Abercrombie spectrum, and why. */
-    distinctiveness!: string | null;
-    distinctivenessWhy!: string | null;
-    /** Which of the SMILE qualities this name was judged to have. */
-    smile!: string[] | null;
     position!: number;
     com!: CheckStatus;
     appStore!: CheckStatus;
@@ -47,9 +42,6 @@ export const CandidateSchema = new EntitySchema<Candidate>({
         name: { type: 'text' },
         rationale: { type: 'text', nullable: true },
         strategy: { ...short, nullable: true },
-        distinctiveness: { ...short, nullable: true },
-        distinctivenessWhy: { type: 'text', nullable: true },
-        smile: { type: JSON_TYPE, nullable: true },
         position: { type: 'int', default: 0 },
         com: { ...short, default: 'pending' },
         appStore: { ...short, default: 'pending' },

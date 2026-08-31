@@ -25,14 +25,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import {
-    DISTINCTIVENESS,
-    SMILE,
-    STRATEGIES,
-    type Distinctiveness,
-    type SmileQuality,
-    type StrategyId
-} from '../src/lib/types.ts';
+import { STRATEGIES, type StrategyId } from '../src/lib/types.ts';
 
 const run = promisify(execFile);
 
@@ -70,10 +63,6 @@ export interface GeneratedName {
     rationale: string;
     /** The approach this batch was asked for. */
     strategy: StrategyId;
-    /** The model's reading of where this sits on the Abercrombie spectrum. */
-    distinctiveness: Distinctiveness | null;
-    /** Which SMILE qualities it was judged to have. */
-    smile: SmileQuality[];
 }
 
 function promptFor(brief: string, strategy: StrategyId, count: number, avoid: string[]): string {
@@ -98,32 +87,12 @@ function promptFor(brief: string, strategy: StrategyId, count: number, avoid: st
             ? `- Do not repeat any of these already-generated names: ${avoid.slice(-400).join(', ')}`
             : '',
         '',
-        'For each name, also say where it sits on the trademark distinctiveness',
-        'spectrum FOR THIS BRIEF — one of:',
-        '  generic      the category naming itself',
-        '  descriptive  describes what the product does',
-        '  suggestive   hints at the category without describing it (Netflix, Slack)',
-        '  arbitrary    a real word with no connection to the category (Apple)',
-        '  fanciful     an invented word (Xerox, Kodak)',
-        '',
-        'Then say which of these qualities the name genuinely has. Give the',
-        'letters with no separator, or - for none. Be strict: most names have',
-        'one or two, and claiming all five for everything makes the field useless.',
-        '  S  evokes the brand experience',
-        '  M  memorable after one hearing',
-        '  I  creates a picture in the mind',
-        '  L  gives a theme a brand could build on',
-        '  E  carries feeling',
-        '',
-        'Output format: one name per line, as four tab-separated fields:',
-        'name<TAB>distinctiveness<TAB>SMILE letters<TAB>six-word reason',
+        'Output format: one name per line, then a tab, then a six-word reason.',
         'No numbering, no preamble, no commentary, no blank lines.'
     ]
         .filter(Boolean)
         .join('\n');
 }
-
-const CATEGORIES = new Set(DISTINCTIVENESS.map((d) => d.id as string));
 
 function parse(output: string, strategy: StrategyId): GeneratedName[] {
     const out: GeneratedName[] = [];
@@ -139,34 +108,10 @@ function parse(output: string, strategy: StrategyId): GeneratedName[] {
             continue;
         }
 
-        /*
-         * Each judgement is its own field, and a model that omits one should
-         * cost us that judgement rather than the name. Fields are therefore
-         * recognised by their content, not their position.
-         */
-        let cursor = 0;
-        const maybe = (rest[cursor] ?? '').trim().toLowerCase();
-        const classified = CATEGORIES.has(maybe);
-        if (classified) {
-            cursor++;
-        }
-
-        const letters = (rest[cursor] ?? '').trim().toUpperCase();
-        const isSmileField = /^(-|[SMILE]{1,5})$/.test(letters);
-        if (isSmileField) {
-            cursor++;
-        }
-
-        const smile = isSmileField
-            ? SMILE.map((q) => q.id).filter((id) => letters.includes(id))
-            : [];
-
         out.push({
             name,
-            rationale: rest.slice(cursor).join(' ').trim().slice(0, 160),
-            strategy,
-            distinctiveness: classified ? (maybe as Distinctiveness) : null,
-            smile
+            rationale: rest.join(' ').trim().slice(0, 160),
+            strategy
         });
     }
     return out;

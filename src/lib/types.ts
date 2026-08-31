@@ -57,59 +57,6 @@ export const STRATEGIES = [
 export type StrategyId = (typeof STRATEGIES)[number]['id'];
 
 /**
- * Trademark distinctiveness, after Abercrombie & Fitch v. Hunting World (1976).
- *
- * The availability checks answer whether a name is taken. This answers whether
- * it could be owned, and the two come apart: a name can be free on the domain,
- * both stores and the web and still be too descriptive to register or defend.
- *
- * Listed weakest first, which is also the order a shortlist should be read in.
- */
-export const DISTINCTIVENESS = [
-    { id: 'generic', label: 'Generic', hint: 'the category naming itself — never registrable' },
-    {
-        id: 'descriptive',
-        label: 'Descriptive',
-        hint: 'describes what it does — weak until well known'
-    },
-    { id: 'suggestive', label: 'Suggestive', hint: 'hints at the category — Netflix, Slack' },
-    { id: 'arbitrary', label: 'Arbitrary', hint: 'a real word, unrelated — Apple for computers' },
-    { id: 'fanciful', label: 'Fanciful', hint: 'invented outright — Xerox, Kodak' }
-] as const;
-
-export type Distinctiveness = (typeof DISTINCTIVENESS)[number]['id'];
-
-/**
- * The SMILE checklist, from Alexandra Watkins' Hello, My Name Is Awesome.
- *
- * Qualities a name should have, not scores it should reach: a checklist is
- * what the framework actually is, and counting met qualities is honest in a
- * way that inventing 'memorability: 73' is not.
- *
- * Its 'suggestive' is NOT the Abercrombie sense. Here it means the name
- * evokes the brand experience; there it is a legal category about how far the
- * mark sits from describing the goods. Both are shown, so the labels are kept
- * apart deliberately.
- */
-export const SMILE = [
-    { id: 'S', quality: 'Evocative', hint: 'brings the brand experience to mind' },
-    { id: 'M', quality: 'Memorable', hint: 'sticks after one hearing' },
-    { id: 'I', quality: 'Imagery', hint: 'creates a picture' },
-    { id: 'L', quality: 'Legs', hint: 'gives a theme to build on' },
-    { id: 'E', quality: 'Emotional', hint: 'moves someone' }
-] as const;
-
-export type SmileQuality = (typeof SMILE)[number]['id'];
-
-export const DISTINCTIVENESS_LABEL: Record<Distinctiveness, string> = {
-    generic: 'Generic',
-    descriptive: 'Descriptive',
-    suggestive: 'Suggestive',
-    arbitrary: 'Arbitrary',
-    fanciful: 'Fanciful'
-};
-
-/**
  * The shapes the API actually returns.
  *
  * Declared rather than inferred so the page is type-checked against the
@@ -121,10 +68,6 @@ export interface CandidateView {
     name: string;
     rationale: string | null;
     strategy: StrategyId | null;
-    distinctiveness: Distinctiveness | null;
-    distinctivenessWhy: string | null;
-    /** Which SMILE qualities the name was judged to have. */
-    smile: SmileQuality[] | null;
     com: CheckStatus;
     appStore: CheckStatus;
     playStore: CheckStatus;

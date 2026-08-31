@@ -26,37 +26,32 @@ export const CHECK_ORDER: CheckKind[] = ['com', 'appStore', 'playStore', 'google
  * that might answer.
  */
 export const CHECK_LABEL: Record<CheckKind, string> = {
-  com: '.com',
-  appStore: 'App Store',
-  playStore: 'Play Store',
-  google: 'Web'
+    com: '.com',
+    appStore: 'App Store',
+    playStore: 'Play Store',
+    google: 'Web'
 };
 
 /** Where a person can go and look for themselves, per check. */
 export const CHECK_SEARCH: Record<CheckKind, (name: string) => string> = {
-  com: (n) => `https://${n.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
-  appStore: (n) => `https://www.apple.com/us/search/${encodeURIComponent(n)}?src=globalnav`,
-  playStore: (n) => `https://play.google.com/store/search?q=${encodeURIComponent(n)}&c=apps`,
-  google: (n) =>
-    `https://www.google.com/search?q=${encodeURIComponent(`"${n}" (app OR software OR platform OR company)`)}`
+    com: (n) => `https://${n.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
+    appStore: (n) => `https://www.apple.com/us/search/${encodeURIComponent(n)}?src=globalnav`,
+    playStore: (n) => `https://play.google.com/store/search?q=${encodeURIComponent(n)}&c=apps`,
+    google: (n) =>
+        `https://www.google.com/search?q=${encodeURIComponent(`"${n}" (app OR software OR platform OR company)`)}`
 };
 
 export type RunStatus =
-  | 'awaiting_verification'
-  | 'queued'
-  | 'generating'
-  | 'checking'
-  | 'done'
-  | 'failed';
+    'awaiting_verification' | 'queued' | 'generating' | 'checking' | 'done' | 'failed';
 
 /** The generation approaches a brief can ask for. */
 export const STRATEGIES = [
-  { id: 'compound', label: 'Word combinations', hint: 'Ironforge, Keystone, Warmgrove' },
-  { id: 'invented', label: 'Invented words', hint: 'Lumora, Veranex, Kizuneo' },
-  { id: 'metaphor', label: 'Metaphor & symbolism', hint: 'Cadence, Lodestar, Tidal' },
-  { id: 'portmanteau', label: 'Blends', hint: 'Swiftsylva, Novaris' },
-  { id: 'foreign', label: 'Other languages', hint: 'Kizuna, Sonder, Vesta' },
-  { id: 'short', label: 'Short & abstract', hint: 'Ovo, Nuo, Kip' }
+    { id: 'compound', label: 'Word combinations', hint: 'Ironforge, Keystone, Warmgrove' },
+    { id: 'invented', label: 'Invented words', hint: 'Lumora, Veranex, Kizuneo' },
+    { id: 'metaphor', label: 'Metaphor & symbolism', hint: 'Cadence, Lodestar, Tidal' },
+    { id: 'portmanteau', label: 'Blends', hint: 'Swiftsylva, Novaris' },
+    { id: 'foreign', label: 'Other languages', hint: 'Kizuna, Sonder, Vesta' },
+    { id: 'short', label: 'Short & abstract', hint: 'Ovo, Nuo, Kip' }
 ] as const;
 
 export type StrategyId = (typeof STRATEGIES)[number]['id'];

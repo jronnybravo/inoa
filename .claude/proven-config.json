@@ -32,11 +32,7 @@
       },
       "receiptCoverage": 1
     },
-    "platform": [
-      "linux",
-      "macOS",
-      "windows"
-    ]
+    "platform": ["linux", "macOS", "windows"]
   },
   "previous": ""
 }

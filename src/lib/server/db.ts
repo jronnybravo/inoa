@@ -20,25 +20,25 @@ import { Verification, VerificationSchema } from './entities/verification.ts';
 import { RunEvent, RunEventSchema } from './entities/event.ts';
 
 export const dataSource = new DataSource({
-  type: DIALECT as 'postgres',
-  ...connectionOptions(),
-  entities: [RunSchema, CandidateSchema, VerificationSchema, RunEventSchema],
-  // Schema changes go through `npm run db:sync`, never implicitly on boot:
-  // a synchronize-on-start in a serverless function races itself.
-  synchronize: false,
-  logging: false
+    type: DIALECT as 'postgres',
+    ...connectionOptions(),
+    entities: [RunSchema, CandidateSchema, VerificationSchema, RunEventSchema],
+    // Schema changes go through `npm run db:sync`, never implicitly on boot:
+    // a synchronize-on-start in a serverless function races itself.
+    synchronize: false,
+    logging: false
 } as never);
 
 let initializing: Promise<DataSource> | undefined;
 
 export async function db(): Promise<DataSource> {
-  if (dataSource.isInitialized) return dataSource;
-  initializing ??= dataSource.initialize().then((source) => {
-    // Without this, Run.find() has no connection to run against.
-    BaseEntities.forEach((entity) => entity.useDataSource(source));
-    return source;
-  });
-  return initializing;
+    if (dataSource.isInitialized) return dataSource;
+    initializing ??= dataSource.initialize().then((source) => {
+        // Without this, Run.find() has no connection to run against.
+        BaseEntities.forEach((entity) => entity.useDataSource(source));
+        return source;
+    });
+    return initializing;
 }
 
 /** Each schema's `target` is one of these, which is what makes Run.find() work. */

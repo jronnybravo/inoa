@@ -76,6 +76,22 @@ then set `DATABASE_URL=postgresql://postgres:brandy@localhost:55432/brandy`.
 
 The worker needs a signed-in CLI: `claude login`.
 
+## Contributing
+
+```bash
+npm run lint      # eslint + prettier --check
+npm run format    # prettier --write
+npm run check     # svelte-check, which also typechecks the worker
+```
+
+Four-space indent, single quotes, 100 columns — all enforced by Prettier, so
+none of it is worth arguing about in review. Build output is excluded from
+both tools.
+
+Comments explain _why_, not what. Most of the surprising code here exists
+because something failed in a specific way, and the comment is where that
+reason is recorded — see `worker/checks/web.ts` for the clearest example.
+
 ## How a name is judged
 
 Checks run cheapest-first — `.com`, App Store, Play Store, web — because the
@@ -88,10 +104,10 @@ recorded so the table stays complete.
 
 Every cell has three real states, not two:
 
-| state | meaning |
-|---|---|
-| `free` | we looked, and nothing is using it |
-| `taken` | we looked, and found a collision |
+| state        | meaning                               |
+| ------------ | ------------------------------------- |
+| `free`       | we looked, and nothing is using it    |
+| `taken`      | we looked, and found a collision      |
 | `unverified` | we could not get a trustworthy answer |
 
 The third one is not decoration. A boolean cannot tell "it is free" apart from
@@ -131,7 +147,7 @@ both headless and headed real Chrome.
 Spacing the queries makes tripping it less likely. But the queue earns its keep
 on the other side of that: once blocked, an inline check keeps calling and marks
 every remaining name `unverified` in seconds — the run finishes fast, tells you
-nothing, and the names *look* checked. The queue notices, pauses, retries the
+nothing, and the names _look_ checked. The queue notices, pauses, retries the
 same name, and gives up out loud after three attempts.
 
 Only names that survived the earlier gates are queued, which is what makes a
@@ -147,13 +163,13 @@ something it isn't.
 Configure as many as you like — they are used **in rotation**, so a run spreads
 across every allowance instead of draining one and then failing:
 
-| env var | free allowance | card |
-|---|---|---|
-| `TAVILY_API_KEY` | 1,000 searches/month, renews | no |
-| `FIRECRAWL_API_KEY` | free monthly credits | no |
-| `EXA_API_KEY` | $10 credit/month | no |
-| `SERPER_API_KEY` | 2,500 once, then $0.30/1,000 | for paid |
-| `BRAVE_API_KEY` | $5 credit/month, then $5/1,000 | yes |
+| env var             | free allowance                 | card     |
+| ------------------- | ------------------------------ | -------- |
+| `TAVILY_API_KEY`    | 1,000 searches/month, renews   | no       |
+| `FIRECRAWL_API_KEY` | free monthly credits           | no       |
+| `EXA_API_KEY`       | $10 credit/month               | no       |
+| `SERPER_API_KEY`    | 2,500 once, then $0.30/1,000   | for paid |
+| `BRAVE_API_KEY`     | $5 credit/month, then $5/1,000 | yes      |
 
 The cheap Bing tier resolves very little in practice — one web check out of 585
 on a full run — because a result set that never mentions the name is treated as

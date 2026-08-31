@@ -30,10 +30,10 @@ import { hasSearchApi } from './checks/web.ts';
 import type { RateLimit } from './checks/limiter.ts';
 
 const RUNNERS: Record<CheckKind, (name: string) => Promise<CheckOutcome>> = {
-  com: checkCom,
-  appStore: checkAppStore,
-  playStore: checkPlayStore,
-  google: checkWeb
+    com: checkCom,
+    appStore: checkAppStore,
+    playStore: checkPlayStore,
+    google: checkWeb
 };
 
 /**
@@ -43,9 +43,9 @@ const RUNNERS: Record<CheckKind, (name: string) => Promise<CheckOutcome>> = {
  * every time, with nobody's quota to exhaust.
  */
 const LIMITS: Partial<Record<CheckKind, RateLimit>> = {
-  appStore: appleLimit,
-  playStore: playLimit,
-  google: webLimit
+    appStore: appleLimit,
+    playStore: playLimit,
+    google: webLimit
 };
 
 /**
@@ -56,22 +56,22 @@ const LIMITS: Partial<Record<CheckKind, RateLimit>> = {
  * a minute, and it is deferred to the slow queue instead — see webqueue.ts.
  */
 export function fastChecks(): CheckKind[] {
-  return hasSearchApi() ? CHECK_ORDER : CHECK_ORDER.filter((k) => k !== 'google');
+    return hasSearchApi() ? CHECK_ORDER : CHECK_ORDER.filter((k) => k !== 'google');
 }
 
 export interface Requirements {
-  com: boolean;
-  appStore: boolean;
-  playStore: boolean;
-  google: boolean;
+    com: boolean;
+    appStore: boolean;
+    playStore: boolean;
+    google: boolean;
 }
 
 export interface CandidateResult {
-  statuses: Partial<Record<CheckKind, CheckStatus>>;
-  detail: Partial<Record<CheckKind, string>>;
-  /** null while a required check has not answered yet. */
-  passed: boolean | null;
-  droppedBy: CheckKind | null;
+    statuses: Partial<Record<CheckKind, CheckStatus>>;
+    detail: Partial<Record<CheckKind, string>>;
+    /** null while a required check has not answered yet. */
+    passed: boolean | null;
+    droppedBy: CheckKind | null;
 }
 
 /**
@@ -82,42 +82,42 @@ export interface CandidateResult {
  * email until the slow web queue has actually reached it.
  */
 export function computePassed(
-  statuses: Partial<Record<CheckKind, CheckStatus>>,
-  required: Requirements
+    statuses: Partial<Record<CheckKind, CheckStatus>>,
+    required: Requirements
 ): boolean | null {
-  const relevant = CHECK_ORDER.filter((kind) => required[kind]);
-  if (relevant.some((kind) => (statuses[kind] ?? 'pending') === 'pending')) return null;
-  return relevant.every((kind) => statuses[kind] === 'clear');
+    const relevant = CHECK_ORDER.filter((kind) => required[kind]);
+    if (relevant.some((kind) => (statuses[kind] ?? 'pending') === 'pending')) return null;
+    return relevant.every((kind) => statuses[kind] === 'clear');
 }
 
 export async function checkCandidate(
-  name: string,
-  required: Requirements,
-  kinds: CheckKind[] = CHECK_ORDER
+    name: string,
+    required: Requirements,
+    kinds: CheckKind[] = CHECK_ORDER
 ): Promise<CandidateResult> {
-  const statuses = {} as Record<CheckKind, CheckStatus>;
-  const detail: Partial<Record<CheckKind, string>> = {};
-  let droppedBy: CheckKind | null = null;
+    const statuses = {} as Record<CheckKind, CheckStatus>;
+    const detail: Partial<Record<CheckKind, string>> = {};
+    let droppedBy: CheckKind | null = null;
 
-  for (const kind of CHECK_ORDER) {
-    // Checks this pass is not responsible for keep whatever state they hold.
-    if (!kinds.includes(kind)) continue;
+    for (const kind of CHECK_ORDER) {
+        // Checks this pass is not responsible for keep whatever state they hold.
+        if (!kinds.includes(kind)) continue;
 
-    if (droppedBy) {
-      statuses[kind] = 'skipped';
-      continue;
+        if (droppedBy) {
+            statuses[kind] = 'skipped';
+            continue;
+        }
+
+        // Wait for a slot on the shared schedule, not a private timer — otherwise
+        // concurrent names all call the same service simultaneously.
+        await LIMITS[kind]?.take();
+
+        const outcome = await RUNNERS[kind](name);
+        statuses[kind] = outcome.status;
+        if (outcome.detail) detail[kind] = outcome.detail;
+
+        if (required[kind] && outcome.status === 'taken') droppedBy = kind;
     }
 
-    // Wait for a slot on the shared schedule, not a private timer — otherwise
-    // concurrent names all call the same service simultaneously.
-    await LIMITS[kind]?.take();
-
-    const outcome = await RUNNERS[kind](name);
-    statuses[kind] = outcome.status;
-    if (outcome.detail) detail[kind] = outcome.detail;
-
-    if (required[kind] && outcome.status === 'taken') droppedBy = kind;
-  }
-
-  return { statuses, detail, passed: computePassed(statuses, required), droppedBy };
+    return { statuses, detail, passed: computePassed(statuses, required), droppedBy };
 }

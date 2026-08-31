@@ -48,7 +48,7 @@ const usingApi = hasSearchApi;
 const CHALLENGED = /challenged the request/i;
 
 export interface QueueProgress {
-  (done: number, total: number, note?: string): Promise<void> | void;
+    (done: number, total: number, note?: string): Promise<void> | void;
 }
 
 /**
@@ -58,86 +58,86 @@ export interface QueueProgress {
  * gave up are reported as 'unknown' rather than silently passing.
  */
 export async function drainWebQueue(
-  candidates: typeof Candidate,
-  runId: string,
-  required: Requirements,
-  onProgress?: QueueProgress
+    candidates: typeof Candidate,
+    runId: string,
+    required: Requirements,
+    onProgress?: QueueProgress
 ): Promise<{ resolved: number; abandoned: number }> {
-  const pending = await candidates.find({
-    where: { runId, google: 'pending' as CheckStatus },
-    order: { position: 'ASC' }
-  });
+    const pending = await candidates.find({
+        where: { runId, google: 'pending' as CheckStatus },
+        order: { position: 'ASC' }
+    });
 
-  const interval = usingApi() ? API_INTERVAL_MS : BROWSER_INTERVAL_MS;
-  let resolved = 0;
-  let backoffs = 0;
+    const interval = usingApi() ? API_INTERVAL_MS : BROWSER_INTERVAL_MS;
+    let resolved = 0;
+    let backoffs = 0;
 
-  // Indexed rather than for-of, because a backoff has to retry the SAME name.
-  // The pause exists to let the block clear; advancing past the name would
-  // spend the queue during the very window we are waiting out.
-  let index = 0;
-  while (index < pending.length) {
-    const candidate = pending[index]!;
-    const outcome = await checkWeb(candidate.name);
+    // Indexed rather than for-of, because a backoff has to retry the SAME name.
+    // The pause exists to let the block clear; advancing past the name would
+    // spend the queue during the very window we are waiting out.
+    let index = 0;
+    while (index < pending.length) {
+        const candidate = pending[index]!;
+        const outcome = await checkWeb(candidate.name);
 
-    if (outcome.status === 'unknown' && CHALLENGED.test(outcome.detail ?? '')) {
-      backoffs++;
-      if (backoffs > MAX_BACKOFFS) {
-        // Stop rather than march through the rest producing junk verdicts.
-        await onProgress?.(resolved, pending.length, 'search blocked; stopping web checks');
-        break;
-      }
-      await onProgress?.(
-        resolved,
-        pending.length,
-        `search blocked; pausing ${Math.round(BACKOFF_MS / 60_000)}m (attempt ${backoffs})`
-      );
-      await sleep(BACKOFF_MS);
-      continue;
+        if (outcome.status === 'unknown' && CHALLENGED.test(outcome.detail ?? '')) {
+            backoffs++;
+            if (backoffs > MAX_BACKOFFS) {
+                // Stop rather than march through the rest producing junk verdicts.
+                await onProgress?.(resolved, pending.length, 'search blocked; stopping web checks');
+                break;
+            }
+            await onProgress?.(
+                resolved,
+                pending.length,
+                `search blocked; pausing ${Math.round(BACKOFF_MS / 60_000)}m (attempt ${backoffs})`
+            );
+            await sleep(BACKOFF_MS);
+            continue;
+        }
+
+        const statuses: Partial<Record<CheckKind, CheckStatus>> = {
+            com: candidate.com,
+            appStore: candidate.appStore,
+            playStore: candidate.playStore,
+            google: outcome.status
+        };
+
+        await candidates.update(candidate.id, {
+            google: outcome.status,
+            detail: { ...candidate.detail, ...(outcome.detail ? { google: outcome.detail } : {}) },
+            passed: computePassed(statuses, required),
+            checkedAt: new Date()
+        });
+
+        resolved++;
+        // A name that answered means the engine is talking to us again.
+        backoffs = 0;
+        await onProgress?.(resolved, pending.length);
+        index++;
+        if (index < pending.length) await sleep(jitter(interval));
     }
 
-    const statuses: Partial<Record<CheckKind, CheckStatus>> = {
-      com: candidate.com,
-      appStore: candidate.appStore,
-      playStore: candidate.playStore,
-      google: outcome.status
-    };
-
-    await candidates.update(candidate.id, {
-      google: outcome.status,
-      detail: { ...candidate.detail, ...(outcome.detail ? { google: outcome.detail } : {}) },
-      passed: computePassed(statuses, required),
-      checkedAt: new Date()
+    // Anything still pending was abandoned; say so rather than leaving it looking
+    // like the check simply has not got there yet.
+    const leftover = await candidates.find({
+        where: { runId, google: 'pending' as CheckStatus }
     });
+    for (const candidate of leftover) {
+        await candidates.update(candidate.id, {
+            google: 'unknown',
+            detail: { ...candidate.detail, google: 'Search was blocked; not verified' },
+            passed: computePassed(
+                {
+                    com: candidate.com,
+                    appStore: candidate.appStore,
+                    playStore: candidate.playStore,
+                    google: 'unknown'
+                },
+                required
+            )
+        });
+    }
 
-    resolved++;
-    // A name that answered means the engine is talking to us again.
-    backoffs = 0;
-    await onProgress?.(resolved, pending.length);
-    index++;
-    if (index < pending.length) await sleep(jitter(interval));
-  }
-
-  // Anything still pending was abandoned; say so rather than leaving it looking
-  // like the check simply has not got there yet.
-  const leftover = await candidates.find({
-    where: { runId, google: 'pending' as CheckStatus }
-  });
-  for (const candidate of leftover) {
-    await candidates.update(candidate.id, {
-      google: 'unknown',
-      detail: { ...candidate.detail, google: 'Search was blocked; not verified' },
-      passed: computePassed(
-        {
-          com: candidate.com,
-          appStore: candidate.appStore,
-          playStore: candidate.playStore,
-          google: 'unknown'
-        },
-        required
-      )
-    });
-  }
-
-  return { resolved, abandoned: leftover.length };
+    return { resolved, abandoned: leftover.length };
 }

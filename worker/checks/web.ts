@@ -59,13 +59,13 @@ import * as cheerio from 'cheerio';
 import { isBrandCollision, jitter, sleep, squash, type CheckOutcome } from './shared.ts';
 
 const UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
-  '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 interface Hit {
-  title: string;
-  url: string;
-  snippet: string;
+    title: string;
+    url: string;
+    snippet: string;
 }
 
 /** Both intents in one query: separate ones quadrupled the rate-limit exposure. */
@@ -76,54 +76,54 @@ const queryFor = (name: string) => `"${name}" (app OR software OR platform OR co
 // ---------------------------------------------------------------------------
 
 async function httpSearch(url: string, selector: string, titleSel: string): Promise<Hit[] | null> {
-  try {
-    const response = await fetch(url, {
-      headers: { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.9' },
-      signal: AbortSignal.timeout(12000)
-    });
-    if (!response.ok) return null;
-    const $ = cheerio.load(await response.text());
-    const blocks = $(selector);
-    if (blocks.length === 0) return null;
+    try {
+        const response = await fetch(url, {
+            headers: { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.9' },
+            signal: AbortSignal.timeout(12000)
+        });
+        if (!response.ok) return null;
+        const $ = cheerio.load(await response.text());
+        const blocks = $(selector);
+        if (blocks.length === 0) return null;
 
-    const hits: Hit[] = [];
-    blocks.each((_, el) => {
-      const title = $(el).find(titleSel).first().text().trim();
-      const href = $(el).find('a').first().attr('href') ?? '';
-      if (!title) return;
-      hits.push({ title, url: href, snippet: $(el).text().trim() });
-    });
-    return hits;
-  } catch {
-    return null;
-  }
+        const hits: Hit[] = [];
+        blocks.each((_, el) => {
+            const title = $(el).find(titleSel).first().text().trim();
+            const href = $(el).find('a').first().attr('href') ?? '';
+            if (!title) return;
+            hits.push({ title, url: href, snippet: $(el).text().trim() });
+        });
+        return hits;
+    } catch {
+        return null;
+    }
 }
 
 const ENGINES = [
-  {
-    label: 'Bing',
-    run: (q: string) =>
-      httpSearch(
-        `https://www.bing.com/search?q=${encodeURIComponent(q)}&count=20`,
-        'li.b_algo',
-        'h2'
-      )
-  },
-  {
-    label: 'Google',
-    run: (q: string) =>
-      httpSearch(
-        `https://www.google.com/search?q=${encodeURIComponent(q)}&num=20`,
-        'div.MjjYud, div.g',
-        'h3'
-      )
-  }
+    {
+        label: 'Bing',
+        run: (q: string) =>
+            httpSearch(
+                `https://www.bing.com/search?q=${encodeURIComponent(q)}&count=20`,
+                'li.b_algo',
+                'h2'
+            )
+    },
+    {
+        label: 'Google',
+        run: (q: string) =>
+            httpSearch(
+                `https://www.google.com/search?q=${encodeURIComponent(q)}&num=20`,
+                'div.MjjYud, div.g',
+                'h3'
+            )
+    }
 ];
 
 /** Did the engine answer the question we asked, or something else? */
 function pertains(name: string, hits: Hit[]): boolean {
-  const target = squash(name);
-  return hits.some((h) => squash(h.title + h.snippet + h.url).includes(target));
+    const target = squash(name);
+    return hits.some((h) => squash(h.title + h.snippet + h.url).includes(target));
 }
 
 // ---------------------------------------------------------------------------
@@ -131,19 +131,19 @@ function pertains(name: string, hits: Hit[]): boolean {
 // ---------------------------------------------------------------------------
 
 interface ApiProvider {
-  label: string;
-  key: () => string | undefined;
-  search: (query: string, key: string) => Promise<Hit[] | null>;
+    label: string;
+    key: () => string | undefined;
+    search: (query: string, key: string) => Promise<Hit[] | null>;
 }
 
 async function postJson(url: string, headers: HeadersInit, body: unknown): Promise<any | null> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...headers },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(20000)
-  });
-  return response.ok ? response.json() : null;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20000)
+    });
+    return response.ok ? response.json() : null;
 }
 
 /**
@@ -155,106 +155,106 @@ async function postJson(url: string, headers: HeadersInit, body: unknown): Promi
  * tier ended in February 2026 and the card it collects now gets charged.
  */
 export const API_PROVIDERS: ApiProvider[] = [
-  {
-    label: 'Tavily',
-    key: () => process.env.TAVILY_API_KEY,
-    search: async (query, key) => {
-      const data = await postJson(
-        'https://api.tavily.com/search',
-        { authorization: `Bearer ${key}` },
-        { query, max_results: 20, search_depth: 'basic' }
-      );
-      const results = data?.results;
-      if (!Array.isArray(results)) return null;
-      return results.map((r: any) => ({
-        title: r.title ?? '',
-        url: r.url ?? '',
-        snippet: r.content ?? ''
-      }));
-    }
-  },
-  {
-    label: 'Firecrawl',
-    key: () => process.env.FIRECRAWL_API_KEY,
-    search: async (query, key) => {
-      const data = await postJson(
-        'https://api.firecrawl.dev/v2/search',
-        { authorization: `Bearer ${key}` },
-        { query, limit: 20, sources: [{ type: 'web' }] }
-      );
-      // v2 nests results by source; older keys may still answer with an array.
-      const results = Array.isArray(data?.data) ? data.data : data?.data?.web;
-      if (!Array.isArray(results)) return null;
-      return results.map((r: any) => ({
-        title: r.title ?? '',
-        url: r.url ?? '',
-        snippet: r.description ?? ''
-      }));
-    }
-  },
-  {
-    label: 'Serper',
-    key: () => process.env.SERPER_API_KEY,
-    search: async (query, key) => {
-      const data = await postJson(
-        'https://google.serper.dev/search',
-        { 'x-api-key': key },
-        { q: query, num: 20 }
-      );
-      const results = data?.organic;
-      if (!Array.isArray(results)) return null;
-      return results.map((r: any) => ({
-        title: r.title ?? '',
-        url: r.link ?? '',
-        snippet: r.snippet ?? ''
-      }));
-    }
-  },
-  {
-    label: 'Exa',
-    key: () => process.env.EXA_API_KEY,
-    search: async (query, key) => {
-      const data = await postJson(
-        'https://api.exa.ai/search',
-        { 'x-api-key': key },
-        { query, numResults: 20, type: 'auto', contents: { text: { maxCharacters: 300 } } }
-      );
-      const results = data?.results;
-      if (!Array.isArray(results)) return null;
-      return results.map((r: any) => ({
-        title: r.title ?? '',
-        url: r.url ?? '',
-        snippet: r.text ?? ''
-      }));
-    }
-  },
-  {
-    label: 'Brave',
-    key: () => process.env.BRAVE_API_KEY,
-    search: async (query, key) => {
-      const response = await fetch(
-        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=20`,
-        {
-          headers: { Accept: 'application/json', 'X-Subscription-Token': key },
-          signal: AbortSignal.timeout(20000)
+    {
+        label: 'Tavily',
+        key: () => process.env.TAVILY_API_KEY,
+        search: async (query, key) => {
+            const data = await postJson(
+                'https://api.tavily.com/search',
+                { authorization: `Bearer ${key}` },
+                { query, max_results: 20, search_depth: 'basic' }
+            );
+            const results = data?.results;
+            if (!Array.isArray(results)) return null;
+            return results.map((r: any) => ({
+                title: r.title ?? '',
+                url: r.url ?? '',
+                snippet: r.content ?? ''
+            }));
         }
-      );
-      if (!response.ok) return null;
-      const data = (await response.json()) as any;
-      const results = data?.web?.results;
-      if (!Array.isArray(results)) return null;
-      return results.map((r: any) => ({
-        title: r.title ?? '',
-        url: r.url ?? '',
-        snippet: r.description ?? ''
-      }));
+    },
+    {
+        label: 'Firecrawl',
+        key: () => process.env.FIRECRAWL_API_KEY,
+        search: async (query, key) => {
+            const data = await postJson(
+                'https://api.firecrawl.dev/v2/search',
+                { authorization: `Bearer ${key}` },
+                { query, limit: 20, sources: [{ type: 'web' }] }
+            );
+            // v2 nests results by source; older keys may still answer with an array.
+            const results = Array.isArray(data?.data) ? data.data : data?.data?.web;
+            if (!Array.isArray(results)) return null;
+            return results.map((r: any) => ({
+                title: r.title ?? '',
+                url: r.url ?? '',
+                snippet: r.description ?? ''
+            }));
+        }
+    },
+    {
+        label: 'Serper',
+        key: () => process.env.SERPER_API_KEY,
+        search: async (query, key) => {
+            const data = await postJson(
+                'https://google.serper.dev/search',
+                { 'x-api-key': key },
+                { q: query, num: 20 }
+            );
+            const results = data?.organic;
+            if (!Array.isArray(results)) return null;
+            return results.map((r: any) => ({
+                title: r.title ?? '',
+                url: r.link ?? '',
+                snippet: r.snippet ?? ''
+            }));
+        }
+    },
+    {
+        label: 'Exa',
+        key: () => process.env.EXA_API_KEY,
+        search: async (query, key) => {
+            const data = await postJson(
+                'https://api.exa.ai/search',
+                { 'x-api-key': key },
+                { query, numResults: 20, type: 'auto', contents: { text: { maxCharacters: 300 } } }
+            );
+            const results = data?.results;
+            if (!Array.isArray(results)) return null;
+            return results.map((r: any) => ({
+                title: r.title ?? '',
+                url: r.url ?? '',
+                snippet: r.text ?? ''
+            }));
+        }
+    },
+    {
+        label: 'Brave',
+        key: () => process.env.BRAVE_API_KEY,
+        search: async (query, key) => {
+            const response = await fetch(
+                `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=20`,
+                {
+                    headers: { Accept: 'application/json', 'X-Subscription-Token': key },
+                    signal: AbortSignal.timeout(20000)
+                }
+            );
+            if (!response.ok) return null;
+            const data = (await response.json()) as any;
+            const results = data?.web?.results;
+            if (!Array.isArray(results)) return null;
+            return results.map((r: any) => ({
+                title: r.title ?? '',
+                url: r.url ?? '',
+                snippet: r.description ?? ''
+            }));
+        }
     }
-  }
 ];
 
 /** True when any tier-2 API is configured — the queue paces on this. */
 export function hasSearchApi(): boolean {
-  return API_PROVIDERS.some((p) => p.key());
+    return API_PROVIDERS.some((p) => p.key());
 }
 
 /**
@@ -272,20 +272,20 @@ let rotation = 0;
  * exhausted quota costs one wasted call rather than the rest of the run.
  */
 async function apiSearch(query: string): Promise<{ hits: Hit[]; label: string } | null> {
-  const configured = API_PROVIDERS.filter((p) => p.key());
-  if (configured.length === 0) return null;
+    const configured = API_PROVIDERS.filter((p) => p.key());
+    if (configured.length === 0) return null;
 
-  const start = rotation++ % configured.length;
-  for (let i = 0; i < configured.length; i++) {
-    const provider = configured[(start + i) % configured.length]!;
-    try {
-      const hits = await provider.search(query, provider.key()!);
-      if (hits) return { hits, label: provider.label };
-    } catch {
-      // Try the next one rather than failing the check.
+    const start = rotation++ % configured.length;
+    for (let i = 0; i < configured.length; i++) {
+        const provider = configured[(start + i) % configured.length]!;
+        try {
+            const hits = await provider.search(query, provider.key()!);
+            if (hits) return { hits, label: provider.label };
+        } catch {
+            // Try the next one rather than failing the check.
+        }
     }
-  }
-  return null;
+    return null;
 }
 
 /**
@@ -298,21 +298,21 @@ async function apiSearch(query: string): Promise<{ hits: Hit[]; label: string } 
 type Browser = Awaited<ReturnType<typeof launchChromium>>;
 
 async function launchChromium() {
-  const { chromium } = await import('playwright');
-  return chromium.launch({ headless: true });
+    const { chromium } = await import('playwright');
+    return chromium.launch({ headless: true });
 }
 
 let browser: Browser | undefined;
 
 async function getBrowser(): Promise<Browser> {
-  if (browser?.isConnected()) return browser;
-  browser = await launchChromium();
-  return browser;
+    if (browser?.isConnected()) return browser;
+    browser = await launchChromium();
+    return browser;
 }
 
 export async function closeBrowser(): Promise<void> {
-  await browser?.close();
-  browser = undefined;
+    await browser?.close();
+    browser = undefined;
 }
 
 /**
@@ -326,82 +326,87 @@ const NO_RESULTS = /did not match any documents|no results found for/i;
 const CHALLENGED = /unusual traffic|are you a robot|recaptcha|\/sorry\//i;
 
 async function browserSearch(name: string): Promise<CheckOutcome> {
-  const page = await (await getBrowser()).newPage({ userAgent: UA, locale: 'en-US' });
-  try {
-    const url = `https://www.google.com/search?q=${encodeURIComponent(queryFor(name))}&num=20`;
-    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    const page = await (await getBrowser()).newPage({ userAgent: UA, locale: 'en-US' });
+    try {
+        const url = `https://www.google.com/search?q=${encodeURIComponent(queryFor(name))}&num=20`;
+        const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
 
-    const body = await page.evaluate(() => document.body?.innerText ?? '');
+        const body = await page.evaluate(() => document.body?.innerText ?? '');
 
-    if (CHALLENGED.test(body) || CHALLENGED.test(page.url()) || response?.status() === 429) {
-      return {
-        status: 'unknown',
-        detail: 'Google challenged the request; not verified'
-      };
+        if (CHALLENGED.test(body) || CHALLENGED.test(page.url()) || response?.status() === 429) {
+            return {
+                status: 'unknown',
+                detail: 'Google challenged the request; not verified'
+            };
+        }
+
+        if (NO_RESULTS.test(body)) {
+            return { status: 'clear', detail: 'No Google results (browser)' };
+        }
+
+        // Titles are what a competing brand looks like; body text merely mentioning
+        // the word is not a collision.
+        const titles = await page.evaluate(() =>
+            Array.from(document.querySelectorAll('h3')).map((h) => h.textContent?.trim() ?? '')
+        );
+        const matches = [...new Set(titles.filter((t) => t && isBrandCollision(name, t)))];
+
+        if (matches.length > 0) {
+            return { status: 'taken', detail: matches.slice(0, 4).join(' | ') };
+        }
+        if (titles.some((t) => squash(t).includes(squash(name)))) {
+            // Mentioned, but nothing that reads as a competing brand.
+            return { status: 'clear', detail: 'Mentioned, no competing brand (browser)' };
+        }
+        return { status: 'clear', detail: 'No competing brand found (browser)' };
+    } catch (error) {
+        return { status: 'unknown', detail: `Browser check failed: ${(error as Error).message}` };
+    } finally {
+        await page.close();
     }
-
-    if (NO_RESULTS.test(body)) {
-      return { status: 'clear', detail: 'No Google results (browser)' };
-    }
-
-    // Titles are what a competing brand looks like; body text merely mentioning
-    // the word is not a collision.
-    const titles = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('h3')).map((h) => h.textContent?.trim() ?? '')
-    );
-    const matches = [...new Set(titles.filter((t) => t && isBrandCollision(name, t)))];
-
-    if (matches.length > 0) {
-      return { status: 'taken', detail: matches.slice(0, 4).join(' | ') };
-    }
-    if (titles.some((t) => squash(t).includes(squash(name)))) {
-      // Mentioned, but nothing that reads as a competing brand.
-      return { status: 'clear', detail: 'Mentioned, no competing brand (browser)' };
-    }
-    return { status: 'clear', detail: 'No competing brand found (browser)' };
-  } catch (error) {
-    return { status: 'unknown', detail: `Browser check failed: ${(error as Error).message}` };
-  } finally {
-    await page.close();
-  }
 }
 
 // ---------------------------------------------------------------------------
 
 export async function checkWeb(name: string): Promise<CheckOutcome> {
-  const query = queryFor(name);
+    const query = queryFor(name);
 
-  for (const engine of ENGINES) {
-    const hits = await engine.run(query);
-    await sleep(jitter(400));
-    if (!hits || hits.length === 0) continue;
+    for (const engine of ENGINES) {
+        const hits = await engine.run(query);
+        await sleep(jitter(400));
+        if (!hits || hits.length === 0) continue;
 
-    const matches = [...new Set(hits.map((h) => h.title).filter((t) => isBrandCollision(name, t)))];
-    if (matches.length > 0) {
-      return { status: 'taken', detail: `${matches.slice(0, 4).join(' | ')} (${engine.label})` };
+        const matches = [
+            ...new Set(hits.map((h) => h.title).filter((t) => isBrandCollision(name, t)))
+        ];
+        if (matches.length > 0) {
+            return {
+                status: 'taken',
+                detail: `${matches.slice(0, 4).join(' | ')} (${engine.label})`
+            };
+        }
+
+        // No collision found. That only means something if the engine was
+        // answering our question — see the note at the top of this file.
+        if (pertains(name, hits)) {
+            return { status: 'clear', detail: `No competing brand found (${engine.label})` };
+        }
     }
 
-    // No collision found. That only means something if the engine was
-    // answering our question — see the note at the top of this file.
-    if (pertains(name, hits)) {
-      return { status: 'clear', detail: `No competing brand found (${engine.label})` };
+    // Tier 1 could not be believed. Only this path spends tier-2 budget.
+    const api = await apiSearch(query);
+    if (api) {
+        const matches = [
+            ...new Set(api.hits.map((h) => h.title).filter((t) => isBrandCollision(name, t)))
+        ];
+        if (matches.length > 0) {
+            return { status: 'taken', detail: `${matches.slice(0, 4).join(' | ')} (${api.label})` };
+        }
+        // The API answered the question, so an absence of collisions is real
+        // evidence — unlike the same absence from a tier-1 engine that ignored us.
+        return { status: 'clear', detail: `No competing brand found (${api.label})` };
     }
-  }
 
-  // Tier 1 could not be believed. Only this path spends tier-2 budget.
-  const api = await apiSearch(query);
-  if (api) {
-    const matches = [
-      ...new Set(api.hits.map((h) => h.title).filter((t) => isBrandCollision(name, t)))
-    ];
-    if (matches.length > 0) {
-      return { status: 'taken', detail: `${matches.slice(0, 4).join(' | ')} (${api.label})` };
-    }
-    // The API answered the question, so an absence of collisions is real
-    // evidence — unlike the same absence from a tier-1 engine that ignored us.
-    return { status: 'clear', detail: `No competing brand found (${api.label})` };
-  }
-
-  await sleep(jitter(700));
-  return browserSearch(name);
+    await sleep(jitter(700));
+    return browserSearch(name);
 }

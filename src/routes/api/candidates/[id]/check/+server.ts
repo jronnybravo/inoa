@@ -18,52 +18,52 @@ import { checkCandidate, computePassed } from '../../../../../../worker/pipeline
  * With no body it runs whatever the run requires. Pass a kind to run one.
  */
 export const POST: RequestHandler = async ({ params, request }) => {
-  await db();
-  const candidate = await Candidate.findOneBy({ id: params.id });
-  if (!candidate) error(404, 'No such candidate');
+    await db();
+    const candidate = await Candidate.findOneBy({ id: params.id });
+    if (!candidate) error(404, 'No such candidate');
 
-  const run = await Run.findOneBy({ id: candidate.runId });
-  if (!run) error(404, 'No such run');
+    const run = await Run.findOneBy({ id: candidate.runId });
+    if (!run) error(404, 'No such run');
 
-  const body = (await request.json().catch(() => ({}))) as { kind?: CheckKind };
-  const required = {
-    com: run.requireCom,
-    appStore: run.requireAppStore,
-    playStore: run.requirePlayStore,
-    google: run.requireGoogle
-  };
+    const body = (await request.json().catch(() => ({}))) as { kind?: CheckKind };
+    const required = {
+        com: run.requireCom,
+        appStore: run.requireAppStore,
+        playStore: run.requirePlayStore,
+        google: run.requireGoogle
+    };
 
-  // A run with no requirements would otherwise check nothing at all.
-  const settingsKinds = CHECK_ORDER.filter((k) => required[k]);
-  const kinds: CheckKind[] = body.kind
-    ? [body.kind]
-    : settingsKinds.length > 0
-      ? settingsKinds
-      : CHECK_ORDER;
+    // A run with no requirements would otherwise check nothing at all.
+    const settingsKinds = CHECK_ORDER.filter((k) => required[k]);
+    const kinds: CheckKind[] = body.kind
+        ? [body.kind]
+        : settingsKinds.length > 0
+          ? settingsKinds
+          : CHECK_ORDER;
 
-  const result = await checkCandidate(candidate.name, required, kinds);
+    const result = await checkCandidate(candidate.name, required, kinds);
 
-  // Only the checks that ran are overwritten; the rest keep their verdicts.
-  const merged = {
-    com: result.statuses.com ?? candidate.com,
-    appStore: result.statuses.appStore ?? candidate.appStore,
-    playStore: result.statuses.playStore ?? candidate.playStore,
-    google: result.statuses.google ?? candidate.google
-  };
+    // Only the checks that ran are overwritten; the rest keep their verdicts.
+    const merged = {
+        com: result.statuses.com ?? candidate.com,
+        appStore: result.statuses.appStore ?? candidate.appStore,
+        playStore: result.statuses.playStore ?? candidate.playStore,
+        google: result.statuses.google ?? candidate.google
+    };
 
-  await Candidate.update(candidate.id, {
-    ...merged,
-    detail: { ...candidate.detail, ...result.detail },
-    passed: computePassed(merged, required),
-    droppedBy: result.droppedBy ?? candidate.droppedBy,
-    checkedAt: new Date()
-  });
+    await Candidate.update(candidate.id, {
+        ...merged,
+        detail: { ...candidate.detail, ...result.detail },
+        passed: computePassed(merged, required),
+        droppedBy: result.droppedBy ?? candidate.droppedBy,
+        checkedAt: new Date()
+    });
 
-  return json({
-    id: candidate.id,
-    ...merged,
-    detail: { ...candidate.detail, ...result.detail },
-    passed: computePassed(merged, required),
-    ran: kinds
-  });
+    return json({
+        id: candidate.id,
+        ...merged,
+        detail: { ...candidate.detail, ...result.detail },
+        passed: computePassed(merged, required),
+        ran: kinds
+    });
 };

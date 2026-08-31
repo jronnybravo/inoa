@@ -53,7 +53,25 @@ const LIMITS: Partial<Record<CheckKind, RateLimit>> = {
  * The web check joins them whenever a search API is configured, because then
  * it costs about a second. Without a key it needs a browser at roughly a name
  * a minute, and it is deferred to the slow queue instead — see webqueue.ts.
+ *
+ * That deferral outranks the priority order: a required web check still runs
+ * last when it has to drive a browser, because a minute a name is not a cost
+ * that any ordering can make worthwhile.
  */
+/**
+ * The order to actually run checks in, for these requirements.
+ *
+ * Required first, then the rest, each group in cost order. With Play Store
+ * alone required that is playStore, com, appStore, google; with the two stores
+ * required it is appStore, playStore, com, google.
+ */
+export function checkOrder(required: Requirements): CheckKind[] {
+    return [
+        ...CHECK_ORDER.filter((kind) => required[kind]),
+        ...CHECK_ORDER.filter((kind) => !required[kind])
+    ];
+}
+
 export function fastChecks(): CheckKind[] {
     return hasSearchApi() ? CHECK_ORDER : CHECK_ORDER.filter((k) => k !== 'google');
 }
@@ -112,7 +130,7 @@ export async function checkCandidate(
     const detail: Partial<Record<CheckKind, string>> = {};
     let droppedBy: CheckKind | null = null;
 
-    for (const kind of CHECK_ORDER) {
+    for (const kind of checkOrder(required)) {
         // Checks this pass is not responsible for keep whatever state they hold.
         if (!kinds.includes(kind)) {
             continue;

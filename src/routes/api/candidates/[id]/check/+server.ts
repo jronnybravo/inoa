@@ -3,7 +3,7 @@ import { db } from '$lib/server/db';
 import { Candidate } from '$lib/server/entities/candidate';
 import { Run } from '$lib/server/entities/run';
 import { CHECK_ORDER, type CheckKind, type CheckStatus } from '$lib/types';
-import { checkCandidate, computePassed } from '../../../../../../worker/pipeline.ts';
+import { checkCandidate, checkOrder, computePassed } from '../../../../../../worker/pipeline.ts';
 import type { RequestHandler } from './$types';
 
 /**
@@ -38,7 +38,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
     };
 
     // A run with no requirements would otherwise check nothing at all.
-    const settingsKinds = CHECK_ORDER.filter((k) => required[k]);
+    // Same priority as a run: required checks first, cost order within.
+    const settingsKinds = checkOrder(required).filter((k) => required[k]);
     const kinds: CheckKind[] = body.kind
         ? [body.kind]
         : settingsKinds.length > 0

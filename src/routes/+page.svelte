@@ -5,6 +5,7 @@
         CHECK_SEARCH,
         DISTINCTIVENESS,
         DISTINCTIVENESS_LABEL,
+        SMILE,
         STRATEGIES,
         type CandidateView,
         type CheckKind,
@@ -70,6 +71,7 @@
     let nameFilter = $state('');
     let approachFilter = $state('');
     let distinctivenessFilter = $state('');
+    let smileFilter = $state('');
     let checkFilter = $state<Record<CheckKind, string>>({
         com: '',
         appStore: '',
@@ -97,6 +99,7 @@
         nameFilter = '';
         approachFilter = '';
         distinctivenessFilter = '';
+        smileFilter = '';
         checkFilter = { com: '', appStore: '', playStore: '', google: '' };
     }
     const selected = $state<Record<string, boolean>>({});
@@ -311,6 +314,9 @@
                 return false;
             }
             if (distinctivenessFilter && c.distinctiveness !== distinctivenessFilter) {
+                return false;
+            }
+            if (smileFilter && !(c.smile ?? []).includes(smileFilter as never)) {
                 return false;
             }
             return CHECK_ORDER.every((k) => !checkFilter[k] || c[k] === checkFilter[k]);
@@ -939,6 +945,36 @@
                                 </div>
                             </th>
 
+                            <th class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}">
+                                <span
+                                    class="block pb-1 text-xs font-medium text-stone-500"
+                                    title="Alexandra Watkins' checklist: evocative, memorable, imagery, legs, emotional"
+                                >
+                                    SMILE
+                                </span>
+                                <div class="relative">
+                                    <select
+                                        bind:value={smileFilter}
+                                        aria-label="Filter by SMILE quality"
+                                        class="{FILTER_INPUT} {smileFilter
+                                            ? FILTER_ACTIVE
+                                            : FILTER_IDLE} pr-6"
+                                    >
+                                        <option value="">Any</option>
+                                        {#each SMILE as q (q.id)}
+                                            <option value={q.id}>{q.quality}</option>
+                                        {/each}
+                                    </select>
+                                    {#if smileFilter}
+                                        <button
+                                            onclick={() => (smileFilter = '')}
+                                            aria-label="Clear the SMILE filter"
+                                            class={CLEAR_BUTTON}>×</button
+                                        >
+                                    {/if}
+                                </div>
+                            </th>
+
                             {#each CHECK_ORDER as k (k)}
                                 <th
                                     class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}"
@@ -1049,6 +1085,16 @@
                                         <span class="text-stone-400 dark:text-stone-600">—</span>
                                     {/if}
                                 </td>
+                                <td class="px-3 py-1.5 font-mono text-xs whitespace-nowrap">
+                                    {#each SMILE as q (q.id)}
+                                        <span
+                                            class={(c.smile ?? []).includes(q.id)
+                                                ? 'font-semibold text-stone-800 dark:text-stone-100'
+                                                : 'text-stone-300 dark:text-stone-700'}
+                                            title="{q.quality} — {q.hint}">{q.id}</span
+                                        >
+                                    {/each}
+                                </td>
                                 {#each CHECK_ORDER as k (k)}
                                     <td
                                         class="px-3 py-1.5 whitespace-nowrap {CELL[c[k]].class}"
@@ -1124,7 +1170,7 @@
                         {:else}
                             <tr
                                 ><td
-                                    colspan="8"
+                                    colspan="10"
                                     class="px-4 py-12 text-center text-sm text-stone-500"
                                 >
                                     {#if run.status === 'queued'}

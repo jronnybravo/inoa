@@ -79,6 +79,28 @@ export const DISTINCTIVENESS = [
 
 export type Distinctiveness = (typeof DISTINCTIVENESS)[number]['id'];
 
+/**
+ * The SMILE checklist, from Alexandra Watkins' Hello, My Name Is Awesome.
+ *
+ * Qualities a name should have, not scores it should reach: a checklist is
+ * what the framework actually is, and counting met qualities is honest in a
+ * way that inventing 'memorability: 73' is not.
+ *
+ * Its 'suggestive' is NOT the Abercrombie sense. Here it means the name
+ * evokes the brand experience; there it is a legal category about how far the
+ * mark sits from describing the goods. Both are shown, so the labels are kept
+ * apart deliberately.
+ */
+export const SMILE = [
+    { id: 'S', quality: 'Evocative', hint: 'brings the brand experience to mind' },
+    { id: 'M', quality: 'Memorable', hint: 'sticks after one hearing' },
+    { id: 'I', quality: 'Imagery', hint: 'creates a picture' },
+    { id: 'L', quality: 'Legs', hint: 'gives a theme to build on' },
+    { id: 'E', quality: 'Emotional', hint: 'moves someone' }
+] as const;
+
+export type SmileQuality = (typeof SMILE)[number]['id'];
+
 export const DISTINCTIVENESS_LABEL: Record<Distinctiveness, string> = {
     generic: 'Generic',
     descriptive: 'Descriptive',
@@ -101,6 +123,8 @@ export interface CandidateView {
     strategy: StrategyId | null;
     distinctiveness: Distinctiveness | null;
     distinctivenessWhy: string | null;
+    /** Which SMILE qualities the name was judged to have. */
+    smile: SmileQuality[] | null;
     com: CheckStatus;
     appStore: CheckStatus;
     playStore: CheckStatus;

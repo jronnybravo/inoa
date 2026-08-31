@@ -15,7 +15,8 @@
     "recheck": "node --experimental-strip-types worker/recheck.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint . && prettier --check ."
+    "lint": "eslint . && prettier --check .",
+    "worker:dev": "node --watch --experimental-strip-types worker/index.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

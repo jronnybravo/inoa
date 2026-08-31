@@ -55,7 +55,6 @@
  * obtained, not that it should be obtained another way.
  */
 
-import { chromium, type Browser } from 'playwright';
 import * as cheerio from 'cheerio';
 import { isBrandCollision, jitter, sleep, squash, type CheckOutcome } from './shared.ts';
 
@@ -258,11 +257,25 @@ async function apiSearch(query: string): Promise<{ hits: Hit[]; label: string } 
   return null;
 }
 
+/**
+ * Playwright is loaded only if a browser is actually needed.
+ *
+ * A top-level import pulls Chromium's bindings into anything that imports this
+ * module — including a server route that only ever wants the API tier, and a
+ * serverless bundle where the browser cannot run at all.
+ */
+type Browser = Awaited<ReturnType<typeof launchChromium>>;
+
+async function launchChromium() {
+  const { chromium } = await import('playwright');
+  return chromium.launch({ headless: true });
+}
+
 let browser: Browser | undefined;
 
 async function getBrowser(): Promise<Browser> {
   if (browser?.isConnected()) return browser;
-  browser = await chromium.launch({ headless: true });
+  browser = await launchChromium();
   return browser;
 }
 

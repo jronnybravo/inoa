@@ -228,7 +228,9 @@ async function processRun(run: Run): Promise<void> {
   generationDone = true;
 
   if (generated.length === 0) {
-    const reason = 'Generation produced no names. Is the Claude CLI signed in? Try `claude login`.';
+    const reason =
+      'Generation produced no names. Usually the Claude usage limit — check the warnings above; ' +
+      'otherwise confirm the CLI is signed in with `claude login`.';
     await log(reason, 'error');
     await runs.update(run.id, { status: 'failed', error: reason, finishedAt: new Date() });
     return;

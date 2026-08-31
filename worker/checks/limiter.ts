@@ -27,7 +27,9 @@ export class RateLimit {
         // than all reading the same free slot.
         this.#next = at + this.#intervalMs;
         const wait = at - now;
-        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+        if (wait > 0) {
+            await new Promise((r) => setTimeout(r, wait));
+        }
     }
 }
 

@@ -20,10 +20,14 @@ import { checkCandidate, computePassed } from '../../../../../../worker/pipeline
 export const POST: RequestHandler = async ({ params, request }) => {
     await db();
     const candidate = await Candidate.findOneBy({ id: params.id });
-    if (!candidate) error(404, 'No such candidate');
+    if (!candidate) {
+        error(404, 'No such candidate');
+    }
 
     const run = await Run.findOneBy({ id: candidate.runId });
-    if (!run) error(404, 'No such run');
+    if (!run) {
+        error(404, 'No such run');
+    }
 
     const body = (await request.json().catch(() => ({}))) as { kind?: CheckKind };
     const required = {

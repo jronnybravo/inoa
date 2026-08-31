@@ -32,7 +32,9 @@ export const dataSource = new DataSource({
 let initializing: Promise<DataSource> | undefined;
 
 export async function db(): Promise<DataSource> {
-    if (dataSource.isInitialized) return dataSource;
+    if (dataSource.isInitialized) {
+        return dataSource;
+    }
     initializing ??= dataSource.initialize().then((source) => {
         // Without this, Run.find() has no connection to run against.
         BaseEntities.forEach((entity) => entity.useDataSource(source));

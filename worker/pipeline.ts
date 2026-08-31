@@ -86,7 +86,9 @@ export function computePassed(
     required: Requirements
 ): boolean | null {
     const relevant = CHECK_ORDER.filter((kind) => required[kind]);
-    if (relevant.some((kind) => (statuses[kind] ?? 'pending') === 'pending')) return null;
+    if (relevant.some((kind) => (statuses[kind] ?? 'pending') === 'pending')) {
+        return null;
+    }
     return relevant.every((kind) => statuses[kind] === 'clear');
 }
 
@@ -101,7 +103,9 @@ export async function checkCandidate(
 
     for (const kind of CHECK_ORDER) {
         // Checks this pass is not responsible for keep whatever state they hold.
-        if (!kinds.includes(kind)) continue;
+        if (!kinds.includes(kind)) {
+            continue;
+        }
 
         if (droppedBy) {
             statuses[kind] = 'skipped';
@@ -114,9 +118,13 @@ export async function checkCandidate(
 
         const outcome = await RUNNERS[kind](name);
         statuses[kind] = outcome.status;
-        if (outcome.detail) detail[kind] = outcome.detail;
+        if (outcome.detail) {
+            detail[kind] = outcome.detail;
+        }
 
-        if (required[kind] && outcome.status === 'taken') droppedBy = kind;
+        if (required[kind] && outcome.status === 'taken') {
+            droppedBy = kind;
+        }
     }
 
     return { statuses, detail, passed: computePassed(statuses, required), droppedBy };

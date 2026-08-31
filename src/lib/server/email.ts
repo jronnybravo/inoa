@@ -26,7 +26,9 @@ export interface SendResult {
 
 export async function sendVerificationCode(to: string, code: string): Promise<SendResult> {
     const resend = client();
-    if (!resend) return { sent: false, reason: 'No RESEND_API_KEY configured' };
+    if (!resend) {
+        return { sent: false, reason: 'No RESEND_API_KEY configured' };
+    }
     try {
         const { error } = await resend.emails.send({
             from,
@@ -34,7 +36,9 @@ export async function sendVerificationCode(to: string, code: string): Promise<Se
             subject: `${code} is your verification code`,
             text: `Your verification code is ${code}. It expires in 20 minutes.`
         });
-        if (error) return { sent: false, reason: error.message };
+        if (error) {
+            return { sent: false, reason: error.message };
+        }
         return { sent: true };
     } catch (e) {
         return { sent: false, reason: (e as Error).message };
@@ -74,7 +78,9 @@ export async function sendResults(
     url: string
 ): Promise<SendResult> {
     const resend = client();
-    if (!resend) return { sent: false, reason: 'No RESEND_API_KEY configured' };
+    if (!resend) {
+        return { sent: false, reason: 'No RESEND_API_KEY configured' };
+    }
 
     const table = rows
         .slice(0, 60)
@@ -107,7 +113,9 @@ export async function sendResults(
                 }
             ]
         });
-        if (error) return { sent: false, reason: error.message };
+        if (error) {
+            return { sent: false, reason: error.message };
+        }
         return { sent: true };
     } catch (e) {
         return { sent: false, reason: (e as Error).message };

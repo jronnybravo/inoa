@@ -26,7 +26,9 @@ export async function checkAppStore(name: string): Promise<CheckOutcome> {
         }
         const data = (await response.json()) as ItunesResponse;
         const hits = (data.results ?? []).filter((r) => isBrandCollision(name, r.trackName ?? ''));
-        if (hits.length === 0) return { status: 'clear' };
+        if (hits.length === 0) {
+            return { status: 'clear' };
+        }
         return {
             status: 'taken',
             detail: hits

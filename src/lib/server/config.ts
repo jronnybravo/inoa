@@ -20,9 +20,13 @@ const FROM_SCHEME: Record<string, Dialect> = {
 };
 
 function normalize(value: string | undefined): Dialect | undefined {
-    if (!value) return undefined;
+    if (!value) {
+        return undefined;
+    }
     const key = value.trim().toLowerCase();
-    if (key === 'sqlite3' || key === 'sqlite') return 'better-sqlite3';
+    if (key === 'sqlite3' || key === 'sqlite') {
+        return 'better-sqlite3';
+    }
     return FROM_SCHEME[key] ?? (key as Dialect);
 }
 
@@ -49,7 +53,9 @@ function sqlitePath(): string {
  */
 function ssl(): false | { rejectUnauthorized: boolean } {
     const explicit = process.env.DB_SSL?.trim().toLowerCase();
-    if (explicit === 'false' || explicit === '0' || explicit === 'off') return false;
+    if (explicit === 'false' || explicit === '0' || explicit === 'off') {
+        return false;
+    }
     if (explicit === 'true' || explicit === '1' || explicit === 'on') {
         return { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' };
     }
@@ -60,8 +66,12 @@ function ssl(): false | { rejectUnauthorized: boolean } {
 
 /** The connection half of the DataSource options, whatever the driver. */
 export function connectionOptions(): Record<string, unknown> {
-    if (IS_SQLITE) return { database: sqlitePath() };
-    if (url) return { url, ssl: ssl() };
+    if (IS_SQLITE) {
+        return { database: sqlitePath() };
+    }
+    if (url) {
+        return { url, ssl: ssl() };
+    }
     return {
         host: process.env.DB_HOST ?? 'localhost',
         port: Number(process.env.DB_PORT ?? (DIALECT === 'postgres' ? 5432 : 3306)),

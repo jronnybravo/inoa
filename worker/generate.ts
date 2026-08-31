@@ -98,11 +98,15 @@ function parse(output: string, strategy: StrategyId): GeneratedName[] {
     const out: GeneratedName[] = [];
     for (const line of output.split('\n')) {
         const trimmed = line.trim();
-        if (!trimmed) continue;
+        if (!trimmed) {
+            continue;
+        }
         const [rawName, ...rest] = trimmed.split(/\t|\s+[—–-]\s+/);
         const name = (rawName ?? '').replace(/^[\d.)\-*\s]+/, '').trim();
         // Anything with punctuation or spaces left is commentary, not a name.
-        if (!/^[A-Za-z]{3,16}$/.test(name)) continue;
+        if (!/^[A-Za-z]{3,16}$/.test(name)) {
+            continue;
+        }
         out.push({ name, rationale: rest.join(' ').trim().slice(0, 160), strategy });
     }
     return out;
@@ -115,7 +119,9 @@ async function generateBatch(
     avoid: string[]
 ): Promise<GeneratedName[]> {
     const args = ['-p', promptFor(brief, strategy, count, avoid), '--output-format', 'text'];
-    if (MODEL) args.push('--model', MODEL);
+    if (MODEL) {
+        args.push('--model', MODEL);
+    }
     const { stdout } = await run('claude', args, CLI_OPTIONS);
     return parse(stdout, strategy);
 }
@@ -257,7 +263,9 @@ export async function generateNames(
         const fresh: GeneratedName[] = [];
         for (const candidate of names) {
             const key = candidate.name.toLowerCase();
-            if (seen.has(key)) continue;
+            if (seen.has(key)) {
+                continue;
+            }
             seen.add(key);
             fresh.push(candidate);
         }
@@ -275,15 +283,18 @@ export async function generateNames(
         ) {
             spawn();
         }
-        if (pool.size === 0) break;
+        if (pool.size === 0) {
+            break;
+        }
         const { id, names, failed } = await Promise.race(pool.values());
         pool.delete(id);
         await absorb(names, failed);
     }
 
     // Whatever is still in flight has already been paid for; keep its output.
-    for (const settled of await Promise.all(pool.values()))
+    for (const settled of await Promise.all(pool.values())) {
         await absorb(settled.names, settled.failed);
+    }
 
     /**
      * A final, sequential attempt at the shortfall.

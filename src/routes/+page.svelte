@@ -103,7 +103,9 @@
     let hint = $state<{ text: string; x: number; y: number } | null>(null);
 
     function showHint(event: MouseEvent, text: string | null) {
-        if (!text) return;
+        if (!text) {
+            return;
+        }
         const r = (event.currentTarget as HTMLElement).getBoundingClientRect();
         hint = { text, x: r.left, y: r.bottom + 6 };
     }
@@ -240,9 +242,12 @@
      */
     const shown = $derived(
         candidates.filter((c) => {
-            if (nameFilter && !c.name.toLowerCase().includes(nameFilter.toLowerCase()))
+            if (nameFilter && !c.name.toLowerCase().includes(nameFilter.toLowerCase())) {
                 return false;
-            if (approachFilter && c.strategy !== approachFilter) return false;
+            }
+            if (approachFilter && c.strategy !== approachFilter) {
+                return false;
+            }
             return CHECK_ORDER.every((k) => !checkFilter[k] || c[k] === checkFilter[k]);
         })
     );
@@ -290,7 +295,9 @@
                 })
             });
             const payload = await response.json();
-            if (!response.ok) throw new Error(payload.message ?? 'Could not start');
+            if (!response.ok) {
+                throw new Error(payload.message ?? 'Could not start');
+            }
             pendingRunId = payload.id;
             emailProblem = payload.emailSent
                 ? ''
@@ -311,8 +318,9 @@
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ runId: pendingRunId, code })
             });
-            if (!response.ok)
+            if (!response.ok) {
                 throw new Error((await response.json()).message ?? 'Could not verify');
+            }
             // Client-side navigation. Assigning to window.location threw the whole
             // document away and rebuilt it, which reads as the app restarting at the
             // exact moment the run begins.
@@ -335,7 +343,9 @@
      * hits the duration cap this whole architecture exists to avoid.
      */
     $effect(() => {
-        if (!data.run) return;
+        if (!data.run) {
+            return;
+        }
         // The component survives a client-side navigation, so state initialised
         // from the first `data` would otherwise stay on the previous run.
         run = data.run;
@@ -350,16 +360,24 @@
                         const payload = await r.json();
                         run = payload.run;
                         candidates = mergeCandidates(candidates, payload.candidates);
-                        if (payload.tallies) tallies = payload.tallies;
+                        if (payload.tallies) {
+                            tallies = payload.tallies;
+                        }
                         if (payload.events?.length) {
                             const fresh = payload.events.filter(
                                 (e: { id: string }) => !seenEvents.has(e.id)
                             );
-                            for (const e of fresh) seenEvents.add(e.id);
-                            if (fresh.length) events = [...events, ...fresh].slice(-800);
+                            for (const e of fresh) {
+                                seenEvents.add(e.id);
+                            }
+                            if (fresh.length) {
+                                events = [...events, ...fresh].slice(-800);
+                            }
                             since = payload.events[payload.events.length - 1].at;
                         }
-                        if (run.status === 'done' || run.status === 'failed') return;
+                        if (run.status === 'done' || run.status === 'failed') {
+                            return;
+                        }
                     }
                 } catch {
                     // Transient; the next tick retries.
@@ -376,7 +394,9 @@
     $effect(() => {
         // Read the length so this re-runs whenever a line arrives.
         void events.length;
-        if (logEl) logEl.scrollTop = logEl.scrollHeight;
+        if (logEl) {
+            logEl.scrollTop = logEl.scrollHeight;
+        }
     });
 
     function visibleRows() {

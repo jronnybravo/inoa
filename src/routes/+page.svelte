@@ -78,6 +78,13 @@
         Boolean(nameFilter || approachFilter || Object.values(checkFilter).some(Boolean))
     );
 
+    /** Escape clears the filters, from anywhere on the page. */
+    function onKeydown(event: KeyboardEvent) {
+        if (event.key === 'Escape' && anyFilter) {
+            clearFilters();
+        }
+    }
+
     function clearFilters() {
         nameFilter = '';
         approachFilter = '';
@@ -247,6 +254,16 @@
     };
 
     /** The hairline under a sticky header, which a border would scroll away from. */
+    const FILTER_INPUT =
+        'w-full rounded border bg-white px-1.5 py-1 text-xs font-normal ' +
+        'placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-900/10 ' +
+        'dark:bg-stone-950 dark:placeholder:text-stone-600 dark:focus:ring-white/10';
+    const FILTER_IDLE = 'border-stone-300 dark:border-stone-700';
+    const FILTER_ACTIVE = 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/60';
+    const CLEAR_BUTTON =
+        'absolute inset-y-0 right-0 flex w-5 items-center justify-center text-sm ' +
+        'leading-none text-stone-400 hover:text-stone-900 dark:hover:text-stone-100';
+
     const HEADER_EDGE =
         'shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)] dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]';
 
@@ -450,6 +467,8 @@
 
     const time = (at: string) => new Date(at).toLocaleTimeString('en-GB', { hour12: false });
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <header class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
     <div>
@@ -792,76 +811,117 @@
                         <col style="width: 6.75rem" />
                         <col />
                     </colgroup>
+                    <!--
+                        The heading is the label and its filter together. A
+                        filtered column shows it: the control takes the accent
+                        border and a clear button appears, so the reason a
+                        table looks short is visible from the table.
+                    -->
                     <thead class="sticky top-0 z-10 text-left">
                         <tr class="bg-stone-100 dark:bg-stone-900">
-                            <th class="px-3 pt-2 pb-2 align-top {HEADER_EDGE}"></th>
+                            <th class="px-3 py-2.5 align-bottom {HEADER_EDGE}"></th>
 
-                            <th
-                                class="px-3 pt-2 pb-2 text-left align-top font-medium {HEADER_EDGE}"
-                            >
-                                Name
-                                <input
-                                    bind:value={nameFilter}
-                                    type="search"
-                                    placeholder="contains…"
-                                    aria-label="Filter names"
-                                    class="mt-1 w-full rounded border border-stone-300 bg-white px-1.5 py-0.5
-                         text-xs font-normal placeholder:text-stone-400 focus:border-stone-500
-                         focus:outline-none dark:border-stone-700 dark:bg-stone-950
-                         dark:placeholder:text-stone-600"
-                                />
+                            <th class="px-3 py-2.5 align-bottom {HEADER_EDGE}">
+                                <span class="block pb-1 text-xs font-medium text-stone-500">
+                                    Name
+                                </span>
+                                <div class="relative">
+                                    <input
+                                        bind:value={nameFilter}
+                                        type="text"
+                                        placeholder="contains…"
+                                        aria-label="Filter names"
+                                        class="{FILTER_INPUT} {nameFilter
+                                            ? FILTER_ACTIVE
+                                            : FILTER_IDLE} pr-6"
+                                    />
+                                    {#if nameFilter}
+                                        <button
+                                            onclick={() => (nameFilter = '')}
+                                            aria-label="Clear the name filter"
+                                            class={CLEAR_BUTTON}>×</button
+                                        >
+                                    {/if}
+                                </div>
                             </th>
 
-                            <th
-                                class="px-3 pt-2 pb-2 text-left align-top font-medium whitespace-nowrap {HEADER_EDGE}"
-                            >
-                                Approach
-                                <select
-                                    bind:value={approachFilter}
-                                    aria-label="Filter by approach"
-                                    class="mt-1 w-full rounded border border-stone-300 bg-white px-1 py-0.5
-                         text-xs font-normal focus:border-stone-500 focus:outline-none
-                         dark:border-stone-700 dark:bg-stone-950"
-                                >
-                                    <option value="">Any</option>
-                                    {#each byStrategy as s (s.id)}<option value={s.id}
-                                            >{strategyLabel(s.id)}</option
-                                        >{/each}
-                                </select>
+                            <th class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}">
+                                <span class="block pb-1 text-xs font-medium text-stone-500">
+                                    Approach
+                                </span>
+                                <div class="relative">
+                                    <select
+                                        bind:value={approachFilter}
+                                        aria-label="Filter by approach"
+                                        class="{FILTER_INPUT} {approachFilter
+                                            ? FILTER_ACTIVE
+                                            : FILTER_IDLE} pr-6"
+                                    >
+                                        <option value="">Any</option>
+                                        {#each byStrategy as s (s.id)}
+                                            <option value={s.id}>{strategyLabel(s.id)}</option>
+                                        {/each}
+                                    </select>
+                                    {#if approachFilter}
+                                        <button
+                                            onclick={() => (approachFilter = '')}
+                                            aria-label="Clear the approach filter"
+                                            class={CLEAR_BUTTON}>×</button
+                                        >
+                                    {/if}
+                                </div>
                             </th>
 
                             {#each CHECK_ORDER as k (k)}
                                 <th
-                                    class="px-3 pt-2 pb-2 text-left align-top font-medium whitespace-nowrap {HEADER_EDGE}"
+                                    class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}"
                                 >
-                                    {CHECK_LABEL[k]}
-                                    <select
-                                        bind:value={checkFilter[k]}
-                                        aria-label="Filter by {CHECK_LABEL[k]}"
-                                        class="mt-1 w-full rounded border border-stone-300 bg-white px-1 py-0.5
-                           text-xs font-normal focus:border-stone-500 focus:outline-none
-                           dark:border-stone-700 dark:bg-stone-950"
-                                    >
-                                        <option value="">Any</option>
-                                        {#each LEGEND as l (l.status)}<option value={l.status}
-                                                >{CELL[l.status].text}</option
-                                            >{/each}
-                                    </select>
+                                    <span class="block pb-1 text-xs font-medium text-stone-500">
+                                        {CHECK_LABEL[k]}
+                                    </span>
+                                    <div class="relative">
+                                        <select
+                                            bind:value={checkFilter[k]}
+                                            aria-label="Filter by {CHECK_LABEL[k]}"
+                                            class="{FILTER_INPUT} {checkFilter[k]
+                                                ? FILTER_ACTIVE
+                                                : FILTER_IDLE} pr-6"
+                                        >
+                                            <option value="">Any</option>
+                                            {#each LEGEND as l (l.status)}
+                                                <option value={l.status}
+                                                    >{CELL[l.status].text}</option
+                                                >
+                                            {/each}
+                                        </select>
+                                        {#if checkFilter[k]}
+                                            <button
+                                                onclick={() => (checkFilter[k] = '')}
+                                                aria-label="Clear the {CHECK_LABEL[k]} filter"
+                                                class={CLEAR_BUTTON}>×</button
+                                            >
+                                        {/if}
+                                    </div>
                                 </th>
                             {/each}
 
                             <th
-                                class="px-3 pt-2 pb-2 text-right align-top font-medium whitespace-nowrap {HEADER_EDGE}"
+                                class="px-3 py-2.5 text-right align-bottom whitespace-nowrap {HEADER_EDGE}"
                             >
-                                Action
-                                {#if anyFilter}
-                                    <button
-                                        onclick={clearFilters}
-                                        class="mt-1 block w-full rounded border border-stone-300 px-1 py-0.5 text-xs
-                           font-normal transition-colors duration-100 hover:bg-stone-200
-                           dark:border-stone-700 dark:hover:bg-stone-800">Clear filters</button
-                                    >
-                                {/if}
+                                <span class="block pb-1 text-xs font-medium text-stone-500">
+                                    Action
+                                </span>
+                                <button
+                                    onclick={clearFilters}
+                                    disabled={!anyFilter}
+                                    class="w-full rounded border border-stone-300 px-2 py-1 text-xs
+                                           transition-colors duration-100 enabled:hover:bg-stone-200
+                                           disabled:opacity-0 dark:border-stone-700
+                                           dark:enabled:hover:bg-stone-800"
+                                >
+                                    Clear all
+                                    <kbd class="ml-0.5 opacity-60">esc</kbd>
+                                </button>
                             </th>
                         </tr>
                     </thead>

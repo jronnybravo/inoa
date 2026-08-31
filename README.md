@@ -126,6 +126,18 @@ The third one is not decoration. A boolean cannot tell "it is free" apart from
 broken check disguises itself as a working one — which is exactly what happened
 in the tool this replaces, silently, across 500 names.
 
+## Reusing verdicts
+
+The same name comes up across runs, and re-checking one costs an Apple call, a
+Play scrape and a search credit to re-learn something already on record. A
+verdict from an earlier run is reused when it is recent enough —
+`BRANDY_REUSE_DAYS`, 14 by default, `0` to disable.
+
+Bounded by age because a verdict is a fact about a moment: domains lapse, apps
+ship, companies fold. Only `free` and `taken` are borrowed; `unverified` means
+the check could not answer, and reusing that would preserve a failure instead
+of retrying it. A reused cell says so in its tooltip, with how old it is.
+
 ## The web check
 
 Two tiers. Plain HTTP against Bing and Google first, because it is fast and

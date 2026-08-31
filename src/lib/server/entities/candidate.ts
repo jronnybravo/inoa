@@ -54,6 +54,8 @@ export const CandidateSchema = new EntitySchema<Candidate>({
     },
     indices: [
         { name: 'idx_candidates_run', columns: ['runId'] },
+        // Verdicts are looked up by name across runs, to reuse a recent one.
+        { name: 'idx_candidates_name', columns: ['name'] },
         // The worker repeatedly asks for "the next unchecked name in this run".
         { name: 'idx_candidates_run_position', columns: ['runId', 'position'] }
     ]

@@ -76,6 +76,14 @@ export function fastChecks(): CheckKind[] {
     return hasSearchApi() ? CHECK_ORDER : CHECK_ORDER.filter((k) => k !== 'google');
 }
 
+/**
+ * A verdict this name already has from an earlier run, if any.
+ *
+ * Passed in rather than looked up here, so the funnel stays a pure sequence of
+ * checks and can be exercised without a database.
+ */
+export type PriorVerdict = (name: string, kind: CheckKind) => Promise<CheckOutcome | null>;
+
 export interface Requirements {
     com: boolean;
     appStore: boolean;
@@ -119,7 +127,8 @@ export function computePassed(
 export async function checkCandidate(
     name: string,
     required: Requirements,
-    kinds: CheckKind[] = CHECK_ORDER
+    kinds: CheckKind[] = CHECK_ORDER,
+    prior?: PriorVerdict
 ): Promise<CandidateResult> {
     const statuses: Record<CheckKind, CheckStatus> = {
         com: 'pending',
@@ -141,11 +150,22 @@ export async function checkCandidate(
             continue;
         }
 
-        // Wait for a slot on the shared schedule, not a private timer — otherwise
-        // concurrent names all call the same service simultaneously.
-        await LIMITS[kind]?.take();
+        /*
+         * A verdict already on record costs nothing and takes no slot on the
+         * limiter, which is the point: the rate limits exist to pace calls we
+         * actually make.
+         */
+        const borrowed = await prior?.(name, kind);
+        let outcome: CheckOutcome;
 
-        const outcome = await RUNNERS[kind](name);
+        if (borrowed) {
+            outcome = borrowed;
+        } else {
+            // Wait for a slot on the shared schedule, not a private timer —
+            // otherwise concurrent names all call the same service at once.
+            await LIMITS[kind]?.take();
+            outcome = await RUNNERS[kind](name);
+        }
         statuses[kind] = outcome.status;
         if (outcome.detail) {
             detail[kind] = outcome.detail;

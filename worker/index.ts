@@ -21,6 +21,7 @@ import { sendResults } from '../src/lib/server/email.ts';
 import { Candidate } from '../src/lib/server/entities/candidate.ts';
 import { Run } from '../src/lib/server/entities/run.ts';
 import { CHECK_LABEL } from '../src/lib/types.ts';
+import { priorVerdict } from './checks/reuse.ts';
 import { sleep } from './checks/shared.ts';
 import { closeBrowser } from './checks/web.ts';
 import { generateNames } from './generate.ts';
@@ -200,8 +201,21 @@ async function processRun(run: Run): Promise<void> {
         const checking = (async () => {
             await log(`Checking as names arrive — ${kinds.map((k) => CHECK_LABEL[k]).join(', ')}`);
 
+            let borrowed = 0;
+
             const one = async (candidate: { id: string; name: string }) => {
-                const result = await checkCandidate(candidate.name, required, kinds);
+                const result = await checkCandidate(
+                    candidate.name,
+                    required,
+                    kinds,
+                    async (n, k) => {
+                        const found = await priorVerdict(n, k, run.id);
+                        if (found) {
+                            borrowed++;
+                        }
+                        return found;
+                    }
+                );
                 await Candidate.update(candidate.id, {
                     com: result.statuses.com,
                     appStore: result.statuses.appStore,
@@ -270,7 +284,10 @@ async function processRun(run: Run): Promise<void> {
                         }
                     })
                 );
-                await log(`Checked ${checked}`);
+                await log(
+                    `Checked ${checked}` +
+                        (borrowed > 0 ? ` — ${borrowed} verdicts reused from earlier runs` : '')
+                );
             }
         })();
 

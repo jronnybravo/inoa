@@ -1011,14 +1011,30 @@
                                         class="inline-flex overflow-hidden rounded border border-stone-300
                                dark:border-stone-700"
                                     >
+                                        <!--
+                                            Both labels occupy one grid cell, so
+                                            the button is as wide as the longer
+                                            of them and does not resize when the
+                                            state changes. A row that shifts
+                                            width mid-click makes the whole
+                                            column look unstable.
+                                        -->
                                         <button
                                             onclick={() => recheck(c)}
                                             disabled={rechecking[c.id]}
                                             title="Re-run the checks this run requires"
-                                            class="px-2 py-0.5 text-xs transition-colors duration-100
-                             hover:bg-stone-100 disabled:opacity-50 dark:hover:bg-stone-800"
+                                            class="grid px-2 py-0.5 text-xs transition-colors
+                                                   duration-100 hover:bg-stone-100
+                                                   disabled:opacity-50 dark:hover:bg-stone-800"
                                         >
-                                            {rechecking[c.id] ? 'Checking…' : 'Check'}
+                                            <span
+                                                class="col-start-1 row-start-1"
+                                                class:invisible={rechecking[c.id]}>Check</span
+                                            >
+                                            <span
+                                                class="col-start-1 row-start-1"
+                                                class:invisible={!rechecking[c.id]}>Checking…</span
+                                            >
                                         </button>
                                         <button
                                             onclick={(e) => {

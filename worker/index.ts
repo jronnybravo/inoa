@@ -17,8 +17,8 @@
 import 'dotenv/config';
 import { LessThan } from 'typeorm';
 import { db } from '../src/lib/server/db.ts';
-import { RunEntity, type Run } from '../src/lib/server/entities/run.ts';
-import { CandidateEntity } from '../src/lib/server/entities/candidate.ts';
+import { Run } from '../src/lib/server/entities/run.ts';
+import { Candidate } from '../src/lib/server/entities/candidate.ts';
 import { generateNames } from './generate.ts';
 import { checkCandidate, fastChecks } from './pipeline.ts';
 import { drainWebQueue } from './webqueue.ts';
@@ -67,11 +67,9 @@ const APP_URL = process.env.PUBLIC_APP_URL ?? 'http://localhost:5173';
  * arithmetic differently.
  */
 async function claimNext(): Promise<Run | null> {
-  const source = await db();
-  const runs = source.getRepository(RunEntity);
   const cutoff = new Date(Date.now() - LEASE_SECONDS * 1000);
 
-  const waiting = await runs.find({
+  const waiting = await Run.find({
     where: [
       { emailVerified: true, status: 'queued' },
       // Or a worker took it and stopped renewing the lease.
@@ -83,29 +81,30 @@ async function claimNext(): Promise<Run | null> {
   });
 
   for (const run of waiting) {
-    const taken = await runs.update(
+    const taken = await Run.update(
       // The same conditions again: if they no longer hold, somebody else won.
       run.status === 'queued'
         ? { id: run.id, status: 'queued' }
         : { id: run.id, status: run.status, claimedAt: LessThan(cutoff) },
       { status: 'generating', claimedAt: new Date() }
     );
-    if (taken.affected === 1) return { ...run, status: 'generating' };
+    if (taken.affected === 1) {
+      run.status = 'generating';
+      return run;
+    }
   }
   return null;
 }
 
 async function processRun(run: Run): Promise<void> {
   const source = await db();
-  const runs = source.getRepository(RunEntity);
-  const candidates = source.getRepository(CandidateEntity);
 
   console.log(`\n[${run.id.slice(0, 8)}] ${run.brief.slice(0, 60)}`);
   const log = makeLogger(source, run.id);
 
   // Renew the lease while we work, so nothing else takes this run from us.
   const heartbeat = setInterval(() => {
-    runs.update(run.id, { claimedAt: new Date() }).catch(() => {});
+    Run.update(run.id, { claimedAt: new Date() }).catch(() => {});
   }, HEARTBEAT_MS);
 
   try {
@@ -123,13 +122,13 @@ async function processRun(run: Run): Promise<void> {
    * half-generated set has to be discarded, because topping it up would need
    * the exclusion list that died with the process.
    */
-  const leftover = await candidates.countBy({ runId: run.id });
+  const leftover = await Candidate.countBy({ runId: run.id });
   const resuming = leftover >= run.targetCount;
 
   if (leftover > 0 && !resuming) {
-    await candidates.delete({ runId: run.id });
+    await Candidate.delete({ runId: run.id });
     await log(`Restarting — discarded ${leftover} partial names from an interrupted attempt`, 'warn');
-    await runs.update(run.id, { generatedCount: 0, checkedCount: 0 });
+    await Run.update(run.id, { generatedCount: 0, checkedCount: 0 });
   }
 
   /**
@@ -151,7 +150,7 @@ async function processRun(run: Run): Promise<void> {
 
   const generating = resuming
     ? Promise.resolve(
-        (await candidates.find({ where: { runId: run.id }, order: { position: 'ASC' } })).map(
+        (await Candidate.find({ where: { runId: run.id }, order: { position: 'ASC' } })).map(
           (c) => ({
             name: c.name,
             rationale: c.rationale ?? '',
@@ -165,7 +164,7 @@ async function processRun(run: Run): Promise<void> {
     run.targetCount,
     async (fresh, total) => {
       if (fresh.length > 0) {
-        await candidates.insert(
+        await Candidate.insert(
           fresh.map((g, i) => ({
             runId: run.id,
             name: g.name,
@@ -176,7 +175,7 @@ async function processRun(run: Run): Promise<void> {
         );
         stored_count += fresh.length;
       }
-      await runs.update(run.id, { generatedCount: total });
+      await Run.update(run.id, { generatedCount: total });
       await log(`Generated ${total} of ${run.targetCount}`);
     },
         async (reason) => log(`Generation: ${reason}`, 'warn')
@@ -200,7 +199,7 @@ async function processRun(run: Run): Promise<void> {
 
     const one = async (candidate: { id: string; name: string }) => {
       const result = await checkCandidate(candidate.name, required, kinds);
-      await candidates.update(candidate.id, {
+      await Candidate.update(candidate.id, {
         com: result.statuses.com!,
         appStore: result.statuses.appStore!,
         playStore: result.statuses.playStore!,
@@ -224,7 +223,7 @@ async function processRun(run: Run): Promise<void> {
       checked++;
       // Written per name, not per batch: the page polls this, and a counter
       // that only moves every two dozen names reads as a stall.
-      await runs.update(run.id, { checkedCount: checked });
+      await Run.update(run.id, { checkedCount: checked });
       if (result.droppedBy) {
         // Name what was found, not just that something was. A line saying a
         // name is taken is an assertion; one naming the listing is evidence.
@@ -237,7 +236,7 @@ async function processRun(run: Run): Promise<void> {
     };
 
     for (;;) {
-      const batch = await candidates.find({
+      const batch = await Candidate.find({
         where: { runId: run.id, com: 'pending' as never },
         order: { position: 'ASC' },
         take: CHECK_CONCURRENCY * 3
@@ -269,27 +268,27 @@ async function processRun(run: Run): Promise<void> {
       'Generation produced no names. Usually the Claude usage limit — check the warnings above; ' +
       'otherwise confirm the CLI is signed in with `claude login`.';
     await log(reason, 'error');
-    await runs.update(run.id, { status: 'failed', error: reason, finishedAt: new Date() });
+    await Run.update(run.id, { status: 'failed', error: reason, finishedAt: new Date() });
     return;
   }
 
   // The stored count, not the requested one: concurrent batches overshoot and
   // every name they produced is kept, so '1042 of 1000' was the denominator
   // being wrong rather than the numerator.
-  await runs.update(run.id, {
+  await Run.update(run.id, {
     status: 'checking',
-    generatedCount: await candidates.countBy({ runId: run.id })
+    generatedCount: await Candidate.countBy({ runId: run.id })
   });
   await checking;
-  const stored = await candidates.find({ where: { runId: run.id } });
+  const stored = await Candidate.find({ where: { runId: run.id } });
 
   // Phase two. Only survivors are here, which is what makes a minute apiece
   // affordable — the funnel has already removed most of the field.
-  const queued = stored.length - (await candidates.countBy({ runId: run.id, google: 'skipped' }));
+  const queued = stored.length - (await Candidate.countBy({ runId: run.id, google: 'skipped' }));
   if (deferWeb && queued > 0) {
     await log(`Web check queue: ${queued} names survived the earlier gates`, 'success');
     const { resolved, abandoned } = await drainWebQueue(
-      candidates,
+      Candidate,
       run.id,
       required,
       async (done, total, note) => {
@@ -303,12 +302,12 @@ async function processRun(run: Run): Promise<void> {
     );
   }
 
-  const survivors = await candidates.find({
+  const survivors = await Candidate.find({
     where: { runId: run.id, passed: true },
     order: { position: 'ASC' }
   });
 
-  await runs.update(run.id, { status: 'done', finishedAt: new Date() });
+  await Run.update(run.id, { status: 'done', finishedAt: new Date() });
 
   const mail = await sendResults(
     run.email,
@@ -323,7 +322,7 @@ async function processRun(run: Run): Promise<void> {
     })),
     `${APP_URL}/?requestid=${run.id}`
   );
-  if (mail.sent) await runs.update(run.id, { notifiedAt: new Date() });
+  if (mail.sent) await Run.update(run.id, { notifiedAt: new Date() });
 
   await log(`Finished — ${survivors.length} of ${stored.length} names passed every requirement`, 'success');
     if (!mail.sent) await log(`Results email failed: ${mail.reason}`, 'error');

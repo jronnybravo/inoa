@@ -15,8 +15,8 @@
 
 import 'dotenv/config';
 import { db } from '../src/lib/server/db.ts';
-import { RunEntity } from '../src/lib/server/entities/run.ts';
-import { CandidateEntity } from '../src/lib/server/entities/candidate.ts';
+import { Run } from '../src/lib/server/entities/run.ts';
+import { Candidate } from '../src/lib/server/entities/candidate.ts';
 import { CHECK_ORDER, type CheckKind } from '../src/lib/types.ts';
 import { checkCom } from './checks/domain.ts';
 import { checkAppStore } from './checks/appstore.ts';
@@ -48,10 +48,7 @@ if (!runId) {
 
 const kinds = only ? [only as CheckKind] : CHECK_ORDER;
 const source = await db();
-const runs = source.getRepository(RunEntity);
-const candidates = source.getRepository(CandidateEntity);
-
-const run = await runs.findOneBy({ id: runId });
+const run = await Run.findOneBy({ id: runId });
 if (!run) {
   console.error(`no run ${runId}`);
   process.exit(1);
@@ -65,7 +62,7 @@ const required = {
 };
 
 for (const kind of kinds) {
-  const stuck = await candidates.find({
+  const stuck = await Candidate.find({
     where: { runId, [kind]: 'unknown' } as never,
     order: { position: 'ASC' }
   });
@@ -87,7 +84,7 @@ for (const kind of kinds) {
       google: candidate.google,
       [kind]: outcome.status
     };
-    await candidates.update(candidate.id, {
+    await Candidate.update(candidate.id, {
       [kind]: outcome.status,
       detail: { ...candidate.detail, [kind]: outcome.detail ?? '' },
       passed: computePassed(statuses, required),
@@ -100,7 +97,7 @@ for (const kind of kinds) {
   console.log(`${kind}: ${resolved} of ${stuck.length} now answered`);
 }
 
-const passing = await candidates.countBy({ runId, passed: true });
+const passing = await Candidate.countBy({ runId, passed: true });
 console.log(`\n${passing} names now pass every required check`);
 await closeBrowser();
 await source.destroy();

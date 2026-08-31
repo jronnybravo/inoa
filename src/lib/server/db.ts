@@ -6,47 +6,40 @@
  * promise matters: several requests can land on a cold instance at once, and
  * without it each would start its own connect and TypeORM would throw.
  *
- * Neon must be reached through its POOLED connection string. A serverless
- * function that opens a direct connection per invocation exhausts Postgres
- * connection slots long before it exhausts anything else.
+ * Entities extend BaseEntity, so they carry their own queries — Run.find()
+ * rather than a repository handed around. That only works once the DataSource
+ * has been attached to them, which is why every caller goes through db().
  */
 
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
-import { RunEntity } from './entities/run.ts';
-import { CandidateEntity } from './entities/candidate.ts';
-import { VerificationEntity } from './entities/verification.ts';
-import { RunEventEntity } from './entities/event.ts';
-import { DIALECT } from './dialect.ts';
+import { connectionOptions, DIALECT } from './config.ts';
+import { Run, RunSchema } from './entities/run.ts';
+import { Candidate, CandidateSchema } from './entities/candidate.ts';
+import { Verification, VerificationSchema } from './entities/verification.ts';
+import { RunEvent, RunEventSchema } from './entities/event.ts';
 
-const url = process.env.DATABASE_URL;
-const sqlite = DIALECT === 'better-sqlite3' || DIALECT === 'sqlite';
-
-/**
- * The driver comes from the connection string, so a deployment runs on
- * whatever database it already has. SQLite takes a file path rather than a
- * URL, which is the one shape that does not fit the others.
- */
 export const dataSource = new DataSource({
   type: DIALECT as 'postgres',
-  ...(sqlite
-    ? { database: (url ?? 'brandy.sqlite').replace(/^sqlite:(\/\/)?/, '') }
-    : { url }),
-  entities: [RunEntity, CandidateEntity, VerificationEntity, RunEventEntity],
+  ...connectionOptions(),
+  entities: [RunSchema, CandidateSchema, VerificationSchema, RunEventSchema],
   // Schema changes go through `npm run db:sync`, never implicitly on boot:
   // a synchronize-on-start in a serverless function races itself.
   synchronize: false,
-  logging: false,
-  // SSL is a networked-database concern; a local file has no transport.
-  ...(sqlite || url?.includes('localhost')
-    ? {}
-    : { ssl: { rejectUnauthorized: false } })
-});
+  logging: false
+} as never);
 
 let initializing: Promise<DataSource> | undefined;
 
 export async function db(): Promise<DataSource> {
   if (dataSource.isInitialized) return dataSource;
-  initializing ??= dataSource.initialize();
+  initializing ??= dataSource.initialize().then((source) => {
+    // Without this, Run.find() has no connection to run against.
+    BaseEntities.forEach((entity) => entity.useDataSource(source));
+    return source;
+  });
   return initializing;
 }
+
+/** Each schema's `target` is one of these, which is what makes Run.find() work. */
+const BaseEntities = [Run, Candidate, Verification, RunEvent];

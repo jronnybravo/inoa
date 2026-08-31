@@ -7,7 +7,7 @@
  */
 
 import type { DataSource } from 'typeorm';
-import { RunEventEntity, type RunEvent } from '../src/lib/server/entities/event.ts';
+import { RunEvent } from '../src/lib/server/entities/event.ts';
 
 export type Level = RunEvent['level'];
 
@@ -18,12 +18,11 @@ const MARK: Record<Level, string> = {
   error: '×'
 };
 
-export function makeLogger(source: DataSource, runId: string) {
-  const events = source.getRepository(RunEventEntity);
+export function makeLogger(_source: DataSource, runId: string) {
   return async (message: string, level: Level = 'info') => {
     console.log(`  ${MARK[level]} ${message}`);
     try {
-      await events.insert({ runId, level, message });
+      await RunEvent.insert({ runId, level, message });
     } catch {
       // A run must not fail because its narration could not be stored.
     }

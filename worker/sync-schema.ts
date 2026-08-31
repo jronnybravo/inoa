@@ -6,9 +6,10 @@
  * instance.
  */
 import 'dotenv/config';
-import { dataSource } from '../src/lib/server/db.ts';
+import { db } from '../src/lib/server/db.ts';
 
-const source = await dataSource.initialize();
+// db() also attaches the DataSource to the entities, so BaseEntity works here.
+const source = await db();
 await source.synchronize();
 console.log('schema synchronized');
 await source.destroy();

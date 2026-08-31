@@ -1,4 +1,4 @@
-# Brandy
+# Branderitas
 
 Generate brand names from a brief, then screen each one against the places a
 name can already be taken: the `.com`, the App Store, Google Play, and the web.
@@ -29,16 +29,16 @@ Any database TypeORM supports. Configure it either way:
 DB_TYPE=mysql            # postgres | mysql | mariadb | sqlite
 DB_HOST=localhost
 DB_PORT=3306
-DB_USERNAME=brandy
+DB_USERNAME=branderitas
 DB_PASSWORD=secret
-DB_DATABASE=brandy
+DB_DATABASE=branderitas
 ```
 
 ```bash
-DATABASE_URL=postgresql://user:pass@host/brandy   # or just this
+DATABASE_URL=postgresql://user:pass@host/branderitas   # or just this
 ```
 
-SQLite needs only `DB_TYPE=sqlite` and `DB_DATABASE=./brandy.sqlite`. Install
+SQLite needs only `DB_TYPE=sqlite` and `DB_DATABASE=./branderitas.sqlite`. Install
 the driver you use: `pg`, `mysql2`, or `better-sqlite3` (the last two are
 optional dependencies, so a Postgres deployment does not build SQLite).
 
@@ -69,10 +69,10 @@ npm run worker            # in a second terminal, on your machine
 To try it without Neon, any local Postgres will do:
 
 ```bash
-docker run -d --name brandy-pg -e POSTGRES_PASSWORD=brandy -e POSTGRES_DB=brandy -p 55432:5432 postgres:16-alpine
+docker run -d --name branderitas-pg -e POSTGRES_PASSWORD=branderitas -e POSTGRES_DB=branderitas -p 55432:5432 postgres:16-alpine
 ```
 
-then set `DATABASE_URL=postgresql://postgres:brandy@localhost:55432/brandy`.
+then set `DATABASE_URL=postgresql://postgres:branderitas@localhost:55432/branderitas`.
 
 The worker needs a signed-in CLI: `claude login`.
 
@@ -140,7 +140,7 @@ in the tool this replaces, silently, across 500 names.
 The same name comes up across runs, and re-checking one costs an Apple call, a
 Play scrape and a search credit to re-learn something already on record. A
 verdict from an earlier run is reused when it is recent enough —
-`BRANDY_REUSE_DAYS`, 14 by default, `0` to disable.
+`BRANDERITAS_REUSE_DAYS`, 14 by default, `0` to disable.
 
 Bounded by age because a verdict is a fact about a moment: domains lapse, apps
 ship, companies fold. Only `free` and `taken` are borrowed; `unverified` means

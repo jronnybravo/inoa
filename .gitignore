@@ -7,7 +7,6 @@
 # Vite
 *.log
 .DS_Store
-.brandy/
 .cache/
 .env
 .env.*

@@ -13,7 +13,7 @@
 import { Resend } from 'resend';
 import { CHECK_LABEL, CHECK_ORDER, type CheckStatus } from '../types.ts';
 
-const from = process.env.RESEND_FROM ?? 'Brandy <onboarding@resend.dev>';
+const from = process.env.RESEND_FROM ?? 'Branderitas <onboarding@resend.dev>';
 const client = () => {
     const key = process.env.RESEND_API_KEY;
     return key ? new Resend(key) : undefined;

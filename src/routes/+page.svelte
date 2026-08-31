@@ -49,6 +49,22 @@
   let menu = $state<{ id: string; x: number; y: number } | null>(null);
 
   /**
+   * The reason a name was proposed, shown on hover.
+   *
+   * It was already carried as a title attribute, which is the worst place for
+   * it: about a second's delay, unstyled, invisible on touch, and gone the
+   * moment you move. Fixed coordinates because the table scrolls inside its
+   * own panel and would clip anything anchored to the row.
+   */
+  let hint = $state<{ text: string; x: number; y: number } | null>(null);
+
+  function showHint(event: MouseEvent, text: string | null) {
+    if (!text) return;
+    const r = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    hint = { text, x: r.left, y: r.bottom + 6 };
+  }
+
+  /**
    * Fold a poll's rows into the ones on screen, keeping every unchanged row.
    *
    * Assigning the response wholesale replaced a thousand objects every two and
@@ -460,7 +476,26 @@
       -->
       <div class="h-[32rem] overflow-auto rounded-xl border border-stone-200
                   lg:h-[calc(100vh-19rem)] dark:border-stone-800">
-        <table class="w-full text-sm">
+        <!--
+          Fixed layout, and every column given a width.
+          
+          With automatic layout the browser sizes columns from their contents,
+          so one cell changing from 'waiting' to 'taken' re-measures all 1052
+          rows and repaints the whole table. That is the flashing: the DOM
+          barely changes, but the layout is recomputed wholesale. Fixed layout
+          takes widths from the first row alone, so a changed cell repaints
+          itself and nothing else.
+        -->
+        <table class="w-full table-fixed text-sm">
+          <colgroup>
+            <col style="width: 2.5rem" />
+            <col />
+            <col style="width: 6.5rem" />
+            <col style="width: 6.5rem" />
+            <col style="width: 6.5rem" />
+            <col style="width: 6.5rem" />
+            <col style="width: 9.5rem" />
+          </colgroup>
           <thead class="sticky top-0 z-10 text-left">
             <tr class="bg-stone-100 dark:bg-stone-900">
               <th class="w-9 px-3 py-2 shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)]
@@ -486,8 +521,21 @@
                     checked={selected[c.id] ?? true}
                     onchange={(e) => (selected[c.id] = (e.currentTarget as HTMLInputElement).checked)} />
                 </td>
-                <td class="px-3 py-1.5 font-medium {c.passed ? '' : 'text-stone-500 dark:text-stone-400'}"
-                    title={c.rationale ?? ''}>{c.name}</td>
+                <td class="px-3 py-1.5 font-medium {c.passed ? '' : 'text-stone-500 dark:text-stone-400'}">
+                  <!--
+                    A button, because it is reachable by keyboard and a span
+                    with a tabindex is not something a screen reader can
+                    describe. The reason also stays in the title attribute, so
+                    it survives without JavaScript and on touch.
+                  -->
+                  <button type="button" title={c.rationale ?? ''}
+                          class="cursor-help text-left decoration-stone-300 decoration-dotted
+                                 underline-offset-4 hover:underline dark:decoration-stone-600"
+                          onmouseenter={(e) => showHint(e, c.rationale)}
+                          onmouseleave={() => (hint = null)}
+                          onfocus={(e) => showHint(e as unknown as MouseEvent, c.rationale)}
+                          onblur={() => (hint = null)}>{c.name}</button>
+                </td>
                 {#each CHECK_ORDER as k}
                   <td class="px-3 py-1.5 whitespace-nowrap {CELL[c[k] as CheckStatus].class}"
                       title={c.detail?.[k] ?? ''}>
@@ -581,6 +629,15 @@
       {/if}
     </section>
   </div>
+
+  {#if hint}
+    <div class="pointer-events-none fixed z-50 max-w-xs rounded-lg border border-stone-200
+                bg-white px-3 py-2 text-sm shadow-lg shadow-stone-900/10
+                dark:border-stone-700 dark:bg-stone-900 dark:shadow-black/40"
+         style="left: {hint.x}px; top: {hint.y}px">
+      {hint.text}
+    </div>
+  {/if}
 
   {#if menu}
     {@const row = candidates.find((c) => c.id === menu!.id)}

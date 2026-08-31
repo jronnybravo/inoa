@@ -14,7 +14,9 @@ import { RunEvent } from '$lib/server/entities/event';
 export const GET: RequestHandler = async ({ params, url }) => {
     await db();
     const run = await Run.findOneBy({ id: params.id });
-    if (!run) error(404, 'No such request');
+    if (!run) {
+        error(404, 'No such request');
+    }
 
     // The console is append-only, so the page asks only for lines it has not
     // seen. A long run produces thousands and re-sending them every 2.5s is

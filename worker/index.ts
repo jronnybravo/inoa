@@ -250,7 +250,9 @@ async function processRun(run: Run): Promise<void> {
                 });
 
                 if (batch.length === 0) {
-                    if (generationDone) return;
+                    if (generationDone) {
+                        return;
+                    }
                     await sleep(2000);
                     continue;
                 }
@@ -260,7 +262,9 @@ async function processRun(run: Run): Promise<void> {
                 let cursor = 0;
                 await Promise.all(
                     Array.from({ length: Math.min(CHECK_CONCURRENCY, batch.length) }, async () => {
-                        while (cursor < batch.length) await one(batch[cursor++]!);
+                        while (cursor < batch.length) {
+                            await one(batch[cursor++]!);
+                        }
                     })
                 );
                 await log(`Checked ${checked}`);
@@ -300,8 +304,11 @@ async function processRun(run: Run): Promise<void> {
                 run.id,
                 required,
                 async (done, total, note) => {
-                    if (note) await log(note, 'warn');
-                    else if (done % 10 === 0) await log(`Web check ${done} of ${total}`);
+                    if (note) {
+                        await log(note, 'warn');
+                    } else if (done % 10 === 0) {
+                        await log(`Web check ${done} of ${total}`);
+                    }
                 }
             );
             await log(
@@ -331,14 +338,19 @@ async function processRun(run: Run): Promise<void> {
             })),
             `${APP_URL}/?requestid=${run.id}`
         );
-        if (mail.sent) await Run.update(run.id, { notifiedAt: new Date() });
+        if (mail.sent) {
+            await Run.update(run.id, { notifiedAt: new Date() });
+        }
 
         await log(
             `Finished — ${survivors.length} of ${stored.length} names passed every requirement`,
             'success'
         );
-        if (!mail.sent) await log(`Results email failed: ${mail.reason}`, 'error');
-        else await log(`Results emailed to ${run.email}`, 'success');
+        if (!mail.sent) {
+            await log(`Results email failed: ${mail.reason}`, 'error');
+        } else {
+            await log(`Results emailed to ${run.email}`, 'success');
+        }
     }
 }
 
@@ -348,8 +360,11 @@ async function main() {
     for (;;) {
         try {
             const run = await claimNext();
-            if (run) await processRun(run);
-            else await sleep(POLL_MS);
+            if (run) {
+                await processRun(run);
+            } else {
+                await sleep(POLL_MS);
+            }
         } catch (error) {
             console.error('worker error:', (error as Error).message);
             await sleep(POLL_MS);

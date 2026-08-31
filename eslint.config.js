@@ -20,6 +20,18 @@ export default ts.config(
     },
     {
         rules: {
+            /*
+             * Braces on every branch, body on its own line.
+             *
+             * Stricter than Airbnb, which permits a braceless body as long as
+             * it sits beside the condition. The single-line form is compact
+             * and reads fine right up until somebody adds a second statement
+             * and it quietly falls outside the branch, which is a diff that
+             * looks correct in review.
+             */
+            curly: ['error', 'all'],
+            'nonblock-statement-body-position': 'off',
+
             // The database rows and API payloads are genuinely dynamic; the
             // types that matter are asserted at the boundaries instead.
             '@typescript-eslint/no-explicit-any': 'off',

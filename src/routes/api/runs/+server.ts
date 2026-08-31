@@ -31,7 +31,9 @@ const Body = z.object({
 
 export const POST: RequestHandler = async ({ request }) => {
     const parsed = Body.safeParse(await request.json());
-    if (!parsed.success) error(400, parsed.error.issues[0]?.message ?? 'Invalid request');
+    if (!parsed.success) {
+        error(400, parsed.error.issues[0]?.message ?? 'Invalid request');
+    }
 
     await db();
 

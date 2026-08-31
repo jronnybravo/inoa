@@ -81,16 +81,22 @@ async function httpSearch(url: string, selector: string, titleSel: string): Prom
             headers: { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.9' },
             signal: AbortSignal.timeout(12000)
         });
-        if (!response.ok) return null;
+        if (!response.ok) {
+            return null;
+        }
         const $ = cheerio.load(await response.text());
         const blocks = $(selector);
-        if (blocks.length === 0) return null;
+        if (blocks.length === 0) {
+            return null;
+        }
 
         const hits: Hit[] = [];
         blocks.each((_, el) => {
             const title = $(el).find(titleSel).first().text().trim();
             const href = $(el).find('a').first().attr('href') ?? '';
-            if (!title) return;
+            if (!title) {
+                return;
+            }
             hits.push({ title, url: href, snippet: $(el).text().trim() });
         });
         return hits;
@@ -165,7 +171,9 @@ export const API_PROVIDERS: ApiProvider[] = [
                 { query, max_results: 20, search_depth: 'basic' }
             );
             const results = data?.results;
-            if (!Array.isArray(results)) return null;
+            if (!Array.isArray(results)) {
+                return null;
+            }
             return results.map((r: any) => ({
                 title: r.title ?? '',
                 url: r.url ?? '',
@@ -184,7 +192,9 @@ export const API_PROVIDERS: ApiProvider[] = [
             );
             // v2 nests results by source; older keys may still answer with an array.
             const results = Array.isArray(data?.data) ? data.data : data?.data?.web;
-            if (!Array.isArray(results)) return null;
+            if (!Array.isArray(results)) {
+                return null;
+            }
             return results.map((r: any) => ({
                 title: r.title ?? '',
                 url: r.url ?? '',
@@ -202,7 +212,9 @@ export const API_PROVIDERS: ApiProvider[] = [
                 { q: query, num: 20 }
             );
             const results = data?.organic;
-            if (!Array.isArray(results)) return null;
+            if (!Array.isArray(results)) {
+                return null;
+            }
             return results.map((r: any) => ({
                 title: r.title ?? '',
                 url: r.link ?? '',
@@ -220,7 +232,9 @@ export const API_PROVIDERS: ApiProvider[] = [
                 { query, numResults: 20, type: 'auto', contents: { text: { maxCharacters: 300 } } }
             );
             const results = data?.results;
-            if (!Array.isArray(results)) return null;
+            if (!Array.isArray(results)) {
+                return null;
+            }
             return results.map((r: any) => ({
                 title: r.title ?? '',
                 url: r.url ?? '',
@@ -239,10 +253,14 @@ export const API_PROVIDERS: ApiProvider[] = [
                     signal: AbortSignal.timeout(20000)
                 }
             );
-            if (!response.ok) return null;
+            if (!response.ok) {
+                return null;
+            }
             const data = (await response.json()) as any;
             const results = data?.web?.results;
-            if (!Array.isArray(results)) return null;
+            if (!Array.isArray(results)) {
+                return null;
+            }
             return results.map((r: any) => ({
                 title: r.title ?? '',
                 url: r.url ?? '',
@@ -273,14 +291,18 @@ let rotation = 0;
  */
 async function apiSearch(query: string): Promise<{ hits: Hit[]; label: string } | null> {
     const configured = API_PROVIDERS.filter((p) => p.key());
-    if (configured.length === 0) return null;
+    if (configured.length === 0) {
+        return null;
+    }
 
     const start = rotation++ % configured.length;
     for (let i = 0; i < configured.length; i++) {
         const provider = configured[(start + i) % configured.length]!;
         try {
             const hits = await provider.search(query, provider.key()!);
-            if (hits) return { hits, label: provider.label };
+            if (hits) {
+                return { hits, label: provider.label };
+            }
         } catch {
             // Try the next one rather than failing the check.
         }
@@ -305,7 +327,9 @@ async function launchChromium() {
 let browser: Browser | undefined;
 
 async function getBrowser(): Promise<Browser> {
-    if (browser?.isConnected()) return browser;
+    if (browser?.isConnected()) {
+        return browser;
+    }
     browser = await launchChromium();
     return browser;
 }
@@ -374,7 +398,9 @@ export async function checkWeb(name: string): Promise<CheckOutcome> {
     for (const engine of ENGINES) {
         const hits = await engine.run(query);
         await sleep(jitter(400));
-        if (!hits || hits.length === 0) continue;
+        if (!hits || hits.length === 0) {
+            continue;
+        }
 
         const matches = [
             ...new Set(hits.map((h) => h.title).filter((t) => isBrandCollision(name, t)))

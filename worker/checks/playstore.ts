@@ -24,7 +24,9 @@ const UA =
 let cachedAddress: string | undefined;
 
 async function resolveViaDoh(hostname: string): Promise<string | undefined> {
-    if (cachedAddress) return cachedAddress;
+    if (cachedAddress) {
+        return cachedAddress;
+    }
     try {
         const response = await fetch(
             `https://cloudflare-dns.com/dns-query?name=${hostname}&type=A`,
@@ -81,11 +83,15 @@ function fetchPinned(address: string, path: string): Promise<{ status: number; b
 export async function checkPlayStore(name: string): Promise<CheckOutcome> {
     const path = `/store/search?q=${encodeURIComponent(name)}&c=apps&hl=en&gl=us`;
     const address = await resolveViaDoh('play.google.com');
-    if (!address) return { status: 'unknown', detail: 'Could not resolve play.google.com' };
+    if (!address) {
+        return { status: 'unknown', detail: 'Could not resolve play.google.com' };
+    }
 
     try {
         const { status, body: html } = await fetchPinned(address, path);
-        if (status !== 200) return { status: 'unknown', detail: `Play returned ${status}` };
+        if (status !== 200) {
+            return { status: 'unknown', detail: `Play returned ${status}` };
+        }
 
         const $ = cheerio.load(html);
         const titles = new Set<string>();
@@ -93,7 +99,9 @@ export async function checkPlayStore(name: string): Promise<CheckOutcome> {
             const text = $(el).text().trim();
             // The first readable line of an app block is its title.
             const first = text.split('\n')[0]?.trim();
-            if (first && first.length <= 60) titles.add(first);
+            if (first && first.length <= 60) {
+                titles.add(first);
+            }
         });
 
         if (titles.size === 0) {
@@ -110,7 +118,9 @@ export async function checkPlayStore(name: string): Promise<CheckOutcome> {
         }
 
         const matches = [...titles].filter((t) => isBrandCollision(name, t));
-        if (matches.length === 0) return { status: 'clear' };
+        if (matches.length === 0) {
+            return { status: 'clear' };
+        }
         return { status: 'taken', detail: matches.slice(0, 4).join(' | ') };
     } catch (error) {
         return { status: 'unknown', detail: (error as Error).message };

@@ -115,7 +115,9 @@ export async function drainWebQueue(
         backoffs = 0;
         await onProgress?.(resolved, pending.length);
         index++;
-        if (index < pending.length) await sleep(jitter(interval));
+        if (index < pending.length) {
+            await sleep(jitter(interval));
+        }
     }
 
     // Anything still pending was abandoned; say so rather than leaving it looking

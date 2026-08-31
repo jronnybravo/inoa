@@ -90,9 +90,15 @@ for (const kind of kinds) {
             passed: computePassed(statuses, required),
             checkedAt: new Date()
         });
-        if (outcome.status !== 'unknown') resolved++;
-        if ((i + 1) % 10 === 0) console.log(`  ${i + 1}/${stuck.length}`);
-        if (i < stuck.length - 1) await sleep(jitter(interval));
+        if (outcome.status !== 'unknown') {
+            resolved++;
+        }
+        if ((i + 1) % 10 === 0) {
+            console.log(`  ${i + 1}/${stuck.length}`);
+        }
+        if (i < stuck.length - 1) {
+            await sleep(jitter(interval));
+        }
     }
     console.log(`${kind}: ${resolved} of ${stuck.length} now answered`);
 }

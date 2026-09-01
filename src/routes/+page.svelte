@@ -29,10 +29,20 @@
 
     let brief = $state(data.run?.brief ?? '');
     let strategies = $state<string[]>(data.run?.strategies ?? ['compound', 'invented']);
-    let requireCom = $state(data.run?.requireCom ?? true);
-    let requireAppStore = $state(data.run?.requireAppStore ?? true);
-    let requirePlayStore = $state(data.run?.requirePlayStore ?? true);
-    let requireGoogle = $state(data.run?.requireGoogle ?? false);
+    /**
+     * What the run must clear, keyed by check.
+     *
+     * One record rather than four booleans, so the form is built from
+     * CHECK_ORDER and labelled from CHECK_LABEL. Spelling the labels out
+     * separately is what left this section still saying 'Google' after the
+     * column became 'Web'.
+     */
+    const required = $state<Record<CheckKind, boolean>>({
+        com: data.run?.requireCom ?? true,
+        appStore: data.run?.requireAppStore ?? true,
+        playStore: data.run?.requirePlayStore ?? true,
+        google: data.run?.requireGoogle ?? false
+    });
     let email = $state(data.run?.email ?? '');
     let targetCount = $state(data.run?.targetCount ?? 1000);
 
@@ -192,27 +202,7 @@
         }[kind];
     }
 
-    const requirements = [
-        { key: 'com', label: '.com', get: () => requireCom, set: (v: boolean) => (requireCom = v) },
-        {
-            key: 'appStore',
-            label: 'App Store',
-            get: () => requireAppStore,
-            set: (v: boolean) => (requireAppStore = v)
-        },
-        {
-            key: 'playStore',
-            label: 'Play Store',
-            get: () => requirePlayStore,
-            set: (v: boolean) => (requirePlayStore = v)
-        },
-        {
-            key: 'google',
-            label: 'Google',
-            get: () => requireGoogle,
-            set: (v: boolean) => (requireGoogle = v)
-        }
-    ];
+    const requirements = CHECK_ORDER.map((key) => ({ key, label: CHECK_LABEL[key] }));
 
     const CELL: Record<CheckStatus, { text: string; class: string }> = {
         clear: { text: 'free', class: 'text-emerald-700 dark:text-emerald-400' },
@@ -324,10 +314,10 @@
                 body: JSON.stringify({
                     brief,
                     strategies,
-                    requireCom,
-                    requireAppStore,
-                    requirePlayStore,
-                    requireGoogle,
+                    requireCom: required.com,
+                    requireAppStore: required.appStore,
+                    requirePlayStore: required.playStore,
+                    requireGoogle: required.google,
                     email,
                     targetCount
                 })
@@ -564,15 +554,15 @@
                         <label
                             class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm
                           transition-colors duration-150
-                          {r.get()
+                          {required[r.key]
                                 ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
                                 : 'border-stone-200 hover:border-stone-400 dark:border-stone-800 dark:hover:border-stone-600'}"
                         >
                             <input
                                 type="checkbox"
                                 class="accent-stone-900 dark:accent-stone-100"
-                                checked={r.get()}
-                                onchange={(e) => r.set(e.currentTarget.checked)}
+                                checked={required[r.key]}
+                                onchange={(e) => (required[r.key] = e.currentTarget.checked)}
                             />
                             {r.label}
                         </label>
@@ -689,7 +679,7 @@
             {/each}
             <span class="text-stone-300 dark:text-stone-700">·</span>
             <span>requires</span>
-            {#each requirements.filter((r) => requiredBy(watched, r.key as CheckKind)) as r (r.key)}
+            {#each requirements.filter((r) => requiredBy(watched, r.key)) as r (r.key)}
                 <span class="rounded bg-stone-100 px-1.5 py-0.5 dark:bg-stone-800">{r.label}</span>
             {:else}
                 <span class="italic">nothing - every name is reported</span>

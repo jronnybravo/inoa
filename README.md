@@ -135,6 +135,23 @@ The third one is not decoration. A boolean cannot tell "it is free" apart from
 broken check disguises itself as a working one — which is exactly what happened
 in the tool this replaces, silently, across 500 names.
 
+## Tuning
+
+Everything the worker paces itself by, all optional:
+
+| variable                       | default       | what it changes                                        |
+| ------------------------------ | ------------- | ------------------------------------------------------ |
+| `BRANDERIST_MODEL`             | the CLI's own | which model generates names                            |
+| `BRANDERIST_BATCH_SIZE`        | 50            | names asked for per generation call                    |
+| `BRANDERIST_CONCURRENCY`       | 5             | generation calls in flight at once                     |
+| `BRANDERIST_CHECK_CONCURRENCY` | 8             | names checked at once                                  |
+| `BRANDERIST_REUSE_DAYS`        | 14            | how long an earlier verdict may be reused; 0 disables  |
+| `BRANDERIST_WEB_INTERVAL_MS`   | 60000         | gap between browser web checks, when no API key is set |
+| `BRANDERIST_WEB_BACKOFF_MS`    | 1800000       | how long to stand down after a search engine objects   |
+
+The last two only apply to the browser fallback. With any search provider
+configured the web check runs in the funnel at a couple of seconds a name.
+
 ## Reusing verdicts
 
 The same name comes up across runs, and re-checking one costs an Apple call, a

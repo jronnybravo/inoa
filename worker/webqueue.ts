@@ -34,11 +34,11 @@ import { computePassed, type Requirements } from './pipeline.ts';
 import type { CheckKind, CheckStatus } from '../src/lib/types.ts';
 
 /** One a minute when we are driving a browser; seconds when Brave answers. */
-const BROWSER_INTERVAL_MS = Number(process.env.WEB_CHECK_INTERVAL_MS ?? 60_000);
+const BROWSER_INTERVAL_MS = Number(process.env.BRANDERIST_WEB_INTERVAL_MS ?? 60_000);
 const API_INTERVAL_MS = 1_500;
 
 /** How long to stand down after Google signals it has had enough. */
-const BACKOFF_MS = Number(process.env.WEB_CHECK_BACKOFF_MS ?? 30 * 60_000);
+const BACKOFF_MS = Number(process.env.BRANDERIST_WEB_BACKOFF_MS ?? 30 * 60_000);
 
 /** Consecutive challenges before we stop trying at all for this run. */
 const MAX_BACKOFFS = 3;

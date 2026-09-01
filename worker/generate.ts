@@ -42,12 +42,12 @@ const CLI_OPTIONS = {
 
 /**
  * Which model generates. Names are a bulk text task with no reasoning in it,
- * so the largest model is not obviously the right one; set BRANDERITAS_MODEL to
+ * so the largest model is not obviously the right one; set BRANDERIST_MODEL to
  * try another.
  */
-const MODEL = process.env.BRANDERITAS_MODEL;
+const MODEL = process.env.BRANDERIST_MODEL;
 
-const BATCH_SIZE = Number(process.env.BRANDERITAS_BATCH_SIZE ?? 50);
+const BATCH_SIZE = Number(process.env.BRANDERIST_BATCH_SIZE ?? 50);
 
 /**
  * How many generations run at once.
@@ -56,7 +56,7 @@ const BATCH_SIZE = Number(process.env.BRANDERITAS_BATCH_SIZE ?? 50);
  * waits for it. The ceiling is the account's rate limit, so this is a knob to
  * be tuned against reality rather than against core count.
  */
-const CONCURRENCY = Number(process.env.BRANDERITAS_CONCURRENCY ?? 5);
+const CONCURRENCY = Number(process.env.BRANDERIST_CONCURRENCY ?? 5);
 
 export interface GeneratedName {
     name: string;

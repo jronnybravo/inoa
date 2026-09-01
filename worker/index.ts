@@ -37,7 +37,7 @@ import { drainWebQueue } from './webqueue.ts';
  * limiters saturated rather than about this machine's capacity. Serially, one
  * name occupied the whole pipeline for the length of its slowest wait.
  */
-const CHECK_CONCURRENCY = Number(process.env.BRANDERITAS_CHECK_CONCURRENCY ?? 8);
+const CHECK_CONCURRENCY = Number(process.env.BRANDERIST_CHECK_CONCURRENCY ?? 8);
 
 const POLL_MS = 5000;
 

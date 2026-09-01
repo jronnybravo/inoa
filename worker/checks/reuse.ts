@@ -18,8 +18,8 @@ import { Candidate } from '../../src/lib/server/entities/candidate.ts';
 import type { CheckOutcome } from './shared.ts';
 import type { CheckKind, CheckStatus } from '../../src/lib/types.ts';
 
-/** How long a verdict is worth borrowing. Set BRANDERITAS_REUSE_DAYS=0 to disable. */
-const REUSE_DAYS = Number(process.env.BRANDERITAS_REUSE_DAYS ?? 14);
+/** How long a verdict is worth borrowing. Set BRANDERIST_REUSE_DAYS=0 to disable. */
+const REUSE_DAYS = Number(process.env.BRANDERIST_REUSE_DAYS ?? 14);
 
 const DAY = 24 * 60 * 60 * 1000;
 

@@ -40,7 +40,7 @@ export const IS_SQLITE = DIALECT === 'better-sqlite3' || DIALECT === 'sqlite';
 
 /** SQLite takes a path; strip any scheme someone wrote out of habit. */
 function sqlitePath(): string {
-    const raw = url ?? process.env.DB_DATABASE ?? './branderitas.sqlite';
+    const raw = url ?? process.env.DB_DATABASE ?? './branderist.sqlite';
     return raw.replace(/^(sqlite|file):(\/\/)?/, '');
 }
 
@@ -77,7 +77,7 @@ export function connectionOptions(): Record<string, unknown> {
         port: Number(process.env.DB_PORT ?? (DIALECT === 'postgres' ? 5432 : 3306)),
         username: process.env.DB_USERNAME ?? process.env.DB_USER,
         password: process.env.DB_PASSWORD,
-        database: process.env.DB_DATABASE ?? process.env.DB_NAME ?? 'branderitas',
+        database: process.env.DB_DATABASE ?? process.env.DB_NAME ?? 'branderist',
         ssl: ssl()
     };
 }

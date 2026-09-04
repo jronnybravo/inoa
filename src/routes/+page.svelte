@@ -204,15 +204,30 @@
 
     const requirements = CHECK_ORDER.map((key) => ({ key, label: CHECK_LABEL[key] }));
 
-    const CELL: Record<CheckStatus, { text: string; class: string }> = {
-        clear: { text: 'free', class: 'text-emerald-700 dark:text-emerald-400' },
-        taken: { text: 'taken', class: 'text-rose-700/90 dark:text-rose-400/90' },
-        unknown: { text: 'unverified', class: 'text-amber-700 dark:text-amber-400' },
-        // Words, not symbols. A dash reads as an empty cell, and 'skipped' is a
-        // real verdict about the funnel - the name was disqualified before this
-        // check was worth spending a request on.
-        skipped: { text: 'skipped', class: 'text-stone-400 dark:text-stone-600' },
-        pending: { text: 'waiting', class: 'text-stone-300 dark:text-stone-700' }
+    /**
+     * A glyph per verdict, with the word kept everywhere the glyph cannot go.
+     *
+     * The table is five columns of the same five words, and at that density the
+     * words stop being read - the eye is scanning for a shape and a colour, so
+     * it may as well be given one. The grid becomes legible at a glance, which
+     * is the thing a naming run is actually for.
+     *
+     * The old objection to symbols was sound and is answered rather than
+     * dropped: a dash reads as an empty cell, and 'skipped' is a real verdict
+     * about the funnel, not a blank. So nothing here is a dash or a dot.
+     * Every glyph is a mark somebody deliberately made.
+     *
+     * These are text glyphs, not emoji, for two reasons: emoji ignore the
+     * colour classes below, and they render at wildly different weights across
+     * platforms. And the word survives in all four places a glyph would fail -
+     * the legend, the hover title, the screen-reader label, and the CSV.
+     */
+    const CELL: Record<CheckStatus, { text: string; icon: string; class: string }> = {
+        clear: { text: 'free', icon: '✓', class: 'text-emerald-700 dark:text-emerald-400' },
+        taken: { text: 'taken', icon: '✕', class: 'text-rose-700/90 dark:text-rose-400/90' },
+        unknown: { text: 'unverified', icon: '?', class: 'text-amber-700 dark:text-amber-400' },
+        skipped: { text: 'skipped', icon: '⊘', class: 'text-stone-400 dark:text-stone-600' },
+        pending: { text: 'waiting', icon: '…', class: 'text-stone-300 dark:text-stone-700' }
     };
 
     /**
@@ -770,7 +785,8 @@
             <div class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
                 {#each LEGEND as l (l.status)}
                     <span class="whitespace-nowrap">
-                        <span class="font-medium {CELL[l.status].class}">{CELL[l.status].text}</span
+                        <span class="font-medium {CELL[l.status].class}"
+                            >{CELL[l.status].icon} {CELL[l.status].text}</span
                         >
                         <span class="ml-1">{l.note}</span>
                     </span>
@@ -976,7 +992,7 @@
                                 {#each CHECK_ORDER as k (k)}
                                     <td
                                         class="px-3 py-1.5 whitespace-nowrap {CELL[c[k]].class}"
-                                        title={c.detail?.[k] ?? ''}
+                                        title={c.detail?.[k] || CELL[c[k]].text}
                                     >
                                         {#if c.detail?.[k]}
                                             <!-- A verdict that found something links to what it found. -->
@@ -984,11 +1000,16 @@
                                                 href={CHECK_SEARCH[k](c.name)}
                                                 target="_blank"
                                                 rel="external noopener noreferrer"
+                                                aria-label="{CHECK_LABEL[k]}: {CELL[c[k]].text}"
                                                 class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                                                >{CELL[c[k]].text}</a
+                                                ><span aria-hidden="true">{CELL[c[k]].icon}</span
+                                                ></a
                                             >
                                         {:else}
-                                            {CELL[c[k]].text}
+                                            <span aria-hidden="true">{CELL[c[k]].icon}</span>
+                                            <span class="sr-only"
+                                                >{CHECK_LABEL[k]}: {CELL[c[k]].text}</span
+                                            >
                                         {/if}
                                     </td>
                                 {/each}
@@ -1152,6 +1173,7 @@
                     <span>{CHECK_LABEL[k]}</span>
                     {#if row}
                         <span class="text-xs {CELL[row[k]].class}">
+                            <span aria-hidden="true">{CELL[row[k]].icon}</span>
                             {CELL[row[k]].text}
                         </span>
                     {/if}

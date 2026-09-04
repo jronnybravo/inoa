@@ -1,5 +1,5 @@
 {
-  "name": "branderist",
+  "name": "inoa",
   "private": true,
   "version": "0.0.1",
   "type": "module",
@@ -10,8 +10,10 @@
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "test": "node --test --experimental-strip-types \"worker/**/*.test.ts\" \"src/**/*.test.ts\"",
     "worker": "node --experimental-strip-types worker/index.ts",
     "db:sync": "node --experimental-strip-types worker/sync-schema.ts",
+    "doctor": "node --experimental-strip-types worker/doctor.ts",
     "recheck": "node --experimental-strip-types worker/recheck.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

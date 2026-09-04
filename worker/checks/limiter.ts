@@ -19,6 +19,24 @@ export class RateLimit {
         this.#intervalMs = intervalMs;
     }
 
+    /**
+     * Take a slot only if one is free right now, rather than waiting for one.
+     *
+     * For a service that is worth using when it is cheap and not worth stalling
+     * for when it is not. A scraped engine is the case: it bans by rate, so it
+     * needs a generous interval, but blocking the whole funnel on that interval
+     * would make the free tier cost more wall-clock time than the paid one it
+     * was meant to save.
+     */
+    tryTake(): boolean {
+        const now = Date.now();
+        if (this.#next > now) {
+            return false;
+        }
+        this.#next = now + this.#intervalMs;
+        return true;
+    }
+
     /** Resolves when it is this caller's turn. */
     async take(): Promise<void> {
         const now = Date.now();

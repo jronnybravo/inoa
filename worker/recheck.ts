@@ -1,5 +1,5 @@
 /**
- * Re-run the checks that could not answer.
+ * Re-run the checks that could not answer — and, on request, the ones that did.
  *
  * 'unknown' means we failed to find out, not that anything is wrong with the
  * name — a rate limit, a blocked search, a bug in a checker. All of those are
@@ -7,17 +7,26 @@
  * rather than a repair job.
  *
  *   npm run recheck -- <runId>
- *   npm run recheck -- <runId> playStore     # just one check
+ *   npm run recheck -- <runId> playStore              # just one check
+ *   npm run recheck -- <runId> com --include-clear    # revisit 'clear' too
  *
- * Only cells currently marked 'unknown' are touched. Anything already decided
- * keeps its verdict, so this is safe to run repeatedly.
+ * By default only cells currently marked 'unknown' are touched, so anything
+ * already decided keeps its verdict and this is safe to run repeatedly.
+ *
+ * --include-clear widens that to cells that say 'clear'. A verdict is only as
+ * good as the checker that produced it, and when a checker is corrected the
+ * rows it already wrote do not correct themselves — a stored 'clear' from a
+ * checker that used to be too generous looks exactly like a sound one. This is
+ * how those get revisited. It never touches 'taken', which was a positive
+ * finding, or 'skipped', which belongs to the funnel rather than to a check.
  */
 
 import 'dotenv/config';
+import { In } from 'typeorm';
 import { db } from '../src/lib/server/db.ts';
 import { Candidate } from '../src/lib/server/entities/candidate.ts';
 import { Run } from '../src/lib/server/entities/run.ts';
-import { CHECK_ORDER, type CheckKind } from '../src/lib/types.ts';
+import { CHECK_ORDER, type CheckKind, type CheckStatus } from '../src/lib/types.ts';
 import { checkAppStore } from './checks/appstore.ts';
 import { checkCom } from './checks/domain.ts';
 import { checkPlayStore } from './checks/playstore.ts';
@@ -40,13 +49,68 @@ const PACE: Record<CheckKind, number> = {
     google: 800
 };
 
-const [runId, only] = process.argv.slice(2);
-if (!runId) {
-    console.error('usage: npm run recheck -- <runId> [checkKind]');
+const KNOWN_FLAGS = new Set(['--include-clear', '--yes']);
+
+/**
+ * Past this, say what it will cost before spending it.
+ *
+ * --include-clear can multiply the work by a hundred: a thousand-name run has
+ * a handful of 'unknown' cells and hundreds of 'clear' ones, and the Play and
+ * App Store checks are paced in seconds apiece. Without an API key the web
+ * check is paced in minutes, which turns the same request into days.
+ */
+const LONG_PASS_MS = 10 * 60_000;
+
+/** Jitter adds up to 60% on top of each interval, so the mean is about 1.3x. */
+const JITTER_FACTOR = 1.3;
+
+function usage(problem?: string): never {
+    if (problem) {
+        console.error(`recheck: ${problem}\n`);
+    }
+    console.error('usage: npm run recheck -- <runId> [checkKind] [--include-clear] [--yes]\n');
+    console.error(`  checkKind        one of ${CHECK_ORDER.join(', ')} (default: all of them)`);
+    console.error("  --include-clear  also revisit cells that currently say 'clear', for");
+    console.error('                   correcting verdicts stored before a checker was fixed');
+    console.error('  --yes            start a long pass without asking');
     process.exit(1);
 }
 
-const kinds = only ? [only as CheckKind] : CHECK_ORDER;
+function describeDuration(ms: number): string {
+    if (ms < 90_000) {
+        return `${Math.max(1, Math.round(ms / 1000))}s`;
+    }
+    if (ms < 90 * 60_000) {
+        return `${Math.round(ms / 60_000)}m`;
+    }
+    return `${(ms / (60 * 60_000)).toFixed(1)}h`;
+}
+
+const args = process.argv.slice(2);
+const flags = args.filter((arg) => arg.startsWith('-'));
+const [runId, only, ...extra] = args.filter((arg) => !arg.startsWith('-'));
+
+const unknownFlag = flags.find((flag) => !KNOWN_FLAGS.has(flag));
+if (unknownFlag) {
+    usage(`unknown option ${unknownFlag}`);
+}
+if (extra.length > 0) {
+    usage(`unexpected argument ${extra[0] ?? ''}`);
+}
+if (!runId) {
+    usage('a run id is required');
+}
+// Cast rather than checked, this used to hand an unknown column to the driver.
+if (only !== undefined && !CHECK_ORDER.includes(only as CheckKind)) {
+    usage(`${only} is not a check; expected one of ${CHECK_ORDER.join(', ')}`);
+}
+
+const includeClear = flags.includes('--include-clear');
+const confirmed = flags.includes('--yes');
+
+const kinds: CheckKind[] = only ? [only as CheckKind] : CHECK_ORDER;
+const revisit: CheckStatus[] = includeClear ? ['unknown', 'clear'] : ['unknown'];
+
 const source = await db();
 const run = await Run.findOneBy({ id: runId });
 if (!run) {
@@ -61,21 +125,69 @@ const required = {
     google: run.requireGoogle
 };
 
-for (const kind of kinds) {
-    const stuck = await Candidate.find({
-        where: { runId, [kind]: 'unknown' } as never,
+const paceFor = (kind: CheckKind): number =>
+    kind === 'google' && !hasSearchApi() ? 60_000 : PACE[kind];
+
+/**
+ * The cells one check has to revisit, as they stand right now.
+ *
+ * Read again for each kind rather than once up front. A pass over several
+ * kinds writes `detail` and `passed` for the whole row, so a row that two
+ * kinds both touch would otherwise be written from a snapshot taken before
+ * either ran — putting back the detail the previous kind had just recorded and
+ * recomputing `passed` from its stale verdict. The plan below is a forecast;
+ * the work itself needs current rows.
+ */
+const rowsFor = (kind: CheckKind): Promise<Candidate[]> =>
+    Candidate.find({
+        where: { runId, [kind]: In(revisit) } as never,
         order: { position: 'ASC' }
     });
-    if (stuck.length === 0) {
-        console.log(`${kind}: nothing unknown`);
+
+/** Everything to do, priced, before any of it is done. */
+const jobs: { kind: CheckKind; count: number; interval: number; cost: number }[] = [];
+for (const kind of kinds) {
+    const count = await Candidate.countBy({ runId, [kind]: In(revisit) });
+    if (count > 0) {
+        const interval = paceFor(kind);
+        jobs.push({ kind, count, interval, cost: count * interval * JITTER_FACTOR });
+    }
+}
+
+if (jobs.length === 0) {
+    console.log(`nothing to re-check (${revisit.join(' or ')})`);
+    await source.destroy();
+    process.exit(0);
+}
+
+const total = jobs.reduce((sum, job) => sum + job.cost, 0);
+const cells = jobs.reduce((sum, job) => sum + job.count, 0);
+const planRow = (label: string, count: number, cost: number): string =>
+    `  ${label.padEnd(10)} ${String(count).padStart(5)}  ~${describeDuration(cost)}`;
+
+console.log(`re-checking ${revisit.join(' and ')} cells in run ${runId.slice(0, 8)}:`);
+for (const job of jobs) {
+    console.log(planRow(job.kind, job.count, job.cost));
+}
+console.log(`${planRow('total', cells, total)}\n`);
+
+if (total > LONG_PASS_MS && !confirmed) {
+    console.error(`That is roughly ${describeDuration(total)} of work. Add --yes to start it.`);
+    await source.destroy();
+    process.exit(1);
+}
+
+for (const { kind, interval } of jobs) {
+    const rows = await rowsFor(kind);
+    if (rows.length === 0) {
         continue;
     }
-
-    const interval = kind === 'google' && !hasSearchApi() ? 60_000 : PACE[kind];
-    console.log(`${kind}: re-checking ${stuck.length}`);
+    console.log(`${kind}: re-checking ${rows.length}`);
 
     let resolved = 0;
-    for (const [i, candidate] of stuck.entries()) {
+    let changed = 0;
+    for (const [i, candidate] of rows.entries()) {
+        const before = candidate[kind];
         const outcome = await RUNNERS[kind](candidate.name);
         const statuses = {
             com: candidate.com,
@@ -93,14 +205,20 @@ for (const kind of kinds) {
         if (outcome.status !== 'unknown') {
             resolved++;
         }
-        if ((i + 1) % 10 === 0) {
-            console.log(`  ${i + 1}/${stuck.length}`);
+        // A corrected verdict is the point of --include-clear, so it is worth
+        // naming: a run that quietly rewrites itself is hard to trust.
+        if (outcome.status !== before) {
+            changed++;
+            console.log(`  ${candidate.name}: ${before} → ${outcome.status}`);
         }
-        if (i < stuck.length - 1) {
+        if ((i + 1) % 10 === 0) {
+            console.log(`  ${i + 1}/${rows.length}`);
+        }
+        if (i < rows.length - 1) {
             await sleep(jitter(interval));
         }
     }
-    console.log(`${kind}: ${resolved} of ${stuck.length} now answered`);
+    console.log(`${kind}: ${resolved} of ${rows.length} now answered, ${changed} changed`);
 }
 
 const passing = await Candidate.countBy({ runId, passed: true });

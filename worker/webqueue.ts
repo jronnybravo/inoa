@@ -28,17 +28,17 @@
  */
 
 import { Candidate } from '../src/lib/server/entities/candidate.ts';
-import { jitter, sleep } from './checks/shared.ts';
+import { jitter, sleep, type CheckOutcome } from './checks/shared.ts';
 import { checkWeb, hasSearchApi } from './checks/web.ts';
 import { computePassed, type Requirements } from './pipeline.ts';
 import type { CheckKind, CheckStatus } from '../src/lib/types.ts';
 
 /** One a minute when we are driving a browser; seconds when Brave answers. */
-const BROWSER_INTERVAL_MS = Number(process.env.BRANDERIST_WEB_INTERVAL_MS ?? 60_000);
+const BROWSER_INTERVAL_MS = Number(process.env.INOA_WEB_INTERVAL_MS ?? 60_000);
 const API_INTERVAL_MS = 1_500;
 
 /** How long to stand down after Google signals it has had enough. */
-const BACKOFF_MS = Number(process.env.BRANDERIST_WEB_BACKOFF_MS ?? 30 * 60_000);
+const BACKOFF_MS = Number(process.env.INOA_WEB_BACKOFF_MS ?? 30 * 60_000);
 
 /** Consecutive challenges before we stop trying at all for this run. */
 const MAX_BACKOFFS = 3;
@@ -61,7 +61,14 @@ export async function drainWebQueue(
     candidates: typeof Candidate,
     runId: string,
     required: Requirements,
-    onProgress?: QueueProgress
+    onProgress?: QueueProgress,
+    /*
+     * The check itself, passed in for the same reason the entity class is:
+     * what this function actually contains is the pacing, the backoff and the
+     * decision to give up, and none of that can be exercised against a real
+     * search. Production never passes it.
+     */
+    check: (name: string) => Promise<CheckOutcome> = checkWeb
 ): Promise<{ resolved: number; abandoned: number }> {
     const pending = await candidates.find({
         where: { runId, google: 'pending' as CheckStatus },
@@ -81,9 +88,15 @@ export async function drainWebQueue(
         if (!candidate) {
             break;
         }
-        const outcome = await checkWeb(candidate.name);
+        const outcome = await check(candidate.name);
 
-        if (outcome.status === 'unknown' && CHALLENGED.test(outcome.detail ?? '')) {
+        /*
+         * Backing off is a browser-tier remedy, so it is gated on being in that
+         * tier. With any provider configured the queue never drives a browser,
+         * and a challenge arriving here would be somebody else's failure
+         * wearing Google's name — worth neither a pause nor an abandoned run.
+         */
+        if (!usingApi() && outcome.status === 'unknown' && CHALLENGED.test(outcome.detail ?? '')) {
             backoffs++;
             if (backoffs > MAX_BACKOFFS) {
                 // Stop rather than march through the rest producing junk verdicts.

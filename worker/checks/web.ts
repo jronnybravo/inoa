@@ -3,27 +3,59 @@
  *
  * Two tiers, because the cheap one cannot always be believed.
  *
- * TIER 1 is plain HTTP against Bing and Google. It is fast (~0.5s) and right
- * most of the time, and for a name that is obviously taken it is all we need.
+ * TIER 1 is plain HTTP against Bing. Fast (~0.5s) and right most of the time,
+ * and for a name that is obviously taken it is all we need.
  *
- * TIER 2 launches a real browser against Google. It costs a few seconds, so it
- * only runs when tier 1 could not produce a trustworthy answer.
+ * TIER 2 is a search API, or a real browser against Google when no key is set.
+ * It only runs when tier 1 could not produce a trustworthy answer.
  *
- * WHAT "COULD NOT" HAS TO MEAN
+ * WHY GOOGLE IS NOT IN TIER 1
+ *
+ * It used to be, and removing it is the single change that most improves this
+ * project's chances of getting an answer at all. Two reasons, and the second is
+ * the important one.
+ *
+ * It cannot work, from any address, because Google Search requires JavaScript.
+ * The 200 it returns is 89 KB carrying five script tags and this:
+ *
+ *   <noscript><meta http-equiv="refresh"
+ *     content="0;url=/httpservice/retry/enablejs?sei=..."></noscript>
+ *
+ * That is a capability gate, not a reputation one, and the distinction is
+ * visible in the same session: the browser tier — which does run JavaScript —
+ * gets /sorry/ from the ABUSE system, while plain HTTP gets enablejs from the
+ * CAPABILITY system. Different mechanisms, different causes. No IP, header set,
+ * user agent or gbv=1 changes the second; all three variants returned the same
+ * 89 KB stub.
+ *
+ * This was measured across three networks and is not an address problem. Only a
+ * tier that executes script can read Google, which is what the browser tier is
+ * for.
+ *
+ * And it was burning the address. Tier 1 runs once per name, and with a search
+ * API configured the whole web check runs INLINE in the fast funnel, paced by a
+ * 600ms limiter. That is roughly a hundred requests a minute at google.com for
+ * the six minutes a run's web checks take — against an engine measured here to
+ * start challenging at about 25 queries. The IP was spent within seconds of a
+ * run starting, every run. Which then took the BROWSER tier down with it: the
+ * one Google path that does return real evidence, carefully paced a minute
+ * apiece, was being sabotaged by a scrape of the same host it knew nothing
+ * about.
+ *
+ * So Google now exists in exactly one place, tier 2's browser, where it can
+ * actually be paced. Putting it back in tier 1 re-breaks the browser tier, and
+ * a test in web.test.ts says so.
+ *
+ * WHAT "COULD NOT BE BELIEVED" HAS TO MEAN
  *
  * The subtle part, and the reason the previous tool reported 500 names clean
- * without ever checking them: an HTTP tier does not fail loudly. Measured
- * behaviour of both engines:
- *
- *   - Bing answers some queries with a complete, well-formed results page
- *     about something else entirely. Searching "Duolingo" returned French
- *     holiday calendars, apartment listings and the Assam State Portal on
- *     consecutive attempts — each time ten valid result blocks with the query
- *     correctly echoed. It is stable per query, not intermittent: Spotify and
- *     Notion worked every time, Duolingo failed 12 of 12 across three query
- *     shapes. Retrying does not help.
- *   - Google over plain HTTP returns 200 with zero parseable results for every
- *     query, because its results are rendered by script.
+ * without ever checking them: an HTTP tier does not fail loudly. Bing answers
+ * some queries with a complete, well-formed results page about something else
+ * entirely — French holiday calendars and the Assam State Portal for a query
+ * about Duolingo, ten valid result blocks each time, the query correctly
+ * echoed. (That was measured from one address; from another, Duolingo answered
+ * correctly every time. Treat it as something an engine may do to you rather
+ * than a property of the query.)
  *
  * So escalating only on a thrown error or an empty page would escalate almost
  * never, and the decoy answers would be taken at face value. Tier 1 is trusted
@@ -47,15 +79,14 @@
  * A real browser against Google is the fallback when no key is configured. It
  * gives a genuinely better answer than any scraper — Google states "did not
  * match any documents" outright, which is a positive statement of absence — but
- * it does not survive volume. Measured: Google began returning its /sorry/
- * interstitial after roughly 25 queries from one residential address, in both
- * headless and headed real Chrome. A run needs 50 to 200. So it is best effort,
- * it reports 'unknown' the moment it is challenged, and it is never made to look
- * like something other than a browser — a challenge means the answer was not
- * obtained, not that it should be obtained another way.
+ * it does not survive volume. So it is best effort, it reports 'unknown' the
+ * moment it is challenged, and it is never made to look like something other
+ * than a browser — a challenge means the answer was not obtained, not that it
+ * should be obtained another way.
  */
 
 import * as cheerio from 'cheerio';
+import { RateLimit } from './limiter.ts';
 import { isBrandCollision, jitter, sleep, squash, type CheckOutcome } from './shared.ts';
 
 const UA =
@@ -69,62 +100,124 @@ interface Hit {
 }
 
 /** Both intents in one query: separate ones quadrupled the rate-limit exposure. */
-const queryFor = (name: string) => `"${name}" (app OR software OR platform OR company)`;
+export const queryFor = (name: string) => `"${name}" (app OR software OR platform OR company)`;
 
 // ---------------------------------------------------------------------------
 // Tier 1 — plain HTTP
 // ---------------------------------------------------------------------------
 
-async function httpSearch(url: string, selector: string, titleSel: string): Promise<Hit[] | null> {
+/**
+ * An engine as data rather than a closure.
+ *
+ * The selectors are the part that rots — Bing renames a class and every check
+ * silently returns nothing — so they live in one place that both the funnel and
+ * `npm run doctor` read. A diagnostic that copies them tests the copy.
+ */
+export interface Engine {
+    label: string;
+    url: (query: string) => string;
+    /** One result block. */
+    block: string;
+    /** The title within a block. */
+    title: string;
+}
+
+const BING: Engine = {
+    label: 'Bing',
+    url: (q) => `https://www.bing.com/search?q=${encodeURIComponent(q)}&count=20`,
+    block: 'li.b_algo',
+    title: 'h2'
+};
+
+const GOOGLE: Engine = {
+    label: 'Google',
+    url: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}&num=20`,
+    block: 'div.MjjYud, div.g',
+    title: 'h3'
+};
+
+/** Every engine this module knows how to read, in use or not. */
+export const ALL_ENGINES: Engine[] = [BING, GOOGLE];
+
+/**
+ * The scraped tier is OFF.
+ *
+ * Not removed — parked. Scraping a search engine turned out to be two separate
+ * unsolved problems, and neither is worth holding a release for:
+ *
+ *   - Google cannot be scraped at all. Search requires JavaScript; a plain
+ *     request returns a <noscript> redirect to /httpservice/retry/enablejs, and
+ *     no address, header set or gbv=1 changes that.
+ *   - Bing can be scraped, but whether it answers depends on the address. It
+ *     returned correct results for Duolingo from two networks and ten unrelated
+ *     results for the same query from a third. pertains() catches that and
+ *     escalates, so it is safe — just frequently useless.
+ *
+ * And the tier was never load-bearing: it resolved about one check in 585,
+ * because by the time a name reaches the web check it has passed three earlier
+ * gates and is probably genuinely free — and a scraped engine can confirm a
+ * collision but never an absence. That is the paid tier's job.
+ *
+ * Set INOA_SCRAPE_ENGINES=bing (or bing,google) to switch it back on.
+ * `npm run doctor` probes every engine either way and says which would answer
+ * from where you are.
+ */
+export function scrapedEngines(): Engine[] {
+    const wanted = (process.env.INOA_SCRAPE_ENGINES ?? '')
+        .split(',')
+        .map((label) => label.trim().toLowerCase())
+        .filter(Boolean);
+    return ALL_ENGINES.filter((engine) => wanted.includes(engine.label.toLowerCase()));
+}
+
+/**
+ * How often the scraped tier may touch its engine.
+ *
+ * Scraped engines are banned by RATE; paid APIs are billed by VOLUME. Pacing
+ * them together is what burnt this project's addresses: one shared 600ms
+ * limiter meant roughly a hundred requests a minute at a search engine for the
+ * six minutes a run's web checks take.
+ *
+ * So the scraped tier gets its own, far slower clock — and takes a slot only
+ * if one is free, rather than waiting for one. Bing resolves about one check
+ * in 585 (most candidates are invented words it has never seen), so it is a
+ * cheap lottery ticket worth buying when it is free and never worth stalling
+ * the funnel for. A skipped name simply goes to the paid tier as it would have
+ * anyway. Set to 0 to scrape on every name.
+ */
+const SCRAPE_INTERVAL_MS = Number(process.env.INOA_SCRAPE_INTERVAL_MS ?? 5_000);
+const scrapeLimit = new RateLimit(SCRAPE_INTERVAL_MS);
+
+/** Pull the result blocks out of a page an engine returned. */
+export function parseHits(engine: Engine, html: string): Hit[] {
+    const $ = cheerio.load(html);
+    const hits: Hit[] = [];
+    $(engine.block).each((_, el) => {
+        const title = $(el).find(engine.title).first().text().trim();
+        const href = $(el).find('a').first().attr('href') ?? '';
+        if (!title) {
+            return;
+        }
+        hits.push({ title, url: href, snippet: $(el).text().trim() });
+    });
+    return hits;
+}
+
+async function httpSearch(engine: Engine, query: string): Promise<Hit[] | null> {
     try {
-        const response = await fetch(url, {
+        const response = await fetch(engine.url(query), {
             headers: { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.9' },
             signal: AbortSignal.timeout(12000)
         });
         if (!response.ok) {
             return null;
         }
-        const $ = cheerio.load(await response.text());
-        const blocks = $(selector);
-        if (blocks.length === 0) {
-            return null;
-        }
-
-        const hits: Hit[] = [];
-        blocks.each((_, el) => {
-            const title = $(el).find(titleSel).first().text().trim();
-            const href = $(el).find('a').first().attr('href') ?? '';
-            if (!title) {
-                return;
-            }
-            hits.push({ title, url: href, snippet: $(el).text().trim() });
-        });
-        return hits;
+        const hits = parseHits(engine, await response.text());
+        return hits.length === 0 ? null : hits;
     } catch {
         return null;
     }
 }
-
-const ENGINES = [
-    {
-        label: 'Bing',
-        run: (q: string) =>
-            httpSearch(
-                `https://www.bing.com/search?q=${encodeURIComponent(q)}&count=20`,
-                'li.b_algo',
-                'h2'
-            )
-    },
-    {
-        label: 'Google',
-        run: (q: string) =>
-            httpSearch(
-                `https://www.google.com/search?q=${encodeURIComponent(q)}&num=20`,
-                'div.MjjYud, div.g',
-                'h3'
-            )
-    }
-];
 
 /** Did the engine answer the question we asked, or something else? */
 function pertains(name: string, hits: Hit[]): boolean {
@@ -268,6 +361,19 @@ export function hasSearchApi(): boolean {
 }
 
 /**
+ * Whether a name no provider could answer may fall through to a browser.
+ *
+ * The browser tier exists for a deployment with no API key at all. Once any
+ * provider is configured that is the tier which answers, and a browser attempt
+ * buys nothing: a launch, several seconds, and — anywhere Google refuses the
+ * network — a verdict that reads like a rate limit rather than the provider
+ * hiccup it actually was.
+ */
+export function shouldTryBrowser(): boolean {
+    return !hasSearchApi();
+}
+
+/**
  * Where the rotation is up to. Module-level, so every check in a run shares it.
  */
 let rotation = 0;
@@ -343,11 +449,25 @@ export async function closeBrowser(): Promise<void> {
 const NO_RESULTS = /did not match any documents|no results found for/i;
 
 /** Google deciding we look automated. Never solved — reported as unknown. */
-const CHALLENGED = /unusual traffic|are you a robot|recaptcha|\/sorry\//i;
+export const CHALLENGED = /unusual traffic|are you a robot|recaptcha|\/sorry\//i;
 
-async function browserSearch(name: string): Promise<CheckOutcome> {
-    const page = await (await getBrowser()).newPage({ userAgent: UA, locale: 'en-US' });
+type Page = Awaited<ReturnType<Browser['newPage']>>;
+
+export async function browserSearch(name: string): Promise<CheckOutcome> {
+    /*
+     * The launch is inside the try, not before it.
+     *
+     * `npm install` does not download Chromium, so the commonest failure of
+     * this tier is that nobody has run `npx playwright install chromium` — and
+     * outside the try that threw straight past every caller: it killed a run
+     * mid-queue with the run left sitting at 'checking', and it crashed the
+     * doctor on the one step whose job is to report this tier as unavailable.
+     * A browser that cannot start is a check that did not happen, which is
+     * exactly what 'unknown' means.
+     */
+    let page: Page | undefined;
     try {
+        page = await (await getBrowser()).newPage({ userAgent: UA, locale: 'en-US' });
         const url = `https://www.google.com/search?q=${encodeURIComponent(queryFor(name))}&num=20`;
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
 
@@ -382,7 +502,7 @@ async function browserSearch(name: string): Promise<CheckOutcome> {
     } catch (error) {
         return { status: 'unknown', detail: `Browser check failed: ${(error as Error).message}` };
     } finally {
-        await page.close();
+        await page?.close();
     }
 }
 
@@ -391,8 +511,13 @@ async function browserSearch(name: string): Promise<CheckOutcome> {
 export async function checkWeb(name: string): Promise<CheckOutcome> {
     const query = queryFor(name);
 
-    for (const engine of ENGINES) {
-        const hits = await engine.run(query);
+    for (const engine of scrapedEngines()) {
+        // Only when a slot is free. Waiting here would make the free tier the
+        // slowest thing in the run, which is the opposite of why it exists.
+        if (!scrapeLimit.tryTake()) {
+            break;
+        }
+        const hits = await httpSearch(engine, query);
         await sleep(jitter(400));
         if (!hits || hits.length === 0) {
             continue;
@@ -427,6 +552,25 @@ export async function checkWeb(name: string): Promise<CheckOutcome> {
         // The API answered the question, so an absence of collisions is real
         // evidence — unlike the same absence from a tier-1 engine that ignored us.
         return { status: 'clear', detail: `No competing brand found (${api.label})` };
+    }
+
+    /*
+     * A configured provider that could not answer is a provider problem, and a
+     * browser is not the answer to it.
+     *
+     * This fall-through used to be unconditional, which welded two unrelated
+     * failures together: one Firecrawl timeout on one name reached a Google
+     * that refuses this network, came back 'challenged', and the web queue read
+     * that as Google rate-limiting the run — thirty minutes of sleep, and three
+     * of them abandoned every remaining name as unverified. A blip at the
+     * provider must not stop the queue, and must not be reported as Google's
+     * doing. Say what actually happened instead.
+     */
+    if (!shouldTryBrowser()) {
+        return {
+            status: 'unknown',
+            detail: 'No configured search provider could answer; check their quotas'
+        };
     }
 
     await sleep(jitter(700));

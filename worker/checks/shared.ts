@@ -15,6 +15,34 @@ export function squash(value: string): string {
 }
 
 /**
+ * The words a title is built from, camelCase counted as a break.
+ *
+ * squash() deliberately destroys these boundaries so that punctuation and
+ * spacing cannot hide a match, and for a long name that is the right trade:
+ * eight distinctive characters landing anywhere in a title mean something. A
+ * short one is different. 'Vida' is the brand in 'Vida Health' and a fragment
+ * in 'Avida', 'Loom' is the brand in 'Loom Video' and three letters of
+ * 'Heirloom' — squashed, those pairs are indistinguishable, and only the
+ * boundary tells them apart.
+ */
+export function words(value: string): string[] {
+    return value
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter(Boolean);
+}
+
+/**
+ * The shortest name a word match is trusted for.
+ *
+ * Below four characters a letter-string is too ordinary to carry a brand:
+ * 'go', 'one' and 'ad' appear as words in titles that hold no collision at
+ * all. Names that short fall back to needing an exact match.
+ */
+const WORD_MATCH_MIN = 4;
+
+/**
  * Does a listing or result title collide with this name?
  *
  * Ported from name-checker, whose thresholds were tuned against real results.
@@ -28,6 +56,19 @@ export function isBrandCollision(candidate: string, existing: string): boolean {
         return false;
     }
     if (a === b) {
+        return true;
+    }
+
+    /*
+     * Our name is one of the words the listing is made of: 'Vida Health',
+     * 'Pro Vida', 'The Keystone App'. This is what lets a four-letter name be
+     * matched at all — the rules below work on the squashed string, where a
+     * short name is indistinguishable from a fragment of a longer word, so
+     * they stay gated at six. It also closes a gap for long names, which the
+     * squashed prefix and suffix tests miss whenever the brand sits in the
+     * middle of a title.
+     */
+    if (a.length >= WORD_MATCH_MIN && words(existing).includes(a)) {
         return true;
     }
 

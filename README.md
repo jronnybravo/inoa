@@ -3,6 +3,13 @@
 Generate brand names from a brief, then screen each one against the places a
 name can already be taken: the `.com`, the App Store, Google Play, and the web.
 
+![A finished naming run: fifty candidates, each with a verdict per check](docs/screenshot.png)
+
+Every cell is one of five states, and the third is the one that matters:
+`free` found nothing, `taken` found somebody, and `unverified` means the check
+could not get a trustworthy answer. A tool with only the first two turns every
+failed lookup into a free name.
+
 ## Shape
 
 Two halves, and the split is deliberate.

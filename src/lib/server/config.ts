@@ -40,8 +40,47 @@ export const IS_SQLITE = DIALECT === 'better-sqlite3' || DIALECT === 'sqlite';
 
 /** SQLite takes a path; strip any scheme someone wrote out of habit. */
 function sqlitePath(): string {
-    const raw = url ?? process.env.DB_DATABASE ?? './branderist.sqlite';
+    const raw = url ?? process.env.DB_DATABASE ?? './inoa.sqlite';
     return raw.replace(/^(sqlite|file):(\/\/)?/, '');
+}
+
+/**
+ * The hostname inside a connection URL, or '' when it will not parse.
+ *
+ * Parsed rather than pattern-matched. The locality test below used to run over
+ * the whole connection string, so a password, database name or query parameter
+ * containing 'localhost' silently disabled TLS against a remote server — a
+ * check that fails open, which is the wrong direction for one guarding
+ * transport security.
+ */
+export function hostFromUrl(rawUrl: string): string {
+    try {
+        return new URL(rawUrl).hostname;
+    } catch {
+        return '';
+    }
+}
+
+/** Is this host this machine? Exact, because 'localhost' as a substring is not. */
+export function isLoopbackHost(host: string): boolean {
+    const bare = host.replace(/^\[|\]$/g, '').toLowerCase();
+    return bare === 'localhost' || bare === '::1' || /^127\./.test(bare);
+}
+
+/**
+ * Where we will actually connect.
+ *
+ * Derived once and shared, because ssl() and connectionOptions() used to decide
+ * this separately and could disagree: with DB_HOST unset, ssl() tested '' —
+ * which is not loopback — and turned TLS on, while connectionOptions() fell
+ * back to 'localhost' and connected there. A local Postgres then answered 'the
+ * server does not support SSL connections', which names neither cause.
+ */
+export function targetHost(): string {
+    if (url) {
+        return hostFromUrl(url);
+    }
+    return process.env.DB_HOST ?? 'localhost';
 }
 
 /**
@@ -50,6 +89,10 @@ function sqlitePath(): string {
  * DB_SSL settles it when set. Otherwise: a local database does not need it and
  * a remote one almost always does, which is the right default for a managed
  * Postgres and harmless to override.
+ *
+ * A URL that will not parse is treated as remote. We cannot tell where it
+ * points, and enabling TLS against a local server fails loudly, where skipping
+ * it against a remote one fails silently.
  */
 function ssl(): false | { rejectUnauthorized: boolean } {
     const explicit = process.env.DB_SSL?.trim().toLowerCase();
@@ -59,9 +102,7 @@ function ssl(): false | { rejectUnauthorized: boolean } {
     if (explicit === 'true' || explicit === '1' || explicit === 'on') {
         return { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' };
     }
-    const host = process.env.DB_HOST ?? url ?? '';
-    const local = /localhost|127\.0\.0\.1|::1/.test(host);
-    return local ? false : { rejectUnauthorized: false };
+    return isLoopbackHost(targetHost()) ? false : { rejectUnauthorized: false };
 }
 
 /** The connection half of the DataSource options, whatever the driver. */
@@ -77,7 +118,7 @@ export function connectionOptions(): Record<string, unknown> {
         port: Number(process.env.DB_PORT ?? (DIALECT === 'postgres' ? 5432 : 3306)),
         username: process.env.DB_USERNAME ?? process.env.DB_USER,
         password: process.env.DB_PASSWORD,
-        database: process.env.DB_DATABASE ?? process.env.DB_NAME ?? 'branderist',
+        database: process.env.DB_DATABASE ?? process.env.DB_NAME ?? 'inoa',
         ssl: ssl()
     };
 }

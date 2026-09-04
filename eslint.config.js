@@ -133,6 +133,19 @@ export default ts.config(
 
     {
         /*
+         * Tests, where the one rule that does not apply is switched off.
+         *
+         * node:test's `describe` and `it` return promises the runner owns and
+         * awaits itself; nothing in a test file is supposed to await them. The
+         * rule is right everywhere else in this project and stays on there, so
+         * it is disabled here rather than relaxed globally.
+         */
+        files: ['**/*.test.ts'],
+        rules: { '@typescript-eslint/no-floating-promises': 'off' }
+    },
+
+    {
+        /*
          * Config files sit outside the app's TypeScript program, so the
          * type-aware rules have nothing to work from and would only report
          * that fact. Last in the list, because flat config applies in order

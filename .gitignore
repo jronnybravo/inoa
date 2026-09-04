@@ -1,26 +1,54 @@
-
-!.env.example
-!.env.test
 # Env
-# OS
-# Output
-# Vite
-*.log
-.DS_Store
-.cache/
+#
+# The negations MUST come after `.env.*`, not before it: later patterns win, so
+# a `!.env.example` above the broad rule is silently overridden — which is how
+# the sample file the README tells you to copy went missing from the repo.
 .env
 .env.*
-.netlify
-.output
-.vercel
-.wrangler
+!.env.example
+!.env.test
+
+# Dependencies
+node_modules/
+
+# Build output
 /.svelte-kit
 /build
-Thumbs.db
 dist/
-node_modules
-node_modules/
 out/
-ruvector.db
+.output
+.cache/
+.netlify
+.vercel
+.wrangler
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Assistant tooling state, not source.
+#
+# Local scratch belonging to the agent tooling that has been run against this
+# repo — vector stores, neural caches, policy hashes. It is per-machine, it
+# churns on every session, and it was 5.8 MB of the repository.
+#
+# `.claude` is a glob and not a directory for one reason: git does not descend
+# into an excluded DIRECTORY, so `.claude/` followed by a negation would keep
+# ignoring launch.json however the negation is written. `.claude/*` leaves git
+# walking the directory, and the later pattern wins — the same ordering rule
+# as the .env block at the top of this file.
+#
+# launch.json is the dev-server definition. That is real project
+# configuration and belongs in the repository.
+.claude-flow/
+.swarm/
+.claude/*
+!.claude/launch.json
+agentdb.rvf
+agentdb.rvf.idmap.json
+ruvector.db

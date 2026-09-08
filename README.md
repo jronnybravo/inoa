@@ -83,6 +83,11 @@ then set `DATABASE_URL=postgresql://postgres:inoa@localhost:55432/inoa`.
 
 The worker needs a signed-in CLI: `claude login`.
 
+That is the default and it costs nothing beyond the subscription. If you have
+no Claude subscription, or you want generation to survive a usage limit rather
+than stop at one, set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` instead. Sources
+are tried in order, CLI first, and `INOA_GENERATOR` reorders them.
+
 **Restart the worker after changing its code or `.env`.** Node does not reload
 a running process, so a worker started before a change keeps the old behaviour
 while the repository shows the new one — which looks exactly like a bug in the
@@ -195,17 +200,20 @@ job first and refuses anything over ten minutes without `--yes`.
 
 Everything the worker paces itself by, all optional:
 
-| variable                  | default       | what it changes                                        |
-| ------------------------- | ------------- | ------------------------------------------------------ |
-| `INOA_MODEL`              | the CLI's own | which model generates names                            |
-| `INOA_BATCH_SIZE`         | 50            | names asked for per generation call                    |
-| `INOA_CONCURRENCY`        | 5             | generation calls in flight at once                     |
-| `INOA_CHECK_CONCURRENCY`  | 8             | names checked at once                                  |
-| `INOA_REUSE_DAYS`         | 14            | how long an earlier verdict may be reused; 0 disables  |
-| `INOA_SCRAPE_INTERVAL_MS` | 5000          | minimum gap between scrapes; 0 scrapes every name      |
-| `INOA_SCRAPE_ENGINES`     | off           | re-enable HTTP scraping, e.g. `bing` or `bing,google`  |
-| `INOA_WEB_INTERVAL_MS`    | 60000         | gap between browser web checks, when no API key is set |
-| `INOA_WEB_BACKOFF_MS`     | 1800000       | how long to stand down after a search engine objects   |
+| variable                  | default        | what it changes                                        |
+| ------------------------- | -------------- | ------------------------------------------------------ |
+| `INOA_MODEL`              | the CLI's own  | which model the Claude CLI generates with              |
+| `INOA_GENERATOR`          | CLI, then keys | which sources generate, and in what order              |
+| `INOA_ANTHROPIC_MODEL`    | claude-opus-5  | model for the Anthropic API source                     |
+| `INOA_OPENAI_MODEL`       | gpt-5.6        | model for the OpenAI source                            |
+| `INOA_BATCH_SIZE`         | 50             | names asked for per generation call                    |
+| `INOA_CONCURRENCY`        | 5              | generation calls in flight at once                     |
+| `INOA_CHECK_CONCURRENCY`  | 8              | names checked at once                                  |
+| `INOA_REUSE_DAYS`         | 14             | how long an earlier verdict may be reused; 0 disables  |
+| `INOA_SCRAPE_INTERVAL_MS` | 5000           | minimum gap between scrapes; 0 scrapes every name      |
+| `INOA_SCRAPE_ENGINES`     | off            | re-enable HTTP scraping, e.g. `bing` or `bing,google`  |
+| `INOA_WEB_INTERVAL_MS`    | 60000          | gap between browser web checks, when no API key is set |
+| `INOA_WEB_BACKOFF_MS`     | 1800000        | how long to stand down after a search engine objects   |
 
 `INOA_WEB_INTERVAL_MS` and `INOA_WEB_BACKOFF_MS` apply only to the
 browser fallback; with any search provider configured the web check runs in the

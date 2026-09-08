@@ -103,18 +103,70 @@ async function processRun(run: Run): Promise<void> {
     console.log(`\n[${run.id.slice(0, 8)}] ${run.brief.slice(0, 60)}`);
     const log = makeLogger(source, run.id);
 
-    // Renew the lease while we work, so nothing else takes this run from us.
+    /*
+     * The lease renewal doubles as the stop signal.
+     *
+     * Stopping is written to the row by whoever asked for it, so the worker
+     * has to read it back to find out. The heartbeat is already the one thing
+     * touching this row on a timer, so it is where the question gets asked -
+     * a second poller would be a second thing to keep alive and a second
+     * thing to leak.
+     *
+     * The cost is that a stop takes effect within a heartbeat rather than
+     * instantly. At a few seconds a name that is a handful of extra checks,
+     * which is a fair price for not polling the database every second of
+     * every run.
+     */
+    const stopping = new AbortController();
     const heartbeat = setInterval(() => {
-        Run.update(run.id, { claimedAt: new Date() }).catch(() => {});
+        void (async () => {
+            try {
+                await Run.update(run.id, { claimedAt: new Date() });
+                const current = await Run.findOneBy({ id: run.id });
+                if (current?.status === 'stopped') {
+                    stopping.abort();
+                }
+            } catch {
+                // A missed beat is survivable; the next one asks again.
+            }
+        })();
     }, HEARTBEAT_MS);
 
     try {
-        await runProcess();
+        await runProcess(stopping.signal);
     } finally {
         clearInterval(heartbeat);
     }
 
-    async function runProcess() {
+    /**
+     * Leave a stopped run readable rather than mid-sentence.
+     *
+     * The names and verdicts already found are kept - they cost real calls
+     * against real rate limits, and they are the reason somebody would look at
+     * a stopped run at all. Only the fact that nobody is working on it any
+     * more is recorded.
+     */
+    async function concludeStopped(): Promise<void> {
+        const kept = await Candidate.countBy({ runId: run.id });
+        const checkedSoFar = await Candidate.countBy({ runId: run.id, passed: true });
+        await Run.update(run.id, { status: 'stopped', finishedAt: new Date() });
+        await log(
+            `Stopped on request — ${kept} names kept, ${checkedSoFar} passing so far`,
+            'warn'
+        );
+    }
+
+    async function runProcess(stop: AbortSignal) {
+        /*
+         * Read through a call, not the property.
+         *
+         * `stop.aborted` is a boolean the control-flow analysis is happy to
+         * narrow: after one `if (stop.aborted) return`, every later check is
+         * "always falsy" as far as the compiler is concerned. It is not - the
+         * whole point is that it flips underneath us - and a call is opaque to
+         * that narrowing.
+         */
+        const stopped = (): boolean => stop.aborted;
         /**
          * Resume rather than start over where that is possible.
          *
@@ -257,6 +309,9 @@ async function processRun(run: Run): Promise<void> {
             };
 
             for (;;) {
+                if (stopped()) {
+                    return;
+                }
                 const batch = await Candidate.find({
                     where: { runId: run.id, com: 'pending' as never },
                     order: { position: 'ASC' },
@@ -277,6 +332,13 @@ async function processRun(run: Run): Promise<void> {
                 await Promise.all(
                     Array.from({ length: Math.min(CHECK_CONCURRENCY, batch.length) }, async () => {
                         for (let next = cursor++; next < batch.length; next = cursor++) {
+                            // Checked per name, not per batch: a batch is up to
+                            // three times the concurrency, and finishing one
+                            // after a stop was asked for is the wait the person
+                            // asking is watching.
+                            if (stopped()) {
+                                return;
+                            }
                             const candidate = batch[next];
                             if (candidate) {
                                 await one(candidate);
@@ -303,6 +365,18 @@ async function processRun(run: Run): Promise<void> {
             return;
         }
 
+        /*
+         * Every status write from here down is guarded, because 'stopped' is
+         * already in the row by the time we notice it. An unguarded update
+         * would move the run back to 'checking' or on to 'done' and quietly
+         * un-stop it - the worker would exit, the row would claim to be
+         * working, and the next worker would pick it up again.
+         */
+        if (stopped()) {
+            await concludeStopped();
+            return;
+        }
+
         // The stored count, not the requested one: concurrent batches overshoot and
         // every name they produced is kept, so '1042 of 1000' was the denominator
         // being wrong rather than the numerator.
@@ -311,6 +385,10 @@ async function processRun(run: Run): Promise<void> {
             generatedCount: await Candidate.countBy({ runId: run.id })
         });
         await checking;
+        if (stopped()) {
+            await concludeStopped();
+            return;
+        }
         const stored = await Candidate.find({ where: { runId: run.id } });
 
         // Phase two. Only survivors are here, which is what makes a minute apiece
@@ -329,13 +407,20 @@ async function processRun(run: Run): Promise<void> {
                     } else if (done % 10 === 0) {
                         await log(`Web check ${done} of ${total}`);
                     }
-                }
+                },
+                undefined,
+                stop
             );
             await log(
                 `Web checks done — ${resolved} resolved` +
                     (abandoned ? `, ${abandoned} left unverified` : ''),
                 abandoned ? 'warn' : 'success'
             );
+        }
+
+        if (stopped()) {
+            await concludeStopped();
+            return;
         }
 
         const survivors = await Candidate.find({

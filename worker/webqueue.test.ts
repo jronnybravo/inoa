@@ -306,6 +306,99 @@ describe('backing off when the engine objects', () => {
 });
 
 /**
+ * Stopping, which is different from being blocked.
+ *
+ * The queue is the longest phase of a run, so it is the one somebody actually
+ * wants out of. The distinction that matters is what happens to the names it
+ * never reached: a run that was blocked marks them unverified, because the
+ * engine refused. A run that was stopped must not, because nothing refused -
+ * a person changed their mind, and 'unverified' would be a claim about Google
+ * that never happened.
+ */
+describe('a stop request', () => {
+    it('stops between names rather than finishing the queue', async () => {
+        const { rows, candidates } = store(['Alpha', 'Beta', 'Gamma']);
+        const stop = new AbortController();
+        const asked: string[] = [];
+        const check = (name: string): Promise<CheckOutcome> => {
+            asked.push(name);
+            // Ask to stop while the first name is in hand.
+            stop.abort();
+            return Promise.resolve(clear());
+        };
+
+        const result = await drainWebQueue(
+            candidates,
+            'run-1',
+            REQUIRED,
+            undefined,
+            check,
+            stop.signal
+        );
+
+        assert.deepEqual(asked, ['Alpha'], 'the second name is never asked for');
+        assert.equal(result.resolved, 1);
+        assert.equal(at(rows, 0).google, 'clear', 'the name in hand still gets its verdict');
+    });
+
+    it('leaves the names it never reached pending, not unverified', async () => {
+        const { rows, candidates } = store(['Alpha', 'Beta', 'Gamma']);
+        const stop = new AbortController();
+        const check = (): Promise<CheckOutcome> => {
+            stop.abort();
+            return Promise.resolve(clear());
+        };
+
+        const result = await drainWebQueue(
+            candidates,
+            'run-1',
+            REQUIRED,
+            undefined,
+            check,
+            stop.signal
+        );
+
+        assert.equal(result.abandoned, 0, 'nothing was abandoned; it was stopped');
+        assert.equal(at(rows, 1).google, 'pending');
+        assert.equal(at(rows, 2).google, 'pending');
+        assert.equal(at(rows, 1).detail.google, undefined, 'no claim about the engine');
+    });
+
+    it('does nothing at all when stopped before it starts', async () => {
+        const { candidates } = store(['Alpha', 'Beta']);
+        const stop = new AbortController();
+        stop.abort();
+        const { check, asked } = answering(clear());
+
+        const result = await drainWebQueue(
+            candidates,
+            'run-1',
+            REQUIRED,
+            undefined,
+            check,
+            stop.signal
+        );
+
+        assert.deepEqual(asked, []);
+        assert.deepEqual(result, { resolved: 0, abandoned: 0 });
+    });
+
+    /*
+     * Without a signal the queue behaves exactly as it did before, including
+     * marking what it gave up on. Stopping is an addition, not a change.
+     */
+    it('still marks abandoned names unverified when it was blocked, not stopped', async () => {
+        const { rows, candidates } = store(['Alpha', 'Beta']);
+        await drainWebQueue(candidates, 'run-1', REQUIRED, undefined, answering(challenge()).check);
+
+        for (const row of rows) {
+            assert.equal(row.google, 'unknown');
+            assert.equal(row.detail.google, 'Search was blocked; not verified');
+        }
+    });
+});
+
+/**
  * The regression that cost thirty minutes a time.
  *
  * A single Firecrawl timeout used to fall through to a Google that refuses this

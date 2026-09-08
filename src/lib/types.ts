@@ -41,8 +41,19 @@ export const CHECK_SEARCH: Record<CheckKind, (name: string) => string> = {
         `https://www.google.com/search?q=${encodeURIComponent(`"${n}" (app OR software OR platform OR company)`)}`
 };
 
+/**
+ * 'stopped' is a decision, not a failure.
+ *
+ * A run that was asked to stop kept whatever it had already found, so it is
+ * not 'failed' - nothing went wrong - and it is not 'done', because the checks
+ * it was asked for were never finished. Reading it as either would misdescribe
+ * what is in the table.
+ */
 export type RunStatus =
-    'awaiting_verification' | 'queued' | 'generating' | 'checking' | 'done' | 'failed';
+    'awaiting_verification' | 'queued' | 'generating' | 'checking' | 'done' | 'failed' | 'stopped';
+
+/** Statuses a worker will never pick up again. */
+export const TERMINAL_STATUSES: RunStatus[] = ['done', 'failed', 'stopped'];
 
 /** The generation approaches a brief can ask for. */
 export const STRATEGIES = [

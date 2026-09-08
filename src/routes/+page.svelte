@@ -4,6 +4,7 @@
         CHECK_ORDER,
         CHECK_SEARCH,
         STRATEGIES,
+        TERMINAL_STATUSES,
         type CandidateView,
         type CheckKind,
         type CheckStatus,
@@ -283,8 +284,26 @@
      * Filtering happens here rather than in the query, because the counts beside
      * each approach have to reflect the whole run, not the current filter.
      */
-    const shown = $derived(
-        candidates.filter((c) => {
+    /**
+     * How the Name column is ordered, cycling on each click.
+     *
+     * Three states rather than two, because the unsorted order is not an
+     * absence of one: rows arrive in generation order, which is the sequence
+     * the model produced them in and the only ordering that says anything the
+     * alphabet does not. Sorting has to be undoable, and a third click is a
+     * cheaper way back than a separate control.
+     */
+    type NameSort = 'none' | 'asc' | 'desc';
+    let nameSort = $state<NameSort>('none');
+    const NEXT_SORT: Record<NameSort, NameSort> = { none: 'asc', asc: 'desc', desc: 'none' };
+    const SORT_HINT: Record<NameSort, string> = {
+        none: 'Sort names A to Z',
+        asc: 'Sort names Z to A',
+        desc: 'Return to the order they were generated in'
+    };
+
+    const shown = $derived.by(() => {
+        const matching = candidates.filter((c) => {
             if (nameFilter && !c.name.toLowerCase().includes(nameFilter.toLowerCase())) {
                 return false;
             }
@@ -292,8 +311,15 @@
                 return false;
             }
             return CHECK_ORDER.every((k) => !checkFilter[k] || c[k] === checkFilter[k]);
-        })
-    );
+        });
+        if (nameSort === 'none') {
+            return matching;
+        }
+        // filter() has already allocated, so sorting in place cannot disturb
+        // the candidates array the rest of the page reads.
+        const direction = nameSort === 'asc' ? 1 : -1;
+        return matching.sort((a, b) => direction * a.name.localeCompare(b.name));
+    });
 
     /** Whole-run tallies from the server, so filtering does not distort them. */
     let tallies = $state<StrategyTally[]>([]);
@@ -317,7 +343,31 @@
         { label: 'checked', value: run?.checkedCount ?? 0, of: run?.generatedCount ?? 0 },
         { label: 'passing', value: passedCount, of: null as number | null }
     ]);
-    const finished = $derived(run?.status === 'done' || run?.status === 'failed');
+    const finished = $derived(run !== null && TERMINAL_STATUSES.includes(run.status));
+    /** Only a run somebody is still working on can be stopped. */
+    const stoppable = $derived(run !== null && !TERMINAL_STATUSES.includes(run.status));
+
+    /**
+     * Stopping asks twice.
+     *
+     * A run is an hour of somebody else's rate limits, and the button sits in
+     * the header where a misclick is cheap to make and expensive to undo.
+     */
+    let confirmingStop = $state(false);
+    let stopping = $state(false);
+
+    async function stopRun() {
+        if (!run) {
+            return;
+        }
+        stopping = true;
+        try {
+            await fetch(`/api/runs/${run.id}/stop`, { method: 'POST' });
+        } finally {
+            stopping = false;
+            confirmingStop = false;
+        }
+    }
 
     async function execute() {
         problem = '';
@@ -443,7 +493,7 @@
                             }
                             since = payload.events.at(-1)?.at ?? since;
                         }
-                        if (run.status === 'done' || run.status === 'failed') {
+                        if (TERMINAL_STATUSES.includes(run.status)) {
                             return;
                         }
                     }
@@ -721,12 +771,48 @@
                     class="relative inline-flex h-2 w-2 rounded-full
                      {run.status === 'failed'
                         ? 'bg-rose-500'
-                        : finished
-                          ? 'bg-stone-400'
-                          : 'bg-emerald-500'}"
+                        : run.status === 'stopped'
+                          ? 'bg-amber-500'
+                          : finished
+                            ? 'bg-stone-400'
+                            : 'bg-emerald-500'}"
                 ></span>
             </span>
             <span class="text-sm font-medium capitalize">{run.status}</span>
+
+            {#if stoppable}
+                <!--
+                    Two clicks, because the first one is often a misclick and
+                    the thing behind it is an hour of somebody's rate limits.
+                -->
+                {#if confirmingStop}
+                    <button
+                        onclick={stopRun}
+                        disabled={stopping}
+                        class="ml-2 rounded border border-rose-300 px-2 py-0.5 text-xs
+                               font-medium text-rose-700 transition-colors duration-100
+                               enabled:hover:bg-rose-50 disabled:opacity-60
+                               dark:border-rose-800 dark:text-rose-400
+                               dark:enabled:hover:bg-rose-950"
+                    >
+                        {stopping ? 'Stopping…' : 'Confirm stop'}
+                    </button>
+                    <button
+                        onclick={() => (confirmingStop = false)}
+                        class="ml-1 text-xs text-stone-500 underline decoration-dotted
+                               underline-offset-2 hover:text-stone-900
+                               dark:hover:text-stone-100">keep going</button
+                    >
+                {:else}
+                    <button
+                        onclick={() => (confirmingStop = true)}
+                        title="Stop this run. Names already found are kept."
+                        class="ml-2 rounded border border-stone-300 px-2 py-0.5 text-xs
+                               transition-colors duration-100 hover:bg-stone-200
+                               dark:border-stone-700 dark:hover:bg-stone-800">Stop</button
+                    >
+                {/if}
+            {/if}
         </div>
         {#each progress as stat (stat.label)}
             <div class="flex items-baseline gap-1.5">
@@ -840,10 +926,36 @@
                         <tr class="bg-stone-100 dark:bg-stone-900">
                             <th class="px-3 py-2.5 align-bottom {HEADER_EDGE}"></th>
 
-                            <th class="px-3 py-2.5 align-bottom {HEADER_EDGE}">
-                                <span class="block pb-1 text-xs font-medium text-stone-500">
+                            <th
+                                class="px-3 py-2.5 align-bottom {HEADER_EDGE}"
+                                aria-sort={nameSort === 'asc'
+                                    ? 'ascending'
+                                    : nameSort === 'desc'
+                                      ? 'descending'
+                                      : 'none'}
+                            >
+                                <!--
+                                    The button is named for the column, not for
+                                    what clicking does: it is the header's
+                                    accessible name, and aria-sort above already
+                                    carries the state. The hint goes in a title,
+                                    where it helps without renaming the column.
+                                -->
+                                <button
+                                    onclick={() => (nameSort = NEXT_SORT[nameSort])}
+                                    title={SORT_HINT[nameSort]}
+                                    class="group flex items-center gap-1 pb-1 text-xs font-medium
+                                           text-stone-500 transition-colors duration-100
+                                           hover:text-stone-900 dark:hover:text-stone-100"
+                                >
                                     Name
-                                </span>
+                                    <span
+                                        aria-hidden="true"
+                                        class={nameSort === 'none'
+                                            ? 'opacity-0 transition-opacity group-hover:opacity-60'
+                                            : ''}>{nameSort === 'desc' ? '↓' : '↑'}</span
+                                    >
+                                </button>
                                 <div class="relative">
                                     <input
                                         bind:value={nameFilter}
@@ -991,7 +1103,8 @@
                                 </td>
                                 {#each CHECK_ORDER as k (k)}
                                     <td
-                                        class="px-3 py-1.5 whitespace-nowrap {CELL[c[k]].class}"
+                                        class="relative px-3 py-1.5 whitespace-nowrap {CELL[c[k]]
+                                            .class}"
                                         title={c.detail?.[k] || CELL[c[k]].text}
                                     >
                                         {#if c.detail?.[k]}
@@ -1007,6 +1120,15 @@
                                             >
                                         {:else}
                                             <span aria-hidden="true">{CELL[c[k]].icon}</span>
+                                            <!--
+                                                The cell is positioned so this cannot escape it.
+                                                sr-only is position:absolute, and an absolutely
+                                                positioned box is only clipped by an ancestor that
+                                                is its containing block. Against a static cell it
+                                                resolved against the page instead, landing at the
+                                                table's full unscrolled height and leaving a
+                                                thousand pixels of empty scroll below the layout.
+                                            -->
                                             <span class="sr-only"
                                                 >{CHECK_LABEL[k]}: {CELL[c[k]].text}</span
                                             >
@@ -1072,7 +1194,9 @@
                                     colspan="8"
                                     class="px-4 py-12 text-center text-sm text-stone-500"
                                 >
-                                    {#if run.status === 'queued'}
+                                    {#if run.status === 'stopped'}
+                                        Stopped before any name was generated.
+                                    {:else if run.status === 'queued'}
                                         Queued. Waiting for the worker to pick this up.
                                     {:else if run.status === 'generating'}
                                         Generating {run.targetCount} names. They appear here in batches

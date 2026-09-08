@@ -68,7 +68,13 @@ export async function drainWebQueue(
      * decision to give up, and none of that can be exercised against a real
      * search. Production never passes it.
      */
-    check: (name: string) => Promise<CheckOutcome> = checkWeb
+    check: (name: string) => Promise<CheckOutcome> = checkWeb,
+    /*
+     * A stop request, if one can arrive. This queue is the longest thing a
+     * run does - a minute a name in the browser tier - so it is the phase
+     * somebody is most likely to want out of.
+     */
+    stop?: AbortSignal
 ): Promise<{ resolved: number; abandoned: number }> {
     const pending = await candidates.find({
         where: { runId, google: 'pending' as CheckStatus },
@@ -84,6 +90,9 @@ export async function drainWebQueue(
     // spend the queue during the very window we are waiting out.
     let index = 0;
     while (index < pending.length) {
+        if (stop?.aborted) {
+            break;
+        }
         const candidate = pending[index];
         if (!candidate) {
             break;
@@ -134,6 +143,17 @@ export async function drainWebQueue(
         if (index < pending.length) {
             await sleep(jitter(interval));
         }
+    }
+
+    /*
+     * A stop leaves the rest alone.
+     *
+     * 'Search was blocked; not verified' is a claim about the engine, and it
+     * would be false here - nothing was blocked, somebody asked us to stop.
+     * Those names stay 'pending', which is what they are: not yet checked.
+     */
+    if (stop?.aborted) {
+        return { resolved, abandoned: 0 };
     }
 
     // Anything still pending was abandoned; say so rather than leaving it looking

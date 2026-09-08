@@ -1,10 +1,12 @@
 /**
- * Candidate generation, through the local Claude Code CLI.
+ * Candidate generation.
  *
- * Uses the signed-in subscription rather than an API key, which is why this
- * runs on your machine and not on Vercel. If the CLI's session has expired the
- * run fails loudly here rather than producing an empty list — re-authenticate
- * with `claude login`.
+ * The default source is the local Claude Code CLI, which spends the signed-in
+ * subscription rather than an API key — the reason this runs on your machine
+ * and not on Vercel. ANTHROPIC_API_KEY and OPENAI_API_KEY are alternatives for
+ * a machine with no subscription to spend, and a fallback when the CLI cannot
+ * answer; see generators.ts. If nothing is configured the run fails loudly
+ * here rather than producing an empty list.
  *
  * Asked for a thousand names in one response a model will repeat itself and
  * drift into filler — measured on a competing model's 296-line answer: 163
@@ -23,29 +25,8 @@
  * genuinely in flight at the same moment are blind to each other.
  */
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { STRATEGIES, type StrategyId } from '../src/lib/types.ts';
-
-const run = promisify(execFile);
-
-/**
- * The CLI waits three seconds for stdin before giving up on it, and we never
- * write any — the prompt goes in as an argument. Closing stdin outright skips
- * that wait, which is otherwise paid on every batch of every run.
- */
-const CLI_OPTIONS = {
-    maxBuffer: 32 * 1024 * 1024,
-    timeout: 900_000,
-    stdio: ['ignore', 'pipe', 'pipe'] as const
-};
-
-/**
- * Which model generates. Names are a bulk text task with no reasoning in it,
- * so the largest model is not obviously the right one; set INOA_MODEL to
- * try another.
- */
-const MODEL = process.env.INOA_MODEL;
+import { generators } from './generators.ts';
 
 const BATCH_SIZE = Number(process.env.INOA_BATCH_SIZE ?? 50);
 
@@ -117,18 +98,39 @@ function parse(output: string, strategy: StrategyId): GeneratedName[] {
     return out;
 }
 
+/**
+ * One batch, from whichever source answers first.
+ *
+ * A source that throws is passed over rather than retried here — the caller
+ * already retries the whole batch, and a second source is a better answer to
+ * a usage limit than a second attempt at the one that imposed it. Only when
+ * every configured source has failed does the error reach the caller, which
+ * is the point at which giving up is the right thing.
+ */
 async function generateBatch(
     brief: string,
     strategy: StrategyId,
     count: number,
     avoid: string[]
 ): Promise<GeneratedName[]> {
-    const args = ['-p', promptFor(brief, strategy, count, avoid), '--output-format', 'text'];
-    if (MODEL) {
-        args.push('--model', MODEL);
+    const prompt = promptFor(brief, strategy, count, avoid);
+    const sources = generators();
+    if (sources.length === 0) {
+        throw new Error(
+            'No generator is configured. Sign in to the Claude CLI with `claude login`, ' +
+                'or set ANTHROPIC_API_KEY or OPENAI_API_KEY.'
+        );
     }
-    const { stdout } = await run('claude', args, CLI_OPTIONS);
-    return parse(stdout, strategy);
+
+    let failure: unknown;
+    for (const source of sources) {
+        try {
+            return parse(await source.complete(prompt), strategy);
+        } catch (error) {
+            failure = error;
+        }
+    }
+    throw failure;
 }
 
 /**

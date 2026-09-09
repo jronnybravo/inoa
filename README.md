@@ -250,9 +250,9 @@ found".
 
 The **Other languages** approach draws on any language by default. Pick a
 family (`Nordic`, `Romance`, `Bantu`) or a single language (`Japanese`,
-`Tagalog`, `Old Norse`) to narrow it — the row only appears when that approach
-is selected, and an empty selection means any, which is what the approach meant
-before it could be narrowed.
+`Tagalog`, `Old Norse`) to narrow it. The picker lives inside that approach's
+own card, revealed by the checkbox that enables it, and an empty selection
+means any — which is what the approach meant before it could be narrowed.
 
 Families and single languages sit in one list, ordered by speakers. That is a
 metric rather than a guess, and it does put Latin and Greek low despite their

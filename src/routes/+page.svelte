@@ -111,6 +111,16 @@
      */
     const chosenLanguages = $derived(LANGUAGES.filter((l) => languages.includes(l.id)));
 
+    /**
+     * The one approach that takes a setting, kept out of the card grid.
+     *
+     * Its picker used to be a row of the form in its own right, which said
+     * nothing about which checkbox it answered to. It lives inside the card
+     * now, so the ownership is the layout.
+     */
+    const FOREIGN_STRATEGY = STRATEGIES.find((s) => s.id === 'foreign') ?? STRATEGIES[0];
+    const onForeign = $derived(strategies.includes('foreign'));
+
     /** The same keys as the other two searches, because it is the same control. */
     function onLanguageKeydown(event: KeyboardEvent) {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -581,8 +591,6 @@
          * it had. Not the asterisk either: nothing here can be required.
          */
         search: ['M11 4.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13z', 'M15.7 15.7L20 20'],
-        // A speech mark, for the row that chooses which tongues to draw on.
-        language: ['M4 5.5h16v11H12l-4.5 3.5V16.5H4z', 'M8.5 9.5h7', 'M8.5 12.5h4'],
         report: [
             'M2.5 12s3.6-6.2 9.5-6.2 9.5 6.2 9.5 6.2-3.6 6.2-9.5 6.2S2.5 12 2.5 12z',
             'M14.4 12a2.4 2.4 0 10-4.8 0 2.4 2.4 0 004.8 0z'
@@ -1489,35 +1497,220 @@
                         aria-describedby={problemFor('strategy')
                             ? 'strategy-help strategy-error'
                             : 'strategy-help'}
-                        class="grid gap-2 focus:outline-none sm:grid-cols-2 xl:grid-cols-3"
+                        class="focus:outline-none"
                     >
-                        {#each STRATEGIES as s (s.id)}
-                            <label
-                                class="flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm
+                        <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                            {#each STRATEGIES.filter((s) => s.id !== 'foreign') as s (s.id)}
+                                <label
+                                    class="flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm
                                        transition-colors duration-150
                                        {strategies.includes(s.id)
-                                    ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
-                                    : 'border-stone-200 hover:border-stone-400 dark:border-stone-800 dark:hover:border-stone-600'}"
-                            >
+                                        ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
+                                        : 'border-stone-200 hover:border-stone-400 dark:border-stone-800 dark:hover:border-stone-600'}"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        class="mt-0.5 accent-stone-900 dark:accent-stone-100"
+                                        checked={strategies.includes(s.id)}
+                                        onchange={(e) => {
+                                            const on = e.currentTarget.checked;
+                                            strategies = on
+                                                ? [...strategies, s.id]
+                                                : strategies.filter((x) => x !== s.id);
+                                        }}
+                                    />
+                                    <span>
+                                        <span class="font-medium">{s.label}</span>
+                                        <span
+                                            class="block text-xs text-stone-500 dark:text-stone-500"
+                                            >{s.hint}</span
+                                        >
+                                    </span>
+                                </label>
+                            {/each}
+                        </div>
+
+                        <!--
+                            Other languages, out of the grid and full width,
+                            because it is the only approach that takes a
+                            setting.
+
+                            The picker used to be a row of the form in its own
+                            right, a sibling of Domains and Handles — so
+                            nothing said it belonged to this checkbox rather
+                            than to the form. Inside the card, revealed by the
+                            box that enables it and indented under it, the
+                            ownership is the layout rather than a sentence
+                            asking you to infer it.
+                        -->
+                        <div
+                            class="mt-2 rounded-lg border transition-colors duration-150
+                                   {onForeign
+                                ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
+                                : 'border-stone-200 hover:border-stone-400 dark:border-stone-800 dark:hover:border-stone-600'}"
+                        >
+                            <label class="flex cursor-pointer items-start gap-2.5 p-3 text-sm">
                                 <input
                                     type="checkbox"
                                     class="mt-0.5 accent-stone-900 dark:accent-stone-100"
-                                    checked={strategies.includes(s.id)}
+                                    checked={onForeign}
                                     onchange={(e) => {
                                         const on = e.currentTarget.checked;
                                         strategies = on
-                                            ? [...strategies, s.id]
-                                            : strategies.filter((x) => x !== s.id);
+                                            ? [...strategies, 'foreign']
+                                            : strategies.filter((x) => x !== 'foreign');
                                     }}
                                 />
                                 <span>
-                                    <span class="font-medium">{s.label}</span>
+                                    <span class="font-medium">{FOREIGN_STRATEGY.label}</span>
                                     <span class="block text-xs text-stone-500 dark:text-stone-500"
-                                        >{s.hint}</span
+                                        >{FOREIGN_STRATEGY.hint}</span
                                     >
                                 </span>
                             </label>
-                        {/each}
+
+                            {#if onForeign}
+                                <!--
+                                    Indented behind a rule that starts where
+                                    the label above it does, so the eye reads
+                                    it as belonging to that checkbox and not to
+                                    the card's edge.
+                                -->
+                                <div
+                                    class="mb-3 ml-8 mr-3 border-l border-stone-300 pl-3
+                                           dark:border-stone-700"
+                                >
+                                    <span id="languages-label" class="text-xs text-stone-500">
+                                        Which languages to draw on. Pick a family or a single
+                                        language; leave it empty for any.
+                                    </span>
+                                    <div class="relative mt-2 max-w-sm">
+                                        <input
+                                            id="languages"
+                                            bind:value={languageQuery}
+                                            onfocus={() => (languageOpen = true)}
+                                            onblur={() =>
+                                                setTimeout(() => (languageOpen = false), 120)}
+                                            oninput={() => {
+                                                languageOpen = true;
+                                                languageIndex = 0;
+                                            }}
+                                            onkeydown={onLanguageKeydown}
+                                            role="combobox"
+                                            aria-expanded={languageOpen}
+                                            aria-controls="language-list"
+                                            aria-labelledby="languages-label"
+                                            autocomplete="off"
+                                            placeholder="Search languages — Nordic, Japanese, Bantu…"
+                                            class="w-full rounded-lg border border-stone-300 bg-white px-3
+                                                   py-2 text-sm placeholder:text-stone-400
+                                                   focus:border-stone-500 focus:outline-none
+                                                   focus:ring-2 focus:ring-stone-900/10
+                                                   dark:border-stone-700 dark:bg-stone-950
+                                                   dark:placeholder:text-stone-600
+                                                   dark:focus:ring-white/10"
+                                        />
+                                        {#if languageOpen}
+                                            <div
+                                                class="absolute z-20 mt-1 w-full overflow-hidden
+                                                       rounded-lg border border-stone-200 bg-white
+                                                       shadow-lg dark:border-stone-700
+                                                       dark:bg-stone-900"
+                                            >
+                                                <ul
+                                                    id="language-list"
+                                                    role="listbox"
+                                                    class="max-h-64 overflow-y-auto py-1"
+                                                >
+                                                    {#each languageMatches as l, i (l.id)}
+                                                        <li>
+                                                            <button
+                                                                type="button"
+                                                                role="option"
+                                                                aria-selected={i === languageIndex}
+                                                                onmousedown={(e) => {
+                                                                    e.preventDefault();
+                                                                    addLanguage(l.id);
+                                                                }}
+                                                                onmouseenter={() =>
+                                                                    (languageIndex = i)}
+                                                                class="flex w-full items-baseline gap-2 px-3
+                                                                       py-1.5 text-left text-sm
+                                                                       {i === languageIndex
+                                                                    ? 'bg-stone-100 dark:bg-stone-800'
+                                                                    : ''}"
+                                                            >
+                                                                <span>{l.label}</span>
+                                                                {#if l.group}
+                                                                    <span
+                                                                        class="truncate text-xs text-stone-500"
+                                                                        >{l.covers
+                                                                            .slice(0, 4)
+                                                                            .join(', ')}</span
+                                                                    >
+                                                                {/if}
+                                                            </button>
+                                                        </li>
+                                                    {/each}
+                                                    {#if languageMatches.length === 0}
+                                                        <li
+                                                            class="px-3 py-2 text-sm text-stone-500"
+                                                        >
+                                                            No language matches “{languageQuery.trim()}”.
+                                                        </li>
+                                                    {/if}
+                                                </ul>
+                                                {#if languageMatches.length > 0}
+                                                    <p
+                                                        class="border-t border-stone-200 px-3 py-1.5
+                                                               text-xs text-stone-500
+                                                               dark:border-stone-800
+                                                               dark:text-stone-400"
+                                                    >
+                                                        ↑↓ to move · ↵ to add · ⌫ removes the last
+                                                    </p>
+                                                {/if}
+                                            </div>
+                                        {/if}
+                                    </div>
+
+                                    {#if chosenLanguages.length > 0}
+                                        <div class="mt-2 flex flex-wrap items-start gap-2">
+                                            {#each chosenLanguages as l (l.id)}
+                                                <span
+                                                    class="flex items-center rounded-lg border
+                                                           border-stone-300 bg-white text-sm
+                                                           dark:border-stone-700 dark:bg-stone-950"
+                                                >
+                                                    <span class="py-2 pl-3 pr-1.5">{l.label}</span>
+                                                    <button
+                                                        type="button"
+                                                        onclick={() => {
+                                                            removeLanguage(l.id);
+                                                        }}
+                                                        aria-label="Stop using {l.label}"
+                                                        class="px-2 py-2 text-stone-400
+                                                               transition-colors duration-100
+                                                               hover:text-rose-700
+                                                               dark:hover:text-rose-400">×</button
+                                                    >
+                                                </span>
+                                            {/each}
+                                            <span
+                                                class="self-center text-xs text-stone-500 dark:text-stone-400"
+                                            >
+                                                {languages.length}
+                                                {languages.length === 1 ? 'language' : 'languages'}
+                                            </span>
+                                        </div>
+                                    {:else}
+                                        <p class="mt-2 text-xs text-stone-500 dark:text-stone-400">
+                                            any language
+                                        </p>
+                                    {/if}
+                                </div>
+                            {/if}
+                        </div>
                     </div>
                     {#if problemFor('strategy')}
                         <p
@@ -1529,153 +1722,6 @@
                     {/if}
                 </div>
             </div>
-
-            <!--
-                A row of its own, appearing only when the approach it narrows
-                is chosen.
-
-                It was tucked inside the strategy row under a rule of its own,
-                with its explanation in the control column rather than the
-                rail — which made it the one thing on the form that did not
-                look like the rest of the form. It is the same question the
-                three rows below ask: many options, a few taken.
-            -->
-            {#if strategies.includes('foreign')}
-                <div class={ROW}>
-                    <div>
-                        <span
-                            id="languages-label"
-                            class="flex items-center gap-2 text-sm font-medium"
-                        >
-                            <FieldIcon paths={ICONS.language} />Languages
-                        </span>
-                        <p class="mt-1 text-xs text-stone-500">
-                            Which languages <b class="font-medium">Other languages</b> may draw on. Pick
-                            a family or a single language; leave it empty for any.
-                        </p>
-                    </div>
-                    <div>
-                        <div class="relative max-w-sm">
-                            <input
-                                id="languages"
-                                bind:value={languageQuery}
-                                onfocus={() => (languageOpen = true)}
-                                onblur={() => setTimeout(() => (languageOpen = false), 120)}
-                                oninput={() => {
-                                    languageOpen = true;
-                                    languageIndex = 0;
-                                }}
-                                onkeydown={onLanguageKeydown}
-                                role="combobox"
-                                aria-expanded={languageOpen}
-                                aria-controls="language-list"
-                                aria-labelledby="languages-label"
-                                autocomplete="off"
-                                placeholder="Search languages — Nordic, Japanese, Bantu…"
-                                class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm
-                                       placeholder:text-stone-400 focus:border-stone-500
-                                       focus:outline-none focus:ring-2 focus:ring-stone-900/10
-                                       dark:border-stone-700 dark:bg-stone-950
-                                       dark:placeholder:text-stone-600 dark:focus:ring-white/10"
-                            />
-                            {#if languageOpen}
-                                <div
-                                    class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg
-                                           border border-stone-200 bg-white shadow-lg
-                                           dark:border-stone-700 dark:bg-stone-900"
-                                >
-                                    <ul
-                                        id="language-list"
-                                        role="listbox"
-                                        class="max-h-64 overflow-y-auto py-1"
-                                    >
-                                        {#each languageMatches as l, i (l.id)}
-                                            <li>
-                                                <button
-                                                    type="button"
-                                                    role="option"
-                                                    aria-selected={i === languageIndex}
-                                                    onmousedown={(e) => {
-                                                        e.preventDefault();
-                                                        addLanguage(l.id);
-                                                    }}
-                                                    onmouseenter={() => (languageIndex = i)}
-                                                    class="flex w-full items-baseline gap-2 px-3 py-1.5
-                                                           text-left text-sm
-                                                           {i === languageIndex
-                                                        ? 'bg-stone-100 dark:bg-stone-800'
-                                                        : ''}"
-                                                >
-                                                    <span>{l.label}</span>
-                                                    {#if l.group}
-                                                        <!--
-                                                            A family says what it covers, or
-                                                            'Nordic' is a guess about which
-                                                            languages are in it.
-                                                        -->
-                                                        <span
-                                                            class="truncate text-xs text-stone-500"
-                                                            >{l.covers.slice(0, 4).join(', ')}</span
-                                                        >
-                                                    {/if}
-                                                </button>
-                                            </li>
-                                        {/each}
-                                        {#if languageMatches.length === 0}
-                                            <li class="px-3 py-2 text-sm text-stone-500">
-                                                No language matches “{languageQuery.trim()}”.
-                                            </li>
-                                        {/if}
-                                    </ul>
-                                    {#if languageMatches.length > 0}
-                                        <p
-                                            class="border-t border-stone-200 px-3 py-1.5 text-xs
-                                                   text-stone-500 dark:border-stone-800
-                                                   dark:text-stone-400"
-                                        >
-                                            ↑↓ to move · ↵ to add · ⌫ removes the last
-                                        </p>
-                                    {/if}
-                                </div>
-                            {/if}
-                        </div>
-
-                        {#if chosenLanguages.length > 0}
-                            <div class="mt-2 flex flex-wrap items-start gap-2">
-                                {#each chosenLanguages as l (l.id)}
-                                    <span
-                                        class="flex items-center rounded-lg border border-stone-200
-                                               text-sm dark:border-stone-800"
-                                    >
-                                        <span class="py-2 pl-3 pr-1.5">{l.label}</span>
-                                        <button
-                                            type="button"
-                                            onclick={() => {
-                                                removeLanguage(l.id);
-                                            }}
-                                            aria-label="Stop using {l.label}"
-                                            class="px-2 py-2 text-stone-400 transition-colors
-                                                   duration-100 hover:text-rose-700
-                                                   dark:hover:text-rose-400">×</button
-                                        >
-                                    </span>
-                                {/each}
-                                <!-- Counted the way the three rows below count. -->
-                                <span
-                                    class="self-center text-xs text-stone-500 dark:text-stone-400"
-                                >
-                                    {languages.length}
-                                    {languages.length === 1 ? 'language' : 'languages'}
-                                </span>
-                            </div>
-                        {:else}
-                            <p class="mt-2 text-xs text-stone-500 dark:text-stone-400">
-                                any language
-                            </p>
-                        {/if}
-                    </div>
-                </div>
-            {/if}
 
             <div class={ROW}>
                 <div>

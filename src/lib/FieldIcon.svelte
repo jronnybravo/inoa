@@ -10,8 +10,21 @@
     is a worse trade than one file.
 -->
 <script lang="ts">
-    /** Path data, drawn in order. */
-    const { paths }: { paths: string[] } = $props();
+    /**
+     * Path data, drawn in order, and what to colour it.
+     *
+     * The default is the size and muted tone the form rail wants. A caller that
+     * passes its own takes over both — on a filled button the icon should be
+     * the button's own colour, and in a pill it should be smaller than the
+     * label beside it.
+     */
+    const {
+        paths,
+        class: tone = 'size-4 text-stone-400 dark:text-stone-500'
+    }: {
+        paths: string[];
+        class?: string;
+    } = $props();
 </script>
 
 <!--
@@ -25,7 +38,7 @@
     stroke-width="1.5"
     stroke-linecap="round"
     stroke-linejoin="round"
-    class="size-4 shrink-0 text-stone-400 dark:text-stone-500"
+    class="shrink-0 {tone}"
     aria-hidden="true"
 >
     {#each paths as d (d)}<path {d} />{/each}

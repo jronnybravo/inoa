@@ -1,9 +1,13 @@
 <script lang="ts">
+    import AppHeader from '$lib/AppHeader.svelte';
     import FieldIcon from '$lib/FieldIcon.svelte';
-    import { ALL_TLDS, isTld } from '$lib/tlds';
+    import { DEFAULT_PLATFORMS, PLATFORMS, isPlatform } from '$lib/handles';
+    import { LANGUAGES, isLanguage } from '$lib/languages';
+    import { ALL_TLDS, isTld, type TldEntry } from '$lib/tlds';
     import {
         checkLabel,
         checkSearch,
+        handleKind,
         statusOf,
         STORE_ORDER,
         tldKind,
@@ -34,6 +38,99 @@
 
     let brief = $state(data.run?.brief ?? '');
     let strategies = $state<string[]>(data.run?.strategies ?? ['compound', 'invented']);
+
+    /**
+     * Which languages 'Other languages' may draw on. Empty means any.
+     *
+     * Empty is the default and stays a real answer rather than an unset one:
+     * unconstrained is what the approach meant before it could be narrowed,
+     * and it is still right for somebody with no preference.
+     */
+    let languages = $state<string[]>([]);
+    let languageQuery = $state('');
+    let languageOpen = $state(false);
+    let languageIndex = $state(0);
+
+    /**
+     * Matches, best first.
+     *
+     * Ranked rather than filtered, and the ranking is the whole point: the
+     * families are listed before the single languages, so an unranked search
+     * for 'japan' offered 'East Asian' — which covers Japanese — ahead of
+     * Japanese itself, and Enter took it. What somebody typed the name of
+     * comes first; what merely contains it comes last.
+     */
+    const languageMatches = $derived.by(() => {
+        const q = languageQuery.trim().toLowerCase();
+        const chosen = new Set(languages);
+        const available = LANGUAGES.filter((l) => !chosen.has(l.id));
+        if (!q) {
+            return available.slice(0, 40);
+        }
+
+        // Four tiers, because two were not enough: 'lat' prefix-matches both
+        // 'Latin' and 'Latin & Greek', and the one somebody typed exactly
+        // should not lose to the one that merely starts the same way.
+        const exact: typeof available = [];
+        const starts: typeof available = [];
+        const contains: typeof available = [];
+        const covered: typeof available = [];
+        for (const l of available) {
+            const label = l.label.toLowerCase();
+            if (label === q) {
+                exact.push(l);
+            } else if (label.startsWith(q)) {
+                starts.push(l);
+            } else if (label.includes(q)) {
+                contains.push(l);
+            } else if (l.covers.some((c) => c.toLowerCase().includes(q))) {
+                covered.push(l);
+            }
+        }
+        return [...exact, ...starts, ...contains, ...covered].slice(0, 40);
+    });
+
+    function addLanguage(id: string) {
+        if (!isLanguage(id) || languages.includes(id)) {
+            return;
+        }
+        languages = [...languages, id];
+        languageQuery = '';
+        languageIndex = 0;
+    }
+
+    const removeLanguage = (id: string): void => {
+        languages = languages.filter((l) => l !== id);
+    };
+
+    /** The same keys as the other two searches, because it is the same control. */
+    function onLanguageKeydown(event: KeyboardEvent) {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            languageOpen = true;
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            const count = languageMatches.length;
+            languageIndex = count === 0 ? 0 : (languageIndex + step + count) % count;
+            return;
+        }
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            const picked = languageMatches[languageIndex]?.id;
+            if (picked) {
+                addLanguage(picked);
+            }
+            return;
+        }
+        if (event.key === 'Backspace' && languageQuery === '' && languages.length > 0) {
+            event.preventDefault();
+            removeLanguage(languages[languages.length - 1] as string);
+            return;
+        }
+        if (event.key === 'Escape' && languageOpen) {
+            event.stopPropagation();
+            languageOpen = false;
+        }
+    }
     /**
      * The domains to look for, and which of them a name must actually be free on.
      *
@@ -46,16 +143,136 @@
     let requiredTlds = $state<string[]>(['com']);
 
     /**
+     * Social handles, the same two questions as the domains.
+     *
+     * Chips rather than a search, because there are three of them and there
+     * will not be many more — a platform earns a place here by answering 404
+     * for a free handle, and most do not. Off by default: a name can be a good
+     * name without a matching GitHub org.
+     */
+    let handles = $state<string[]>([...DEFAULT_PLATFORMS]);
+    let requiredHandles = $state<string[]>([]);
+
+    let handleQuery = $state('');
+    let handleOpen = $state(false);
+    let handleIndex = $state(0);
+
+    const handleMatches = $derived.by(() => {
+        const q = handleQuery.trim().toLowerCase().replace(/^@/, '');
+        const chosen = new Set(handles);
+        return PLATFORMS.filter(
+            (p) =>
+                !chosen.has(p.id) && (!q || p.id.includes(q) || p.label.toLowerCase().includes(q))
+        );
+    });
+
+    const handleAlready = $derived(
+        handleQuery.trim()
+            ? PLATFORMS.filter(
+                  (p) =>
+                      handles.includes(p.id) &&
+                      p.label.toLowerCase().startsWith(handleQuery.trim().toLowerCase())
+              )
+            : []
+    );
+
+    function addHandle(id: string) {
+        if (!isPlatform(id) || handles.includes(id)) {
+            return;
+        }
+        handles = [...handles, id];
+        handleQuery = '';
+        handleIndex = 0;
+    }
+
+    function removeHandle(id: string) {
+        handles = handles.filter((h) => h !== id);
+        requiredHandles = requiredHandles.filter((h) => h !== id);
+    }
+
+    const toggleRequiredHandle = (id: string): void => {
+        requiredHandles = requiredHandles.includes(id)
+            ? requiredHandles.filter((h) => h !== id)
+            : [...requiredHandles, id];
+    };
+
+    /** The same keys as the domain search, because it is the same control. */
+    function onHandleKeydown(event: KeyboardEvent) {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            handleOpen = true;
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            const count = handleMatches.length;
+            handleIndex = count === 0 ? 0 : (handleIndex + step + count) % count;
+            return;
+        }
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            const picked = handleMatches[handleIndex]?.id;
+            if (picked) {
+                addHandle(picked);
+            }
+            return;
+        }
+        if (event.key === 'Backspace' && handleQuery === '' && handles.length > 0) {
+            event.preventDefault();
+            removeHandle(handles[handles.length - 1] as string);
+            return;
+        }
+        if (event.key === 'Escape' && handleOpen) {
+            event.stopPropagation();
+            handleOpen = false;
+        }
+    }
+
+    /**
      * What the run must clear, for the checks that are not domains.
      *
      * Still a record of booleans: there are three of them and there always
      * will be, which is exactly what stopped being true of the domains.
      */
-    const requiredStores = $state<Record<string, boolean>>({
-        appStore: true,
-        playStore: true,
-        google: false
-    });
+    /**
+     * The stores, on the same footing as the domains and the handles.
+     *
+     * They used to be three checkboxes that meant 'required' and nothing else:
+     * all three always ran, and the box only decided whether one could drop a
+     * name. There was no way to say 'do not ask Apple about this at all', even
+     * though Apple is the slowest thing in the run.
+     *
+     * Two lists like the others — but three chips rather than a search box,
+     * because searching a list of three is a worse control than looking at it.
+     * Clicking cycles: not checked, checked, required.
+     */
+    let stores = $state<string[]>(
+        // The web check is only offered where something can answer it.
+        data.search ? [...STORE_ORDER] : STORE_ORDER.filter((k) => k !== 'google')
+    );
+    let requiredStores = $state<string[]>(['appStore', 'playStore']);
+
+    /**
+     * A Web column of search links, in place of a web check.
+     *
+     * Without a search provider the check can only be answered by driving a
+     * browser at about a name a minute — sixteen hours for a thousand names —
+     * so the form does not offer it. This is what remains that is useful: the
+     * column, with a link on every row, and no verdict attached to it.
+     */
+    // let, not const: bind:checked writes to it, which prefer-const cannot see.
+
+    let webLinks = $state(false);
+
+    function cycleStore(id: string) {
+        if (!stores.includes(id)) {
+            stores = [...stores, id];
+            return;
+        }
+        if (!requiredStores.includes(id)) {
+            requiredStores = [...requiredStores, id];
+            return;
+        }
+        stores = stores.filter((s) => s !== id);
+        requiredStores = requiredStores.filter((s) => s !== id);
+    }
     /**
      * The domain search: query, whether the list is showing, and the highlight.
      *
@@ -69,7 +286,6 @@
 
     /** Enough to scroll, few enough to render on every keystroke. */
     const TLD_SHOWN = 40;
-    const TLD_MAX = 12;
 
     /** Typed as somebody would say it: '.io', 'IO' and 'io' are one query. */
     const tldQueryClean = $derived(tldQuery.trim().toLowerCase().replace(/^\./, ''));
@@ -96,18 +312,18 @@
     const tldMatches = $derived.by(() => {
         const q = tldQueryClean;
         const chosen = new Set(tlds);
-        const starts: (readonly [string, string?])[] = [];
-        const contains: (readonly [string, string?])[] = [];
+        const starts: TldEntry[] = [];
+        const contains: TldEntry[] = [];
 
         for (const entry of ALL_TLDS) {
-            if (chosen.has(entry[0])) {
+            if (chosen.has(entry.tld)) {
                 continue;
             }
             if (!q) {
                 starts.push(entry);
-            } else if (entry[0].startsWith(q) || entry[1]?.startsWith(q)) {
+            } else if (entry.tld.startsWith(q) || entry.label?.startsWith(q)) {
                 starts.push(entry);
-            } else if (entry[0].includes(q) || entry[1]?.includes(q)) {
+            } else if (entry.tld.includes(q) || entry.label?.includes(q)) {
                 contains.push(entry);
             }
             if (starts.length >= TLD_SHOWN) {
@@ -118,7 +334,7 @@
     });
 
     function addTld(tld: string) {
-        if (!isTld(tld) || tlds.includes(tld) || tlds.length >= TLD_MAX) {
+        if (!isTld(tld) || tlds.includes(tld)) {
             return;
         }
         tlds = [...tlds, tld];
@@ -168,7 +384,7 @@
         }
         if (event.key === 'Enter') {
             event.preventDefault();
-            const picked = tldMatches[tldIndex]?.[0];
+            const picked = tldMatches[tldIndex]?.tld;
             if (picked) {
                 addTld(picked);
             }
@@ -196,6 +412,20 @@
 
     let email = $state(data.run?.email ?? '');
     let targetCount = $state(data.run?.targetCount ?? 1000);
+
+    /**
+     * What this selection will cost, in requests.
+     *
+     * There was a cap here — twelve, then twenty-five — and both were numbers
+     * I picked rather than measured. A domain check is DNS and one call to a
+     * host nobody else is calling, with no shared quota behind it, so there is
+     * nothing to ration on anybody else's behalf; the only thing being spent
+     * is the person's own afternoon, and that is theirs to spend.
+     *
+     * So the number is shown rather than enforced. Somebody asking for four
+     * hundred domains can see what they have asked for before they start it.
+     */
+    const requestCount = $derived(Number.isInteger(targetCount) ? tlds.length * targetCount : 0);
 
     let submitting = $state(false);
     let problem = $state('');
@@ -307,7 +537,43 @@
             'M9 12l2.2 2.2 4.3-4.2'
         ],
         count: ['M10 4L8 20', 'M16 4l-2 16', 'M5 9.5h14', 'M4.5 14.5h14'],
-        email: ['M3.5 5.5h17v13h-17z', 'M3.5 6.5l8.5 6 8.5-6']
+        email: ['M3.5 5.5h17v13h-17z', 'M3.5 6.5l8.5 6 8.5-6'],
+        handle: [
+            'M12 3.5a8.5 8.5 0 100 17 8.5 8.5 0 000-17z',
+            'M15.5 12a3.5 3.5 0 10-7 0 3.5 3.5 0 007 0z',
+            'M15.5 12v1.8a2.2 2.2 0 004.4 0V12'
+        ],
+        play: ['M8 5.5l11 6.5-11 6.5z'],
+        /*
+         * An asterisk for a requirement and an eye for a witness.
+         *
+         * The pills said 'required' and 'report only' in words, which is
+         * unambiguous and, repeated across a dozen of them, most of what the
+         * row was made of. The words are still there for a screen reader, in
+         * the aria-label these buttons have always carried.
+         *
+         * The asterisk because that is what a required field has been marked
+         * with for as long as there have been forms. A padlock was the first
+         * attempt and reads as 'locked' or 'secure', which is a different
+         * claim about a different thing.
+         *
+         * Three strokes rather than a typed '*', so it sits at the same size
+         * and weight as the eye beside it — a glyph and an icon in one row
+         * never line up.
+         */
+        required: ['M12 4.5v15', 'M5.5 8.25l13 7.5', 'M18.5 8.25l-13 7.5'],
+        /*
+         * A magnifier for a column you read yourself.
+         *
+         * Not the eye, which means 'checked and reported' — this column
+         * establishes nothing, and borrowing the mark for a verdict would say
+         * it had. Not the asterisk either: nothing here can be required.
+         */
+        search: ['M11 4.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13z', 'M15.7 15.7L20 20'],
+        report: [
+            'M2.5 12s3.6-6.2 9.5-6.2 9.5 6.2 9.5 6.2-3.6 6.2-9.5 6.2S2.5 12 2.5 12z',
+            'M14.4 12a2.4 2.4 0 10-4.8 0 2.4 2.4 0 004.8 0z'
+        ]
         // satisfies, not a Record annotation: the keys stay literal, so
         // ICONS.brief is a string[] rather than one that might not be there.
     } satisfies Record<string, string[]>;
@@ -567,7 +833,25 @@
      * is, so composing a run previews the table it will produce.
      */
     const columns = $derived<CheckKind[]>(
-        run ? run.checks.kinds : [...tlds.map(tldKind), ...STORE_ORDER]
+        run
+            ? run.checks.kinds
+            : [
+                  ...tlds.map(tldKind),
+                  ...handles.map(handleKind),
+                  ...STORE_ORDER.filter((k) => stores.includes(k))
+              ]
+    );
+
+    /**
+     * The Web column exists without being a check.
+     *
+     * Kept out of `columns` and handled separately everywhere it matters: it
+     * has no verdict, so it must not reach a filter, a CSV cell, or
+     * computePassed — the moment 'we did not look' can be counted, it starts
+     * counting as 'nothing found'.
+     */
+    const linkColumn = $derived<CheckKind | null>(
+        (run ? run.webLinks : webLinks) && !columns.includes('google') ? 'google' : null
     );
 
     /** Which checks the run treats as gates, as opposed to merely reporting. */
@@ -576,11 +860,22 @@
             ? run.checks.required
             : [
                   ...tlds.filter((t) => requiredTlds.includes(t)).map(tldKind),
-                  ...STORE_ORDER.filter((k) => requiredStores[k])
+                  ...handles.filter((h) => requiredHandles.includes(h)).map(handleKind),
+                  ...STORE_ORDER.filter((k) => stores.includes(k) && requiredStores.includes(k))
               ]
     );
 
     const storeRequirements = STORE_ORDER.map((key) => ({ key, label: checkLabel(key) }));
+
+    /**
+     * The web check with no provider behind it.
+     *
+     * The chip stays, because leaving a hole in a row of three is its own kind
+     * of confusion. What changes is what it can be: two states rather than
+     * three — a column of links, or nothing — because there is no verdict to
+     * report and so nothing that could be required.
+     */
+    const webIsLinkOnly = $derived(!data.search);
 
     /**
      * A glyph per verdict, with the word kept everywhere the glyph cannot go.
@@ -844,11 +1139,16 @@
                 body: JSON.stringify({
                     brief,
                     strategies,
+                    languages,
                     tlds,
                     requiredTlds,
-                    requireAppStore: requiredStores.appStore,
-                    requirePlayStore: requiredStores.playStore,
-                    requireGoogle: requiredStores.google,
+                    handles,
+                    requiredHandles,
+                    stores,
+                    requiredStores,
+                    requireAppStore: requiredStores.includes('appStore'),
+                    requirePlayStore: requiredStores.includes('playStore'),
+                    requireGoogle: requiredStores.includes('google'),
                     email,
                     targetCount
                 })
@@ -1023,43 +1323,27 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<!--
-    A bar, not a banner.
+<AppHeader>
+    <!--
+        The way back to work already done.
 
-    A thousand-name table is most of what this page is, and scrolling it used
-    to carry the only way out of a run - and the only way to start one - off
-    the top of the window. It stays; z-30 puts it over the table's own sticky
-    heading and under the row menu, which has to be over everything.
-
-    Translucent with a blur rather than opaque: a solid bar over a scrolling
-    table reads as a gap in the page, and the tint keeps the text legible
-    without pretending nothing is behind it.
--->
-<header
-    class="sticky top-0 z-30 -mx-6 mb-2 flex flex-wrap items-center justify-between gap-x-6
-           gap-y-2 border-b border-stone-200 bg-stone-50/85 px-6 py-3 backdrop-blur
-           dark:border-stone-800 dark:bg-stone-950/85"
->
-    <div class="flex flex-wrap items-baseline gap-x-3">
-        <h1 class="text-lg font-semibold tracking-tight">Inoa</h1>
-        <!--
-            The description, not a second title. 'Naming run' described the
-            page and left the product unnamed on the one surface that is always
-            visible; the name goes here and what it does follows it.
-        -->
-        <p class="hidden text-sm text-stone-600 sm:block dark:text-stone-400">
-            Generate brand names from a brief, then screen each against the places a name can be
-            taken.
-        </p>
-    </div>
+        A run's id was its only handle: an hour of it reachable through one
+        link in one email, and gone the moment that link was. On a deployment
+        with no mail configured there was no link at all.
+    -->
+    <a
+        href={resolve('/runs')}
+        class="text-stone-600 underline underline-offset-4 hover:text-stone-900
+               dark:text-stone-400 dark:hover:text-stone-100">Runs</a
+    >
     {#if watching}
         <a
             href={resolve('/')}
-            class="text-sm text-stone-600 underline underline-offset-4 hover:text-stone-900
-                       dark:text-stone-400 dark:hover:text-stone-100">Start another</a
+            class="text-stone-600 underline underline-offset-4 hover:text-stone-900
+                   dark:text-stone-400 dark:hover:text-stone-100">Start another</a
         >
     {/if}
-</header>
+</AppHeader>
 
 {#if !watching}
     <!--
@@ -1230,6 +1514,139 @@
                             {problemFor('strategy')}
                         </p>
                     {/if}
+
+                    <!--
+                        Only when the approach it belongs to is chosen.
+
+                        A narrowing control for an approach nobody picked is a
+                        question about nothing, and this row already has six
+                        cards in it. The same search-and-pills as the domains
+                        and the handles, because it is the same shape of
+                        question: many options, a few taken.
+                    -->
+                    {#if strategies.includes('foreign')}
+                        <div class="mt-3 border-t border-stone-200 pt-3 dark:border-stone-800">
+                            <span id="languages-label" class="text-xs text-stone-500">
+                                Languages for <b class="font-medium">Other languages</b> — leave empty
+                                for any. Pick a family or a single language.
+                            </span>
+                            <div class="relative mt-2 max-w-sm">
+                                <input
+                                    id="languages"
+                                    bind:value={languageQuery}
+                                    onfocus={() => (languageOpen = true)}
+                                    onblur={() => setTimeout(() => (languageOpen = false), 120)}
+                                    oninput={() => {
+                                        languageOpen = true;
+                                        languageIndex = 0;
+                                    }}
+                                    onkeydown={onLanguageKeydown}
+                                    role="combobox"
+                                    aria-expanded={languageOpen}
+                                    aria-controls="language-list"
+                                    aria-labelledby="languages-label"
+                                    autocomplete="off"
+                                    placeholder="Search languages — Nordic, Japanese, Bantu…"
+                                    class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm
+                                           placeholder:text-stone-400 focus:border-stone-500
+                                           focus:outline-none focus:ring-2 focus:ring-stone-900/10
+                                           dark:border-stone-700 dark:bg-stone-950
+                                           dark:placeholder:text-stone-600 dark:focus:ring-white/10"
+                                />
+                                {#if languageOpen}
+                                    <div
+                                        class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg
+                                               border border-stone-200 bg-white shadow-lg
+                                               dark:border-stone-700 dark:bg-stone-900"
+                                    >
+                                        <ul
+                                            id="language-list"
+                                            role="listbox"
+                                            class="max-h-64 overflow-y-auto py-1"
+                                        >
+                                            {#each languageMatches as l, i (l.id)}
+                                                <li>
+                                                    <button
+                                                        type="button"
+                                                        role="option"
+                                                        aria-selected={i === languageIndex}
+                                                        onmousedown={(e) => {
+                                                            e.preventDefault();
+                                                            addLanguage(l.id);
+                                                        }}
+                                                        onmouseenter={() => (languageIndex = i)}
+                                                        class="flex w-full items-baseline gap-2 px-3 py-1.5
+                                                               text-left text-sm
+                                                               {i === languageIndex
+                                                            ? 'bg-stone-100 dark:bg-stone-800'
+                                                            : ''}"
+                                                    >
+                                                        <span>{l.label}</span>
+                                                        {#if l.group}
+                                                            <!--
+                                                                A family says what it covers, or
+                                                                'Nordic' is a guess about which
+                                                                five languages are in it.
+                                                            -->
+                                                            <span
+                                                                class="truncate text-xs text-stone-500"
+                                                                >{l.covers
+                                                                    .slice(0, 4)
+                                                                    .join(', ')}</span
+                                                            >
+                                                        {/if}
+                                                    </button>
+                                                </li>
+                                            {/each}
+                                            {#if languageMatches.length === 0}
+                                                <li class="px-3 py-2 text-sm text-stone-500">
+                                                    No language matches “{languageQuery.trim()}”.
+                                                </li>
+                                            {/if}
+                                        </ul>
+                                        {#if languageMatches.length > 0}
+                                            <p
+                                                class="border-t border-stone-200 px-3 py-1.5 text-xs
+                                                       text-stone-500 dark:border-stone-800
+                                                       dark:text-stone-400"
+                                            >
+                                                ↑↓ to move · ↵ to add · ⌫ removes the last
+                                            </p>
+                                        {/if}
+                                    </div>
+                                {/if}
+                            </div>
+
+                            <div class="mt-2 flex flex-wrap items-start gap-2">
+                                {#each languages as id (id)}
+                                    {@const l = LANGUAGES.find((x) => x.id === id)}
+                                    <span
+                                        class="flex items-center rounded-lg border border-stone-200
+                                               text-sm dark:border-stone-800"
+                                    >
+                                        <span class="py-2 pl-3 pr-1.5">{l?.label ?? id}</span>
+                                        <button
+                                            type="button"
+                                            onclick={() => {
+                                                removeLanguage(id);
+                                            }}
+                                            aria-label="Stop using {l?.label ?? id}"
+                                            class="px-2 py-2 text-stone-400 transition-colors
+                                                   duration-100 hover:text-rose-700
+                                                   dark:hover:text-rose-400">×</button
+                                        >
+                                    </span>
+                                {/each}
+                                <span
+                                    class="self-center text-xs text-stone-500 dark:text-stone-400"
+                                >
+                                    {languages.length === 0
+                                        ? 'any language'
+                                        : `${languages.length} chosen`}
+                                </span>
+                            </div>
+                        </div>
+                    {/if}
                 </div>
             </div>
 
@@ -1242,6 +1659,11 @@
                         Each one gets a column of its own. Click a domain to make it a requirement:
                         a required domain drops the name the moment it is taken, the rest are
                         checked and reported either way.
+                    </p>
+                    <p class="mt-1 text-xs text-stone-500">
+                        Every domain is one request per name — {requestCount.toLocaleString()} for this
+                        run as it stands. There is no limit but your patience; nobody's quota is spent
+                        on these. Prices are indicative first-year registration.
                     </p>
                 </div>
                 <div>
@@ -1265,20 +1687,17 @@
                                 tldIndex = 0;
                             }}
                             onkeydown={onTldKeydown}
-                            disabled={tlds.length >= TLD_MAX}
                             role="combobox"
                             aria-expanded={tldOpen}
                             aria-controls="tld-list"
                             aria-labelledby="tlds-label"
                             aria-describedby="tlds-help"
                             autocomplete="off"
-                            placeholder={tlds.length >= TLD_MAX
-                                ? `${TLD_MAX} domains is the most one run can check`
-                                : `Search top-level domains — .com, .io, .ai…`}
+                            placeholder="Search top-level domains — .com, .io, .ai…"
                             class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm
                                    placeholder:text-stone-400 focus:border-stone-500
                                    focus:outline-none focus:ring-2 focus:ring-stone-900/10
-                                   disabled:opacity-50 dark:border-stone-700 dark:bg-stone-950
+                                   dark:border-stone-700 dark:bg-stone-950
                                    dark:placeholder:text-stone-600 dark:focus:ring-white/10"
                         />
                         {#if tldOpen}
@@ -1318,7 +1737,7 @@
                                         </li>
                                     {/each}
 
-                                    {#each tldMatches as entry, i (entry[0])}
+                                    {#each tldMatches as entry, i (entry.tld)}
                                         <li>
                                             <button
                                                 type="button"
@@ -1326,7 +1745,7 @@
                                                 aria-selected={i === tldIndex}
                                                 onmousedown={(e) => {
                                                     e.preventDefault();
-                                                    addTld(entry[0]);
+                                                    addTld(entry.tld);
                                                 }}
                                                 onmouseenter={() => (tldIndex = i)}
                                                 class="flex w-full items-baseline gap-2 px-3 py-1.5 text-left text-sm
@@ -1334,12 +1753,26 @@
                                                     ? 'bg-stone-100 dark:bg-stone-800'
                                                     : ''}"
                                             >
-                                                <span>.{entry[0]}</span>
-                                                {#if entry[1]}
+                                                <span>.{entry.tld}</span>
+                                                {#if entry.label}
                                                     <span class="text-xs text-stone-500"
-                                                        >.{entry[1]}</span
+                                                        >.{entry.label}</span
                                                     >
                                                 {/if}
+                                                <!--
+                                                    The price is the evidence.
+                                                    Every entry in this list is
+                                                    one a registrar will sell,
+                                                    and what it costs is also
+                                                    the difference between a
+                                                    .com and a .ai worth
+                                                    knowing before you pick.
+                                                -->
+                                                <span
+                                                    class="ml-auto text-xs tabular-nums text-stone-500
+                                                           dark:text-stone-400"
+                                                    >${entry.usd.toFixed(2)}</span
+                                                >
                                             </button>
                                         </li>
                                     {/each}
@@ -1369,7 +1802,7 @@
                         together rather than in two lists to reconcile by eye.
                     -->
                     {#if tlds.length > 0}
-                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <div class="mt-2 flex flex-wrap items-start gap-2">
                             {#each tlds as tld (tld)}
                                 {@const isRequired = requiredTlds.includes(tld)}
                                 <span
@@ -1391,13 +1824,13 @@
                                         title={isRequired
                                             ? `A name taken on .${tld} is dropped. Click to only report it.`
                                             : `.${tld} is reported but never drops a name. Click to require it.`}
-                                        class="py-2 pl-3 pr-1.5"
+                                        class="flex items-center gap-1.5 py-2 pl-3 pr-1.5"
                                     >
-                                        .{tld}<span
-                                            class="ml-1.5 text-xs text-stone-500
-                                                   dark:text-stone-400"
-                                            >{isRequired ? 'required' : 'report only'}</span
-                                        >
+                                        .{tld}
+                                        <FieldIcon
+                                            paths={isRequired ? ICONS.required : ICONS.report}
+                                            class="size-3.5 text-stone-500 dark:text-stone-400"
+                                        />
                                     </button>
                                     <button
                                         type="button"
@@ -1411,8 +1844,9 @@
                                     >
                                 </span>
                             {/each}
-                            <span class="text-xs text-stone-500 dark:text-stone-400">
-                                {tlds.length} of {TLD_MAX}
+                            <span class="self-center text-xs text-stone-500 dark:text-stone-400">
+                                {tlds.length}
+                                {tlds.length === 1 ? 'domain' : 'domains'}
                             </span>
                         </div>
                     {/if}
@@ -1426,37 +1860,283 @@
 
             <div class={ROW}>
                 <div>
-                    <span class="flex items-center gap-2 text-sm font-medium">
-                        <FieldIcon paths={ICONS.stores} />Must be available on
+                    <span id="handles-label" class="flex items-center gap-2 text-sm font-medium">
+                        <FieldIcon paths={ICONS.handle} />Social handles
                     </span>
                     <p class="mt-1 text-xs text-stone-500">
-                        A required check drops a name the moment it fails. The others still run and
-                        are reported.
+                        Each one gets a column of its own. Click a platform to make it a
+                        requirement: a required platform drops the name the moment the handle is
+                        taken, the rest are checked and reported either way.
+                    </p>
+                    <p class="mt-1 text-xs text-stone-500">
+                        Only platforms that answer definitively are listed. Reddit, Medium and
+                        LinkedIn refuse the question outright, and a check that could only guess is
+                        worse than no check at all.
                     </p>
                 </div>
                 <!--
-                    All three on one row. They needed 402px and never had it in
-                    the two-column layout; the control column is more than
-                    twice that.
+                    The domains' control, because it is the same problem.
+
+                    This was three chips when three platforms could be checked
+                    at all. There are ten now, and a row of ten is a wall — so
+                    it searches and shows what has been picked, exactly as the
+                    domains do. One control learned once.
                 -->
-                <div class="flex flex-wrap gap-2">
-                    {#each storeRequirements as r (r.key)}
-                        <label
-                            class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm
+                <div>
+                    <div class="relative max-w-sm">
+                        <input
+                            id="handles"
+                            bind:value={handleQuery}
+                            onfocus={() => (handleOpen = true)}
+                            onblur={() => setTimeout(() => (handleOpen = false), 120)}
+                            oninput={() => {
+                                handleOpen = true;
+                                handleIndex = 0;
+                            }}
+                            onkeydown={onHandleKeydown}
+                            role="combobox"
+                            aria-expanded={handleOpen}
+                            aria-controls="handle-list"
+                            aria-labelledby="handles-label"
+                            autocomplete="off"
+                            placeholder="Search platforms — Instagram, TikTok, X…"
+                            class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm
+                                   placeholder:text-stone-400 focus:border-stone-500
+                                   focus:outline-none focus:ring-2 focus:ring-stone-900/10
+                                   dark:border-stone-700 dark:bg-stone-950
+                                   dark:placeholder:text-stone-600 dark:focus:ring-white/10"
+                        />
+                        {#if handleOpen}
+                            <div
+                                class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border
+                                       border-stone-200 bg-white shadow-lg dark:border-stone-700
+                                       dark:bg-stone-900"
+                            >
+                                <ul
+                                    id="handle-list"
+                                    role="listbox"
+                                    class="max-h-64 overflow-y-auto py-1"
+                                >
+                                    {#each handleAlready as p (p.id)}
+                                        <li
+                                            class="flex items-baseline justify-between gap-2 px-3 py-1.5
+                                                   text-sm text-stone-500 dark:text-stone-400"
+                                        >
+                                            <span>@{p.label}</span>
+                                            <span class="text-xs">already added</span>
+                                        </li>
+                                    {/each}
+                                    {#each handleMatches as p, i (p.id)}
+                                        <li>
+                                            <button
+                                                type="button"
+                                                role="option"
+                                                aria-selected={i === handleIndex}
+                                                onmousedown={(e) => {
+                                                    e.preventDefault();
+                                                    addHandle(p.id);
+                                                }}
+                                                onmouseenter={() => (handleIndex = i)}
+                                                class="w-full px-3 py-1.5 text-left text-sm
+                                                       {i === handleIndex
+                                                    ? 'bg-stone-100 dark:bg-stone-800'
+                                                    : ''}">@{p.label}</button
+                                            >
+                                        </li>
+                                    {/each}
+                                    {#if handleMatches.length === 0 && handleAlready.length === 0}
+                                        <li class="px-3 py-2 text-sm text-stone-500">
+                                            No platform matches “{handleQuery.trim()}”.
+                                        </li>
+                                    {/if}
+                                </ul>
+                                {#if handleMatches.length > 0}
+                                    <p
+                                        class="border-t border-stone-200 px-3 py-1.5 text-xs text-stone-500
+                                               dark:border-stone-800 dark:text-stone-400"
+                                    >
+                                        ↑↓ to move · ↵ to add · ⌫ removes the last
+                                    </p>
+                                {/if}
+                            </div>
+                        {/if}
+                    </div>
+
+                    {#if handles.length > 0}
+                        <div class="mt-2 flex flex-wrap items-start gap-2">
+                            {#each handles as id (id)}
+                                {@const site = PLATFORMS.find((p) => p.id === id)}
+                                {@const must = requiredHandles.includes(id)}
+                                <span
+                                    class="flex items-center rounded-lg border text-sm transition-colors
+                                           duration-150
+                                           {must
+                                        ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
+                                        : 'border-stone-200 dark:border-stone-800'}"
+                                >
+                                    <button
+                                        type="button"
+                                        onclick={() => {
+                                            toggleRequiredHandle(id);
+                                        }}
+                                        aria-pressed={must}
+                                        aria-label={must
+                                            ? `@${site?.label ?? id} is required`
+                                            : `@${site?.label ?? id} is reported but not required`}
+                                        title={must
+                                            ? `A name taken on ${site?.label ?? id} is dropped. Click to only report it.`
+                                            : `${site?.label ?? id} is reported but never drops a name. Click to require it.`}
+                                        class="flex items-center gap-1.5 py-2 pl-3 pr-1.5"
+                                    >
+                                        @{site?.label ?? id}
+                                        <FieldIcon
+                                            paths={must ? ICONS.required : ICONS.report}
+                                            class="size-3.5 text-stone-500 dark:text-stone-400"
+                                        />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onclick={() => {
+                                            removeHandle(id);
+                                        }}
+                                        aria-label="Stop checking {site?.label ?? id}"
+                                        class="px-2 py-2 text-stone-400 transition-colors duration-100
+                                               hover:text-rose-700 dark:hover:text-rose-400"
+                                        >×</button
+                                    >
+                                </span>
+                            {/each}
+                            <span class="self-center text-xs text-stone-500 dark:text-stone-400">
+                                {handles.length}
+                                {handles.length === 1 ? 'platform' : 'platforms'}
+                            </span>
+                        </div>
+                    {/if}
+                </div>
+            </div>
+
+            <div class={ROW}>
+                <div>
+                    <!--
+                        'Must be available on' was accurate when these three
+                        were checkboxes meaning required-or-not. They are three
+                        states now, two of which are not 'must', so the heading
+                        names the things rather than the rule — like the two
+                        rows above it.
+                    -->
+                    <span class="flex items-center gap-2 text-sm font-medium">
+                        <FieldIcon paths={ICONS.stores} />Stores and the web
+                    </span>
+                    <p class="mt-1 text-xs text-stone-500">
+                        Click to check one, click again to require it, once more to leave it out
+                        altogether. The App Store is the slowest thing in a run, so leaving it out
+                        is worth having.
+                    </p>
+                    {#if webIsLinkOnly}
+                        <!--
+                            In the rail, where every other row keeps its
+                            explanation. This was a paragraph beside the chips
+                            with a checkbox of its own, which put two different
+                            controls in one row to answer one question.
+                        -->
+                        <p class="mt-1 text-xs text-stone-500">
+                            No search provider is configured, so the web cannot be checked. Web
+                            instead adds a column of links to search yourself — never a verdict.
+                        </p>
+                    {/if}
+                </div>
+                <!--
+                    Three chips rather than the search the domains and handles
+                    use. Same two questions and the same two marks, but there
+                    are three of these and there always will be — searching a
+                    list of three is a worse control than looking at it.
+
+                    Off, checked, required, in that order, because that is the
+                    order of increasing commitment and a click should mean
+                    'more'.
+                -->
+                <!--
+                    items-start, or they stretch.
+
+                    A flex row defaults to items-stretch, and this one is a
+                    grid cell as tall as the rail beside it — so each chip grew
+                    to 88px against the 38px pills two rows above. The same
+                    control at two heights on one form is most of what makes a
+                    page look like several.
+                -->
+                <!--
+                    Wrapped, so the flex row is as tall as its own content.
+
+                    Left as the grid cell itself it was 76px tall — the height
+                    of the rail beside it — and the count centred against that
+                    rather than against the chips, sitting 25px below them
+                    while the same count two rows up sat level. The other rows
+                    have this wrapper; this one had grown without it.
+                -->
+                <div>
+                    <div class="flex flex-wrap items-start gap-2">
+                        <!--
+                            The Web chip is only offered when something can
+                            answer it. Otherwise the only honest choices are
+                            'do not look' and the link column below.
+                        -->
+                        {#each storeRequirements as r (r.key)}
+                            {@const linkOnly = r.key === 'google' && webIsLinkOnly}
+                            {@const on = linkOnly ? webLinks : stores.includes(r.key)}
+                            {@const must = !linkOnly && requiredStores.includes(r.key)}
+                            <button
+                                type="button"
+                                onclick={() => {
+                                    if (linkOnly) {
+                                        webLinks = !webLinks;
+                                    } else {
+                                        cycleStore(r.key);
+                                    }
+                                }}
+                                aria-pressed={on}
+                                aria-label={linkOnly
+                                    ? on
+                                        ? 'Web shows a column of search links'
+                                        : 'Web is not shown'
+                                    : on
+                                      ? `${r.label} is ${must ? 'required' : 'reported but not required'}`
+                                      : `${r.label} is not being checked`}
+                                title={linkOnly
+                                    ? on
+                                        ? 'A column of search links, one per name. Click to remove it.'
+                                        : 'No search provider is configured, so this cannot be checked. Click to add a column of search links instead.'
+                                    : on
+                                      ? must
+                                          ? `A name taken on ${r.label} is dropped. Click to leave it out.`
+                                          : `${r.label} is reported but never drops a name. Click to require it.`
+                                      : `${r.label} is not checked at all. Click to check it.`}
+                                class="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm
                                    transition-colors duration-150
-                                   {requiredStores[r.key]
-                                ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
-                                : 'border-stone-200 hover:border-stone-400 dark:border-stone-800 dark:hover:border-stone-600'}"
-                        >
-                            <input
-                                type="checkbox"
-                                class="accent-stone-900 dark:accent-stone-100"
-                                checked={requiredStores[r.key]}
-                                onchange={(e) => (requiredStores[r.key] = e.currentTarget.checked)}
-                            />
-                            {r.label}
-                        </label>
-                    {/each}
+                                   {must
+                                    ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
+                                    : on
+                                      ? 'border-stone-400 dark:border-stone-600'
+                                      : 'border-stone-200 text-stone-400 hover:border-stone-400 dark:border-stone-800 dark:text-stone-500 dark:hover:border-stone-600'}"
+                            >
+                                {r.label}
+                                {#if on}
+                                    <FieldIcon
+                                        paths={linkOnly
+                                            ? ICONS.search
+                                            : must
+                                              ? ICONS.required
+                                              : ICONS.report}
+                                        class="size-3.5 text-stone-500 dark:text-stone-400"
+                                    />
+                                {/if}
+                            </button>
+                        {/each}
+                        <!-- The same count the other two rows carry. -->
+                        <span class="self-center text-xs text-stone-500 dark:text-stone-400">
+                            {stores.length}
+                            {stores.length === 1 ? 'check' : 'checks'}
+                        </span>
+                    </div>
                 </div>
             </div>
 
@@ -1479,8 +2159,13 @@
                         <FieldIcon paths={ICONS.count} />Run it
                     </span>
                     <p class="mt-1 text-xs text-stone-500">
-                        How many names to generate, and where to send them. Results are emailed when
-                        the run finishes — it takes a while, so you can close this.
+                        {#if data.mail}
+                            How many names to generate, and where to send them. Results are emailed
+                            when the run finishes — it takes a while, so you can close this.
+                        {:else}
+                            How many names to generate. Results appear here as they arrive; with no
+                            Resend key configured there is nowhere to email them, so keep the link.
+                        {/if}
                     </p>
                 </div>
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -1502,25 +2187,37 @@
                                 : 'border-stone-300 focus:border-stone-500 focus:ring-stone-900/10 dark:border-stone-700 dark:focus:ring-white/10'}"
                         />
                         <span class="text-sm text-stone-600 dark:text-stone-400"
-                            >names, emailed to</span
+                            >{data.mail ? 'names, emailed to' : 'names'}</span
                         >
                     </div>
 
-                    <label for="email" class="sr-only">Email the results to</label>
-                    <input
-                        id="email"
-                        bind:value={email}
-                        type="email"
-                        placeholder="you@example.com"
-                        aria-invalid={problemFor('email') ? 'true' : undefined}
-                        aria-describedby={problemFor('email') ? 'email-error' : undefined}
-                        class="w-56 rounded-lg border bg-white px-3 py-2 text-sm
+                    <!--
+                        Only where it can be used.
+
+                        With no Resend key there is no way to send a code, so
+                        no way to prove an address belongs to whoever typed it,
+                        and nowhere to send a result — asking would collect a
+                        detail nothing can do anything with. The run starts
+                        immediately instead, and its page is where the results
+                        live.
+                    -->
+                    {#if data.mail}
+                        <label for="email" class="sr-only">Email the results to</label>
+                        <input
+                            id="email"
+                            bind:value={email}
+                            type="email"
+                            placeholder="you@example.com"
+                            aria-invalid={problemFor('email') ? 'true' : undefined}
+                            aria-describedby={problemFor('email') ? 'email-error' : undefined}
+                            class="w-56 rounded-lg border bg-white px-3 py-2 text-sm
                                placeholder:text-stone-400 focus:outline-none focus:ring-2
                                dark:bg-stone-950 dark:placeholder:text-stone-600
                                {problemFor('email')
-                            ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 dark:border-rose-800'
-                            : 'border-stone-300 focus:border-stone-500 focus:ring-stone-900/10 dark:border-stone-700 dark:focus:ring-white/10'}"
-                    />
+                                ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 dark:border-rose-800'
+                                : 'border-stone-300 focus:border-stone-500 focus:ring-stone-900/10 dark:border-stone-700 dark:focus:ring-white/10'}"
+                        />
+                    {/if}
 
                     <!--
                         Only disabled while the request is in flight. Disabling
@@ -1528,13 +2225,24 @@
                         the button knew exactly what was missing and had no way
                         to say so.
                     -->
+                    <!--
+                        ml-auto: the row reads left to right as a sentence —
+                        how many, where to — and the thing that acts on it
+                        belongs at the end of the line rather than tucked
+                        against the address.
+
+                        The icon takes the button's own colour rather than the
+                        rail's muted grey, which is what the empty class is for.
+                    -->
                     <button
                         onclick={pendingRunId ? askForCode : execute}
                         disabled={submitting}
-                        class="rounded-lg bg-stone-900 px-5 py-2 text-sm font-medium text-white
-                               transition-opacity duration-150 hover:opacity-90 disabled:opacity-40
-                               dark:bg-white dark:text-stone-900"
+                        class="ml-auto flex items-center gap-2 rounded-lg bg-stone-900 px-5 py-2
+                               text-sm font-medium text-white transition-opacity duration-150
+                               hover:opacity-90 disabled:opacity-40 dark:bg-white
+                               dark:text-stone-900"
                     >
+                        <FieldIcon paths={ICONS.play} class="size-4" />
                         {#if submitting}Starting…{:else if pendingRunId}Enter code{:else}Execute{/if}
                     </button>
 
@@ -1551,6 +2259,43 @@
                         </p>
                     {/if}
                 </div>
+            </div>
+
+            <!--
+                What the marks in the pills above mean.
+                
+                A key at the foot of the form rather than a word inside every
+                pill: the distinction is binary and repeated a dozen times, so
+                saying it once where a form's key is always looked for costs a
+                line and buys back a row.
+
+                Both marks, not just the asterisk. A legend that explains one
+                of two symbols leaves the other looking like decoration.
+            -->
+            <div class="flex flex-wrap items-center gap-x-6 gap-y-1 pt-4 text-xs text-stone-500">
+                <span class="flex items-center gap-1.5">
+                    <FieldIcon
+                        paths={ICONS.required}
+                        class="size-3.5 text-stone-500 dark:text-stone-400"
+                    />
+                    required — a name taken here is dropped
+                </span>
+                <span class="flex items-center gap-1.5">
+                    <FieldIcon
+                        paths={ICONS.report}
+                        class="size-3.5 text-stone-500 dark:text-stone-400"
+                    />
+                    reported — checked, but never drops a name
+                </span>
+                {#if webIsLinkOnly}
+                    <span class="flex items-center gap-1.5">
+                        <FieldIcon
+                            paths={ICONS.search}
+                            class="size-3.5 text-stone-500 dark:text-stone-400"
+                        />
+                        a link to search yourself — nothing is checked
+                    </span>
+                {/if}
             </div>
         </div>
 
@@ -1926,6 +2671,9 @@
                         {#each columns as k (k)}
                             <col style="width: 6.25rem" />
                         {/each}
+                        {#if linkColumn}
+                            <col style="width: 6.25rem" />
+                        {/if}
                         <col style="width: 6.5rem" />
                     </colgroup>
                     <!--
@@ -2051,6 +2799,26 @@
                                 </th>
                             {/each}
 
+                            {#if linkColumn}
+                                <!--
+                                    No filter on this one. There is nothing to
+                                    filter by: every cell is the same link, and
+                                    a dropdown offering 'free' and 'taken' over
+                                    a column that establishes neither would be
+                                    the exact confusion this column avoids.
+                                -->
+                                <th
+                                    class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}"
+                                >
+                                    <span class="block pb-1 text-xs font-medium text-stone-500">
+                                        {checkLabel(linkColumn)}
+                                    </span>
+                                    <span class="block text-xs text-stone-400 dark:text-stone-500"
+                                        >look yourself</span
+                                    >
+                                </th>
+                            {/if}
+
                             <th
                                 class="px-3 py-2.5 text-right align-bottom whitespace-nowrap {HEADER_EDGE}"
                             >
@@ -2168,6 +2936,26 @@
                                         {/if}
                                     </td>
                                 {/each}
+                                {#if linkColumn}
+                                    <!--
+                                        A link, not a verdict. No glyph, because
+                                        every glyph in this table is a finding
+                                        and this cell has none — it is the
+                                        search somebody would have run.
+                                    -->
+                                    <td class="px-3 py-1.5 whitespace-nowrap">
+                                        <a
+                                            href={checkSearch(linkColumn, c.name)}
+                                            target="_blank"
+                                            rel="external noopener noreferrer"
+                                            aria-label="Search the web for {c.name}"
+                                            class="text-stone-500 underline decoration-dotted
+                                                   underline-offset-2 hover:text-stone-900
+                                                   hover:decoration-solid dark:text-stone-400
+                                                   dark:hover:text-stone-100">search ↗</a
+                                        >
+                                    </td>
+                                {/if}
                                 <!--
                   One button for the ordinary case - run whatever this run
                   requires - and a menu for the one check you actually doubt.

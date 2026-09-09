@@ -945,7 +945,6 @@
         const active = columns
             .filter((k) => checkFilter[k])
             .map((k) => [k, checkFilter[k]] as const);
-        const lens = onlyNearMisses ? new Set(nearMisses.map((n) => n.id)) : null;
 
         const matching = candidates.filter((c) => {
             if (needle && !c.name.toLowerCase().includes(needle)) {
@@ -956,16 +955,13 @@
             }
             return active.every(([k, want]) => statusOf(c.statuses, k) === want);
         });
-        // A Set rather than a scan: the lens used to be a find() over the near
-        // misses for every row that reached it, which is a list inside a list.
-        const lensed = lens ? matching.filter((c) => lens.has(c.id)) : matching;
         if (nameSort === 'none') {
-            return lensed;
+            return matching;
         }
         // filter() has already allocated, so sorting in place cannot disturb
         // the candidates array the rest of the page reads.
         const direction = nameSort === 'asc' ? 1 : -1;
-        return lensed.sort((a, b) => direction * a.name.localeCompare(b.name));
+        return matching.sort((a, b) => direction * a.name.localeCompare(b.name));
     });
 
     /** Whole-run tallies from the server, so filtering does not distort them. */
@@ -1002,8 +998,14 @@
      * The whole product turns on 'unverified' not being 'free', and every
      * number above the table used to drop the distinction: a name held up by
      * a bot-blocked domain counted the same as one that is genuinely taken.
-     * These are the names that would pass if the checks could be completed,
-     * which makes them the shortlist worth revisiting rather than discarding.
+     * These are the names that would pass if the checks could be completed, and
+     * the strip counts them so 'passing' is never read as 'all that survived'.
+     *
+     * It backed a filter too — 'Only near misses' beside 'Only names that
+     * passed'. Two lenses over one table is a control somebody has to learn
+     * before the table means anything, and the unverified mark in the cell
+     * says the same thing where the reading happens. The count stayed; the
+     * lens went.
      */
     const nearMisses = $derived(
         candidates.filter(
@@ -1013,8 +1015,6 @@
                 requiredKinds.every((k) => ['clear', 'unknown'].includes(statusOf(c.statuses, k)))
         )
     );
-
-    let onlyNearMisses = $state<boolean>(false);
 
     /** The run's three numbers, in the order the work happens. */
     /*
@@ -2442,25 +2442,6 @@
                     />
                     Only names that passed
                 </label>
-                {#if nearMisses.length > 0}
-                    <!--
-                        The list the product implies and never offered: names
-                        held up only by a check that could not answer. They are
-                        neither passes nor failures, and assembling them by
-                        hand meant reading every amber cell in the table.
-                    -->
-                    <label
-                        class="flex cursor-pointer items-center gap-2 text-sm text-amber-800
-                               dark:text-amber-300"
-                    >
-                        <input
-                            type="checkbox"
-                            bind:checked={onlyNearMisses}
-                            class="accent-amber-600"
-                        />
-                        Only near misses ({nearMisses.length})
-                    </label>
-                {/if}
                 <button
                     onclick={copyCsv}
                     class="rounded-lg border border-stone-500 px-3 py-1.5 text-sm transition-colors

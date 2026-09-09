@@ -30,15 +30,18 @@ export function candidateView(c: Candidate): CandidateView {
  *
  * Masked rather than dropped: somebody arriving from the results email should
  * be able to tell it went where they meant it to, and the full address on a
- * page reachable by anyone holding the link is more than that needs.
+ * page reachable by anyone holding the link is more than that needs. Null
+ * where the deployment has no mail configured and never asked for one.
  */
 export function runView(run: Run): RunView {
     return {
         id: run.id,
         brief: run.brief,
         strategies: run.strategies,
+        languages: run.languages ?? [],
         checks: runChecks(run),
-        email: run.email.replace(/(.).*(@.*)/, '$1•••$2'),
+        webLinks: run.webLinks,
+        email: run.email ? run.email.replace(/(.).*(@.*)/, '$1•••$2') : null,
         status: run.status,
         targetCount: run.targetCount,
         generatedCount: run.generatedCount,

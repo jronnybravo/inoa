@@ -5,9 +5,18 @@
 
     const { children }: { children: Snippet } = $props();
 
+    /*
+     * The long form, for a crawler and a link preview.
+     *
+     * The header carries a tagline instead — beside a product name there is
+     * room for one line, and it should say what the thing is for rather than
+     * recite its steps. This is where the steps belong, and it no longer names
+     * the .com specifically now that a run chooses its own domains.
+     */
     const DESCRIPTION =
         'Generate brand names from a brief, then screen each one against the places ' +
-        'a name can already be taken: the .com, the App Store, Google Play, and the web.';
+        'a name can already be taken: the domains you choose, the App Store, ' +
+        'Google Play, and the web.';
 
     /*
      * Absolute, because a crawler will not resolve a relative one.

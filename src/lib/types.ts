@@ -150,7 +150,13 @@ export const STRATEGIES = [
     { id: 'metaphor', label: 'Metaphor & symbolism', hint: 'Cadence, Lodestar, Tidal' },
     { id: 'portmanteau', label: 'Blends', hint: 'Swiftsylva, Novaris' },
     { id: 'foreign', label: 'Other languages', hint: 'Kizuna, Sonder, Vesta' },
-    { id: 'short', label: 'Short & abstract', hint: 'Ovo, Nuo, Kip' }
+    { id: 'short', label: 'Short & abstract', hint: 'Ovo, Nuo, Kip' },
+    /*
+     * The one move that exists because the real word is taken, which is this
+     * whole project's premise. Flickr, Lyft, Tumblr — a word everybody already
+     * knows, spelled a way nobody has registered.
+     */
+    { id: 'respell', label: 'Respelled words', hint: 'Gathr, Kwarry, Stok' }
 ] as const;
 
 export type StrategyId = (typeof STRATEGIES)[number]['id'];

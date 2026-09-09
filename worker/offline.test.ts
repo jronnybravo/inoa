@@ -15,6 +15,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { STRATEGIES } from '../src/lib/types.ts';
 import { blend, composeBatch, keywords, seedFor, type Palette } from './offline.ts';
 import { NOT_A_NAME, pronounceable } from './words.ts';
 
@@ -22,7 +23,14 @@ import { NOT_A_NAME, pronounceable } from './words.ts';
 const BARE: Palette = { related: [] };
 const FARM: Palette = { related: ['orchard', 'harvest', 'pasture', 'cellar', 'grain'] };
 
-const APPROACHES = ['compound', 'invented', 'metaphor', 'portmanteau', 'foreign', 'short'] as const;
+/**
+ * Every approach, derived rather than listed.
+ *
+ * Written out by hand this silently stopped covering 'respell' the moment it
+ * was added — a test that enumerates what it tests will always lag the thing
+ * it is testing.
+ */
+const APPROACHES = STRATEGIES.map((s) => s.id);
 
 describe('keywords', () => {
     it('keeps what the brief is about', () => {
@@ -147,8 +155,28 @@ describe('composeBatch', () => {
         for (const strategy of APPROACHES) {
             const made = composeBatch(FARM, strategy, 30, [], seedFor('brief', 5));
             for (const n of made) {
-                assert.ok(pronounceable(n.name), `${n.name} (${strategy}) is not sayable`);
+                /*
+                 * A respelling is judged on its source. Nobody stumbles over
+                 * 'Flickr', though 'ckr' is a consonant run no rule would pass
+                 * on its own - the word it came from is what makes it
+                 * readable.
+                 */
+                assert.ok(
+                    pronounceable(n.sayableAs ?? n.name),
+                    `${n.name} (${strategy}) is not sayable`
+                );
             }
+        }
+    });
+
+    it('respells a word a reader already knows, and says which', () => {
+        const made = composeBatch(FARM, 'respell', 20, [], seedFor('brief', 11));
+        assert.ok(made.length > 0);
+        for (const n of made) {
+            const source = n.sayableAs;
+            assert.ok(source, `${n.name} should record the word it came from`);
+            assert.notEqual(n.name.toLowerCase(), source, 'a respelling has to differ');
+            assert.ok(n.rationale.includes(source), 'the rationale names the source');
         }
     });
 

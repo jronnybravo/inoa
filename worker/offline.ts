@@ -39,6 +39,14 @@ export interface Composed {
     name: string;
     rationale: string;
     strategy: StrategyId;
+    /**
+     * A word whose sayability stands in for this name's.
+     *
+     * A respelling is readable because its source is: nobody stumbles over
+     * 'Flickr', though 'ckr' is a consonant run no rule would pass on its own.
+     * Where this is set, the source is checked instead of the result.
+     */
+    sayableAs?: string;
 }
 
 /**
@@ -167,6 +175,28 @@ export function blend(left: string, right: string): string | null {
     return null;
 }
 
+/**
+ * Ways of spelling a word that nobody has registered.
+ *
+ * Every one of these is a respelling English readers already parse without
+ * effort, because each is a substitution the language itself makes somewhere:
+ * 'kwik' for 'quick', 'foto' for 'photo', 'stak' for 'stack'. That is the
+ * whole trick — the name is a word you know, spelled a way nobody owns.
+ *
+ * Ordered loosely by how invisible the change is.
+ */
+const RESPELLINGS: readonly [RegExp, string, string][] = [
+    [/([bcdfghjklmnpqrstvwxz])er$/, '$1r', 'er clipped to r'],
+    [/ck/, 'k', 'ck spelled k'],
+    [/^c/, 'k', 'c spelled k'],
+    [/qu/, 'kw', 'qu spelled kw'],
+    [/ph/, 'f', 'ph spelled f'],
+    [/cks$/, 'x', 'cks spelled x'],
+    [/([bcdfghjklmnpqrstvwxz])le$/, '$1l', 'silent e dropped'],
+    [/y$/, 'i', 'y spelled i'],
+    [/s$/, 'z', 's spelled z']
+];
+
 /** An invented stem: onset, vowel, and usually a coda, then a name-like tail. */
 function invent(rand: () => number): string {
     const syllables = rand() < 0.45 ? 1 : 2;
@@ -263,6 +293,39 @@ function compose(
         };
     }
 
+    if (strategy === 'respell') {
+        /*
+         * A wider pool than the other approaches draw on.
+         *
+         * Only some words have a respelling available — nothing in 'orchard'
+         * is spelled two ways — so a rule applied to the brief's vocabulary
+         * alone came back with seven names when asked for sixteen. The
+         * bundled lists are common enough words that a reader recognises the
+         * source, which is the only property this approach needs.
+         */
+        const word = pick([...related, ...SUBSTANCE, ...QUALITY, ...METAPHOR], rand);
+        // Only a word somebody could already read. Respelling a word nobody
+        // can say produces a name nobody can say, twice over.
+        if (word.length < 4 || word.length > 10 || !pronounceable(word)) {
+            return null;
+        }
+        const options = RESPELLINGS.filter(([re]) => re.test(word));
+        if (options.length === 0) {
+            return null;
+        }
+        const [re, to, why] = pick(options, rand);
+        const respelled = word.replace(re, to);
+        if (respelled === word) {
+            return null;
+        }
+        return {
+            name: capitalise(respelled),
+            rationale: `${word}, ${why}`,
+            strategy,
+            sayableAs: word
+        };
+    }
+
     if (strategy === 'short') {
         const word =
             pick(ONSET, rand) + pick(NUCLEUS, rand) + (rand() < 0.5 ? pick(CODA, rand) : '');
@@ -310,7 +373,8 @@ export function composeBatch(
     // combinations, and an unbounded loop would spin instead of saying so.
     for (let attempt = 0; attempt < count * 40 && out.length < count; attempt++) {
         const made = compose(strategy, palette, rand, roots);
-        if (!made || !pronounceable(made.name)) {
+        // A respelling is judged on the word it came from — see Composed.
+        if (!made || !pronounceable(made.sayableAs ?? made.name)) {
             continue;
         }
         const key = made.name.toLowerCase();

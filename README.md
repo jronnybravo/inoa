@@ -162,7 +162,7 @@ instead — from the brief's own vocabulary, a free thesaurus, and a bundled wor
 list. No key, no subscription, no cost, and the brief never leaves the
 building.
 
-Each of the six approaches has a rule. Compounds and blends draw on words
+Each of the seven approaches has a rule. Compounds and blends draw on words
 related to the brief; invented names are assembled from onsets, vowels and
 codas that a reader can say on sight; the metaphor and foreign approaches draw
 on bundled lists, and every foreign root carries its gloss, because a name you
@@ -245,6 +245,22 @@ one that means "checked and reported".
 That column has no filter and never reaches `computePassed` — because the
 moment "we did not look" can be counted, it starts counting as "nothing
 found".
+
+### Respelled words
+
+The seventh approach, and the one that exists because of the problem this tool
+is about: a word everybody already knows, spelled a way nobody has registered.
+Flickr, Lyft, Tumblr, Kwik.
+
+The deterministic generator applies substitutions English already makes
+somewhere — `er`→`r`, `ck`→`k`, `qu`→`kw`, `ph`→`f`, `cks`→`x`, a dropped
+silent `e` — to a word a reader knows, and records which word and which change:
+`Kwarry` is `quarry, qu spelled kw`.
+
+It needed one change to the sayability rule. `Flickr` has three consonants in a
+row and no rule would pass it on its own, but nobody stumbles over it, because
+the word it came from is what makes it readable. A respelling therefore records
+its source and is judged on that instead.
 
 ### Choosing languages
 

@@ -17,6 +17,7 @@
 import 'dotenv/config';
 import { IsNull, LessThan } from 'typeorm';
 import { candidateStatuses, runChecks, statusColumns } from '../src/lib/checks.ts';
+import { languagesCovered } from '../src/lib/languages.ts';
 import { db } from '../src/lib/server/db.ts';
 import { sendResults } from '../src/lib/server/email.ts';
 import { Candidate } from '../src/lib/server/entities/candidate.ts';
@@ -222,6 +223,7 @@ async function processRun(run: Run): Promise<void> {
                   run.brief,
                   (run.strategies ?? ['compound']) as never,
                   run.targetCount,
+                  languagesCovered(run.languages ?? []),
                   async (fresh, total) => {
                       if (fresh.length > 0) {
                           await Candidate.insert(
@@ -449,10 +451,20 @@ async function processRun(run: Run): Promise<void> {
             `Finished — ${survivors.length} of ${stored.length} names passed every requirement`,
             'success'
         );
-        if (!mail.sent) {
+        /*
+         * No address is not a failure.
+         *
+         * A deployment with no Resend key never asked for one, so there is
+         * nothing to report as broken — the results are on the page, which is
+         * where they were always going to be. Only a run that had somewhere to
+         * send to and could not is an error.
+         */
+        if (mail.sent) {
+            await log(`Results emailed to ${run.email}`, 'success');
+        } else if (run.email) {
             await log(`Results email failed: ${mail.reason}`, 'error');
         } else {
-            await log(`Results emailed to ${run.email}`, 'success');
+            await log('No address on this run — the results are on its page', 'info');
         }
     }
 }

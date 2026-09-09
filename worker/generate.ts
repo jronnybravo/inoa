@@ -26,7 +26,8 @@
  */
 
 import { STRATEGIES, type StrategyId } from '../src/lib/types.ts';
-import { generators } from './generators.ts';
+import { aiAllowed, generators, rotation } from './generators.ts';
+import { composeBatch, paletteFor, seedFor, type Palette } from './offline.ts';
 
 const BATCH_SIZE = Number(process.env.INOA_BATCH_SIZE ?? 50);
 
@@ -46,8 +47,30 @@ export interface GeneratedName {
     strategy: StrategyId;
 }
 
-function promptFor(brief: string, strategy: StrategyId, count: number, avoid: string[]): string {
+function promptFor(
+    brief: string,
+    strategy: StrategyId,
+    count: number,
+    avoid: string[],
+    languages: string[] = []
+): string {
     const chosen = STRATEGIES.find((s) => s.id === strategy);
+
+    /*
+     * Naming the languages matters more than it sounds.
+     *
+     * Asked for 'other languages' with nothing narrowed, a model reaches for
+     * Japanese and Latin almost every time — they are the two it has seen most
+     * of in this context. A brief that wanted Nordic austerity got Kizuna
+     * either way. Listed explicitly, the constraint holds.
+     *
+     * Only for the one approach it applies to: attaching it to a compound or
+     * an invented batch would narrow material those approaches never draw on.
+     */
+    const drawnFrom =
+        strategy === 'foreign' && languages.length > 0
+            ? `- Draw only on these languages: ${languages.join(', ')}.`
+            : '';
 
     return [
         `Generate exactly ${count} candidate brand names for this brief:`,
@@ -56,6 +79,7 @@ function promptFor(brief: string, strategy: StrategyId, count: number, avoid: st
         '',
         'Use this naming approach for every name:',
         chosen ? `- ${chosen.label}: ${chosen.hint}` : '- Any approach that fits the brief',
+        drawnFrom,
         '',
         'Rules:',
         '- One to three syllables. Pronounceable by an English speaker on sight.',
@@ -99,31 +123,61 @@ function parse(output: string, strategy: StrategyId): GeneratedName[] {
 }
 
 /**
- * One batch, from whichever source answers first.
+ * One batch, from the next source in the rotation.
  *
- * A source that throws is passed over rather than retried here — the caller
- * already retries the whole batch, and a second source is a better answer to
- * a usage limit than a second attempt at the one that imposed it. Only when
- * every configured source has failed does the error reach the caller, which
- * is the point at which giving up is the right thing.
+ * Round-robin across the leading tier, once more than one source is in it.
+ * Spreading the batches spreads the rate limits, but the reason that matters
+ * most is variety: a thousand names from one model is a thousand names with
+ * one model's taste in them, and taste is most of what a naming run is buying.
+ * Two models disagreeing is a wider shortlist.
+ *
+ * Failover then walks everything else, tier or no tier. A source that throws
+ * is passed over rather than retried here — the caller already retries the
+ * whole batch, and the next source is a better answer to a usage limit than a
+ * second attempt at the one that imposed it. This is why a key is worth
+ * setting on a machine that already has a subscription: the subscription runs
+ * the run, and the key is there for the hour it stops being able to.
  */
 async function generateBatch(
     brief: string,
     strategy: StrategyId,
     count: number,
-    avoid: string[]
+    avoid: string[],
+    turn: number,
+    palette?: Palette,
+    languages: string[] = []
 ): Promise<GeneratedName[]> {
-    const prompt = promptFor(brief, strategy, count, avoid);
+    // Composed rather than generated: decided once for the whole run, in
+    // generateNames, so no run is half one thing and half the other.
+    if (palette) {
+        return composeBatch(palette, strategy, count, avoid, seedFor(brief, turn), languages);
+    }
+
+    const prompt = promptFor(brief, strategy, count, avoid, languages);
     const sources = generators();
     if (sources.length === 0) {
         throw new Error(
             'No generator is configured. Sign in to the Claude CLI with `claude login`, ' +
-                'or set ANTHROPIC_API_KEY or OPENAI_API_KEY.'
+                'set ANTHROPIC_API_KEY or OPENAI_API_KEY, or set INOA_AI=off to compose ' +
+                'names without a model.'
         );
     }
 
+    /*
+     * Rotate within the leading tier, then fall back through everything else
+     * in preference order. With one CLI and one key that is: the CLI for every
+     * batch, and the key only when the CLI cannot answer.
+     */
+    const rotating = rotation(sources);
+    const start = rotating.length > 0 ? turn % rotating.length : 0;
+    const order = [
+        ...rotating.slice(start),
+        ...rotating.slice(0, start),
+        ...sources.filter((source) => !rotating.includes(source))
+    ];
+
     let failure: unknown;
-    for (const source of sources) {
+    for (const source of order) {
         try {
             return parse(await source.complete(prompt), strategy);
         } catch (error) {
@@ -188,12 +242,18 @@ async function settledBatch(
     strategy: StrategyId,
     count: number,
     avoid: string[],
+    turn: number,
+    palette: Palette | undefined,
+    languages: string[],
     onProblem?: (reason: string) => Promise<void> | void
 ): Promise<{ names: GeneratedName[]; failed: boolean }> {
     const ATTEMPTS = 3;
     for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
         try {
-            return { names: await generateBatch(brief, strategy, count, avoid), failed: false };
+            return {
+                names: await generateBatch(brief, strategy, count, avoid, turn, palette, languages),
+                failed: false
+            };
         } catch (error) {
             const reason = describeFailure(error);
 
@@ -220,6 +280,8 @@ export async function generateNames(
     brief: string,
     strategies: StrategyId[],
     target: number,
+    /** Languages the foreign approach is narrowed to. Empty means any. */
+    languages: string[] = [],
     /**
      * Called with each batch as it lands, so the caller can store names while
      * later batches are still being written. A thousand names is five requests
@@ -231,6 +293,36 @@ export async function generateNames(
 ): Promise<GeneratedName[]> {
     const seen = new Set<string>();
     const all: GeneratedName[] = [];
+
+    /**
+     * Which mechanism this run uses, settled before the first batch.
+     *
+     * A palette here means the whole run is composed rather than generated. It
+     * is decided once and never revisited, so a table cannot end up half
+     * written by a model and half by a rule with nothing recording which name
+     * came from where. No model configured, or INOA_AI switched off, and there
+     * is nothing to decide.
+     */
+    const sources = generators();
+    const palette = sources.length === 0 ? await paletteFor(brief) : undefined;
+    if (palette) {
+        await onProblem?.(
+            aiAllowed()
+                ? 'No model configured — composing names from a thesaurus and word lists instead.'
+                : 'INOA_AI is off — composing names from a thesaurus and word lists.'
+        );
+    } else {
+        const sharing = rotation(sources);
+        const spare = sources.filter((source) => !sharing.includes(source));
+        if (sharing.length > 1 || spare.length > 0) {
+            await onProblem?.(
+                `Generating with ${sharing.map((s) => s.label).join(', ')}` +
+                    (spare.length > 0
+                        ? `, falling back to ${spare.map((s) => s.label).join(', ')}`
+                        : '')
+            );
+        }
+    }
 
     /** Consecutive batches that SUCCEEDED but contributed nothing new. */
     let barren = 0;
@@ -273,7 +365,12 @@ export async function generateNames(
         const avoid = [...seen];
         pool.set(
             id,
-            settledBatch(brief, strategy, want, avoid, onProblem).then((r) => ({ id, ...r }))
+            settledBatch(brief, strategy, want, avoid, id, palette, languages, onProblem).then(
+                (r) => ({
+                    id,
+                    ...r
+                })
+            )
         );
     };
 
@@ -346,6 +443,9 @@ export async function generateNames(
             strategies[turn++ % strategies.length] ?? 'compound',
             shortfall,
             [...seen],
+            nextId++,
+            palette,
+            languages,
             onProblem
         );
         await absorb(top.names, top.failed);

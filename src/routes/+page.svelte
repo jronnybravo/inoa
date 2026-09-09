@@ -3,6 +3,7 @@
     import FieldIcon from '$lib/FieldIcon.svelte';
     import { DEFAULT_PLATFORMS, PLATFORMS, isPlatform } from '$lib/handles';
     import { LANGUAGES, isLanguage } from '$lib/languages';
+    import { SEARCH_KEYS } from '$lib/search';
     import { ALL_TLDS, isTld, type TldEntry } from '$lib/tlds';
     import TokenSearch from '$lib/TokenSearch.svelte';
     import {
@@ -237,6 +238,16 @@
     // let, not const: bind:checked writes to it, which prefer-const cannot see.
 
     let webLinks = $state(false);
+
+    /**
+     * What goes after the nth item of a spoken list: ', ' between, ' or ' last.
+     *
+     * Five env vars rendered one per <code> cannot be joined into a string, so
+     * the punctuation has to be placed rather than interleaved — and 'A, B, C,
+     * D, E' reads as a set you need all of, which is the opposite of the rule.
+     */
+    const listSeparator = (index: number, length: number): string =>
+        index === length - 1 ? '' : index === length - 2 ? ' or ' : ', ';
 
     function cycleStore(id: string) {
         if (!stores.includes(id)) {
@@ -1845,6 +1856,23 @@
                         <p class="mt-1 text-xs text-stone-500">
                             No search provider is configured, so the web cannot be checked. Web
                             instead adds a column of links to search yourself — never a verdict.
+                        </p>
+                        <!--
+                            Naming them is the whole point. 'No search provider
+                            is configured' describes the situation and leaves
+                            the one useful fact out: which words to put in the
+                            environment. Read from the same list the check
+                            itself reads, so the form cannot name a key that
+                            has stopped counting.
+                        -->
+                        <p class="mt-1 text-xs text-stone-500">
+                            Set any one of {#each SEARCH_KEYS as key, i (key)}<code
+                                    class="rounded bg-stone-100 px-1 py-px font-mono text-[0.7rem]
+                                           text-stone-600 dark:bg-stone-800 dark:text-stone-300"
+                                    >{key}</code
+                                >{listSeparator(i, SEARCH_KEYS.length)}{/each} and it becomes a real check.
+                            Set several and a run spreads across every allowance rather than draining
+                            one.
                         </p>
                     {/if}
                 </div>

@@ -231,10 +231,15 @@ are emailed when a run finishes, and the CSV is attached.
 
 ### The web check without a provider
 
-With no `TAVILY_API_KEY` or equivalent, the web check is not offered. It can
-only be answered by driving a browser at about a name a minute — sixteen hours
-for a thousand names — so the form leaves it out rather than queueing that
-behind your back.
+The web check needs a search provider: at least one of `TAVILY_API_KEY`,
+`FIRECRAWL_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY` or `BRAVE_API_KEY` — see
+[the table below](#the-web-check) for what each one costs. With none of them
+set, the check is not offered. It can only be answered by driving a browser at
+about a name a minute — sixteen hours for a thousand names — so the form leaves
+it out rather than queueing that behind your back.
+
+The form says the same thing, and names the same five, so nobody has to come
+here to find out which word to put in the environment.
 
 The Web chip stays in the row — a hole where a control was is its own kind of
 confusion — but it becomes two states rather than three: a **column of search

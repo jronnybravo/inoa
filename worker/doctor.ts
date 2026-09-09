@@ -21,6 +21,7 @@
  */
 
 import 'dotenv/config';
+import { SEARCH_KEYS } from '../src/lib/search.ts';
 import { squash } from './checks/shared.ts';
 import {
     API_PROVIDERS,
@@ -173,6 +174,10 @@ console.log('\ntier 2 — search APIs');
 const configured = API_PROVIDERS.filter((provider) => provider.key());
 if (configured.length === 0) {
     row('(none)', '—', 'no API key set; the browser fallback is the only tier 2');
+    // Named, not counted. 'No API key set' tells somebody the state they are
+    // already looking at; the five words they could export is the part they
+    // came here for.
+    console.log(`${' '.repeat(14)}set any one of ${SEARCH_KEYS.join(', ')}`);
 }
 for (const provider of configured) {
     const key = provider.key();
@@ -236,5 +241,6 @@ if (neverStarted) {
 }
 if (!usable.includes('browser') && configured.length === 0) {
     console.log('  With no API key and the browser blocked, a run would pace itself at');
-    console.log('  a minute a name to learn nothing. Set TAVILY_API_KEY before running.');
+    console.log('  a minute a name to learn nothing. Set one of these before running:');
+    console.log(`  ${SEARCH_KEYS.join(', ')}.`);
 }

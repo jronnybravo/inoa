@@ -1,5 +1,7 @@
 /** Shared vocabulary between the SvelteKit app and the local worker. */
 
+import { platform } from './handles.ts';
+
 /**
  * The state of one check against one name.
  *
@@ -34,7 +36,16 @@ export type StoreKind = 'appStore' | 'playStore' | 'google';
  */
 export type TldKind = `tld:${string}`;
 
-export type CheckKind = StoreKind | TldKind;
+/**
+ * One handle check, named for its platform.
+ *
+ * Prefixed for the same reason a TLD is: the platform ids are ordinary words
+ * and would collide with something eventually. 'at:' because a handle is an
+ * @name, which is also what makes it recognisable in a log.
+ */
+export type HandleKind = `at:${string}`;
+
+export type CheckKind = StoreKind | TldKind | HandleKind;
 
 /** Order is the funnel: cheapest and least rate-limited last-resort. */
 export const STORE_ORDER: StoreKind[] = ['appStore', 'playStore', 'google'];
@@ -46,10 +57,16 @@ const STORE_LABEL: Record<StoreKind, string> = {
 };
 
 export const tldKind = (tld: string): TldKind => `tld:${tld}`;
+export const handleKind = (platform: string): HandleKind => `at:${platform}`;
 
 /** The TLD a check is for, or null if it is not a domain check. */
 export function tldOf(kind: CheckKind): string | null {
     return kind.startsWith('tld:') ? kind.slice(4) : null;
+}
+
+/** The platform a check is for, or null if it is not a handle check. */
+export function platformOf(kind: CheckKind): string | null {
+    return kind.startsWith('at:') ? kind.slice(3) : null;
 }
 
 export function isTldKind(kind: CheckKind): kind is TldKind {
@@ -59,15 +76,26 @@ export function isTldKind(kind: CheckKind): kind is TldKind {
 /** What to call a check in a column heading or a sentence. */
 export function checkLabel(kind: CheckKind): string {
     const tld = tldOf(kind);
-    // Not a TLD kind, so it is a store kind: the union has no third case.
-    return tld ? `.${tld}` : STORE_LABEL[kind as StoreKind];
+    if (tld) {
+        return `.${tld}`;
+    }
+    const at = platformOf(kind);
+    if (at) {
+        return `@${platform(at)?.label ?? at}`;
+    }
+    return STORE_LABEL[kind as StoreKind];
 }
 
 /** Where a person can go and look for themselves, per check. */
 export function checkSearch(kind: CheckKind, name: string): string {
+    const handle = name.toLowerCase().replace(/[^a-z0-9]/g, '');
     const tld = tldOf(kind);
     if (tld) {
-        return `https://${name.toLowerCase().replace(/[^a-z0-9]/g, '')}.${tld}`;
+        return `https://${handle}.${tld}`;
+    }
+    const at = platformOf(kind);
+    if (at) {
+        return platform(at)?.url(handle) ?? `https://${at}.com/${handle}`;
     }
     if (kind === 'appStore') {
         return `https://www.apple.com/us/search/${encodeURIComponent(name)}?src=globalnav`;
@@ -150,6 +178,8 @@ export interface RunView {
     id: string;
     brief: string;
     strategies: StrategyId[] | null;
+    /** Languages the foreign approach was narrowed to. Empty means any. */
+    languages: string[];
     /**
      * The checks this run makes, resolved on the server.
      *
@@ -158,7 +188,16 @@ export interface RunView {
      * second copy on the client is a second thing to get wrong.
      */
     checks: RunChecks;
-    email: string;
+    /**
+     * A Web column of search links rather than a Web check.
+     *
+     * Not part of `checks`: a link is not a verdict, and putting it there
+     * would let it into computePassed, where 'we did not look' would start
+     * counting as 'nothing found'.
+     */
+    webLinks: boolean;
+    /** Masked, or null on a deployment that never asked for one. */
+    email: string | null;
     status: RunStatus;
     targetCount: number;
     generatedCount: number;

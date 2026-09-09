@@ -1,6 +1,64 @@
 @import 'tailwindcss';
 
 /*
+ * Flowbite Svelte, on this project's palette.
+ *
+ * The library is here for the form controls as much as the table: an input, a
+ * select, a checkbox and a button that agree with each other are worth more
+ * than any one component, and they were previously agreeing only because the
+ * same class strings had been pasted next to each other.
+ *
+ * @source, because Tailwind does not scan node_modules — without it every
+ * class the library's components ask for is absent from the stylesheet and
+ * they render unstyled.
+ */
+@plugin 'flowbite/plugin';
+@source '../node_modules/flowbite-svelte/dist';
+
+/*
+ * Deliberately NOT `@custom-variant dark (&:where(.dark, .dark *))`.
+ *
+ * That is Flowbite's own instruction, and it switches dark mode to a class on
+ * the root. This app has always followed prefers-color-scheme, which is
+ * Tailwind's default for `dark:` — leaving the variant alone means the
+ * library's dark styles are driven by the same thing ours are, and there is no
+ * second source of truth about which theme is showing.
+ */
+
+/*
+ * The library speaks `primary` and `gray`; this app speaks `stone`.
+ *
+ * Mapped rather than overridden per component. A Flowbite button asks for
+ * bg-primary-700 whatever we do, so the useful question is what primary-700
+ * should mean here — and the answer is the same warm neutral every other
+ * surface in the app is built from.
+ */
+@theme {
+    --color-primary-50: var(--color-stone-50);
+    --color-primary-100: var(--color-stone-100);
+    --color-primary-200: var(--color-stone-200);
+    --color-primary-300: var(--color-stone-300);
+    --color-primary-400: var(--color-stone-400);
+    --color-primary-500: var(--color-stone-500);
+    --color-primary-600: var(--color-stone-700);
+    --color-primary-700: var(--color-stone-900);
+    --color-primary-800: var(--color-stone-800);
+    --color-primary-900: var(--color-stone-900);
+
+    --color-gray-50: var(--color-stone-50);
+    --color-gray-100: var(--color-stone-100);
+    --color-gray-200: var(--color-stone-200);
+    --color-gray-300: var(--color-stone-300);
+    --color-gray-400: var(--color-stone-400);
+    --color-gray-500: var(--color-stone-500);
+    --color-gray-600: var(--color-stone-600);
+    --color-gray-700: var(--color-stone-700);
+    --color-gray-800: var(--color-stone-800);
+    --color-gray-900: var(--color-stone-900);
+    --color-gray-950: var(--color-stone-950);
+}
+
+/*
  * Tell the browser this page has both themes.
  *
  * Without it every native control stays in light mode regardless of the

@@ -35,9 +35,26 @@ const CLI_OPTIONS = {
     stdio: ['ignore', 'pipe', 'pipe'] as const
 };
 
+/**
+ * Where a source sits in the order of preference.
+ *
+ * 'api' is a key written into .env, which is an explicit instruction to spend
+ * money and is treated as one. 'cli' is a subscription already signed in on
+ * this machine: free at the point of use, but slower — a process per batch —
+ * and singular, where keys can be several.
+ *
+ * The tier decides what a run rotates between, not what it is allowed to
+ * reach. Batches are shared out among the leading tier only — rotating a
+ * healthy subscription against a metered key would spend money for no reason —
+ * while a failure inside a batch walks the whole list, so a usage limit on the
+ * subscription still reaches the key rather than ending the run.
+ */
+export type GeneratorTier = 'api' | 'cli';
+
 /** One way of turning a prompt into text. */
 export interface Generator {
     label: string;
+    tier: GeneratorTier;
     /**
      * Configured and usable right now.
      *
@@ -70,6 +87,7 @@ function onPath(binary: string): boolean {
  */
 const claudeCli: Generator = {
     label: 'claude-cli',
+    tier: 'cli',
     available: () => onPath('claude'),
     complete: async (prompt) => {
         const args = ['-p', prompt, '--output-format', 'text'];
@@ -92,6 +110,7 @@ const claudeCli: Generator = {
  */
 const anthropicApi: Generator = {
     label: 'anthropic',
+    tier: 'api',
     available: () => Boolean(process.env.ANTHROPIC_API_KEY),
     complete: async (prompt) => {
         const { default: Anthropic } = await import('@anthropic-ai/sdk');
@@ -118,6 +137,7 @@ const anthropicApi: Generator = {
  */
 const openaiApi: Generator = {
     label: 'openai',
+    tier: 'api',
     available: () => Boolean(process.env.OPENAI_API_KEY),
     complete: async (prompt) => {
         const { default: OpenAI } = await import('openai');
@@ -131,11 +151,50 @@ const openaiApi: Generator = {
 };
 
 /**
+ * The OpenAI CLI, driven non-interactively.
+ *
+ * `codex exec` is the one-shot form; without it the binary opens a session and
+ * waits for a terminal that is not there. Like the Claude CLI it spends a
+ * subscription rather than metering tokens, which is why both sit in the same
+ * tier.
+ */
+const codexCli: Generator = {
+    label: 'codex-cli',
+    tier: 'cli',
+    available: () => onPath('codex'),
+    complete: async (prompt) => {
+        const { stdout } = await run('codex', ['exec', prompt], CLI_OPTIONS);
+        return stdout;
+    }
+};
+
+/**
  * Every source this project knows, in the order it prefers them.
  *
- * The CLI leads because it is the only one that cannot send you a bill.
+ * The CLIs lead because they are the only ones that cannot send you a bill,
+ * and the speed argument for putting the keys first does not survive
+ * measurement: a batch of fifty names takes about 108 seconds through the CLI,
+ * of which the process spawn and auth check are 5.5. Five per cent, against a
+ * cost difference of everything versus nothing.
+ *
+ * Quality is not the tiebreaker either — both reach the same model family for
+ * what is a single-turn text prompt. The CLI wraps it in an agent harness with
+ * its own system prompt, which is a difference in kind rather than one I can
+ * show to be a difference in quality.
  */
-export const ALL_GENERATORS: Generator[] = [claudeCli, anthropicApi, openaiApi];
+export const ALL_GENERATORS: Generator[] = [claudeCli, codexCli, anthropicApi, openaiApi];
+
+/**
+ * Has AI generation been switched off outright?
+ *
+ * INOA_AI=off sends every run down the deterministic path even on a machine
+ * with keys and CLIs to spare — for a run that must not cost anything, or must
+ * not leave the building.
+ */
+export function aiAllowed(): boolean {
+    const setting = (process.env.INOA_AI ?? '').trim().toLowerCase();
+    return !['off', 'no', 'false', '0'].includes(setting);
+}
 
 /**
  * The sources that could answer right now, in preference order.
@@ -146,22 +205,57 @@ export const ALL_GENERATORS: Generator[] = [claudeCli, anthropicApi, openaiApi];
  * search engines read their own list.
  */
 export function generators(): Generator[] {
+    if (!aiAllowed()) {
+        return [];
+    }
+
     const wanted = (process.env.INOA_GENERATOR ?? '')
         .split(',')
         .map((label) => label.trim().toLowerCase())
         .filter(Boolean);
 
-    const ordered =
-        wanted.length > 0
-            ? wanted
-                  .map((label) => ALL_GENERATORS.find((g) => g.label === label))
-                  .filter((g): g is Generator => g !== undefined)
-            : ALL_GENERATORS;
+    /*
+     * An explicit list is taken at its word, order and all. Naming a CLI and a
+     * key together is a deliberate request to rotate between them, and
+     * second-guessing it would leave no way to ask for that at all.
+     */
+    if (wanted.length > 0) {
+        return wanted
+            .map((label) => ALL_GENERATORS.find((g) => g.label === label))
+            .filter((g): g is Generator => g !== undefined)
+            .filter((generator) => generator.available());
+    }
 
-    return ordered.filter((generator) => generator.available());
+    return ALL_GENERATORS.filter((generator) => generator.available());
 }
 
-/** Whether anything at all could generate a name. */
+/**
+ * The sources a healthy run shares its batches between.
+ *
+ * The leading tier only, which is the whole point: rotation is for spreading
+ * load and widening the shortlist between equals, and a subscription and a
+ * metered key are not equals. Rotating across both would quietly bill a
+ * machine whose CLI was working perfectly well.
+ *
+ * Everything below this stays in `generators()` as failover — which is what a
+ * key was added for in the first place. A subscription that hits its usage
+ * limit used to end generation dead; it now moves to the next source, and an
+ * earlier version of this tiering had silently taken that away by refusing to
+ * cross from one tier to the other at all.
+ */
+export function rotation(sources: Generator[] = generators()): Generator[] {
+    const leading = sources[0]?.tier;
+    return leading ? sources.filter((source) => source.tier === leading) : [];
+}
+
+/**
+ * Whether a model will be asked for the names.
+ *
+ * Not 'whether names can be produced' any more, which is what this used to
+ * mean: false now sends the run to the deterministic composer rather than
+ * stopping it. The distinction matters to anything reporting what a run is
+ * about to do, and nothing else should be branching on it.
+ */
 export function hasGenerator(): boolean {
     return generators().length > 0;
 }

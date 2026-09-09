@@ -24,14 +24,20 @@
  * slowly — see worker/webqueue.ts for why.
  */
 
-import { statusOf, tldOf, type CheckKind, type CheckStatuses } from '../src/lib/types.ts';
+import {
+    platformOf,
+    statusOf,
+    tldOf,
+    type CheckKind,
+    type CheckStatuses
+} from '../src/lib/types.ts';
 import { checkAppStore } from './checks/appstore.ts';
 import { checkDomain } from './checks/domain.ts';
-import { appleLimit, playLimit, webLimit } from './checks/limiter.ts';
+import { checkHandle } from './checks/handle.ts';
+import { appleLimit, playLimit, webLimit, RateLimit } from './checks/limiter.ts';
 import { checkPlayStore } from './checks/playstore.ts';
 import { type CheckOutcome } from './checks/shared.ts';
 import { checkWeb, hasSearchApi } from './checks/web.ts';
-import type { RateLimit } from './checks/limiter.ts';
 
 const STORE_RUNNERS: Record<string, (name: string) => Promise<CheckOutcome>> = {
     appStore: checkAppStore,
@@ -39,12 +45,17 @@ const STORE_RUNNERS: Record<string, (name: string) => Promise<CheckOutcome>> = {
     google: checkWeb
 };
 
-/** What actually answers a check. Every TLD shares one runner. */
+/** What actually answers a check. Every TLD and every platform shares a runner. */
 export function runnerFor(kind: CheckKind): (name: string) => Promise<CheckOutcome> {
     const tld = tldOf(kind);
-    return tld
-        ? (name: string) => checkDomain(name, tld)
-        : (STORE_RUNNERS[kind] ?? (() => Promise.resolve({ status: 'unknown' as const })));
+    if (tld) {
+        return (name: string) => checkDomain(name, tld);
+    }
+    const at = platformOf(kind);
+    if (at) {
+        return (name: string) => checkHandle(name, at);
+    }
+    return STORE_RUNNERS[kind] ?? (() => Promise.resolve({ status: 'unknown' as const }));
 }
 
 /**
@@ -59,6 +70,30 @@ const LIMITS: Record<string, RateLimit> = {
     playStore: playLimit,
     google: webLimit
 };
+
+/**
+ * Handle checks queue, unlike domain checks.
+ *
+ * A domain check reaches a different host every time. A handle check reaches
+ * the same one for every name in the run, and GitHub and X both throttle an
+ * unauthenticated caller — a thousand requests arriving at once is the shape
+ * of traffic they throttle for. One limiter per platform, so a slow GitHub
+ * does not hold up X.
+ */
+const handleLimits = new Map<string, RateLimit>();
+
+function limitFor(kind: CheckKind): RateLimit | undefined {
+    const at = platformOf(kind);
+    if (!at) {
+        return LIMITS[kind];
+    }
+    let limit = handleLimits.get(at);
+    if (!limit) {
+        limit = new RateLimit(Number(process.env.INOA_HANDLE_INTERVAL_MS ?? 1200));
+        handleLimits.set(at, limit);
+    }
+    return limit;
+}
 
 /**
  * The order to actually run checks in, for these requirements.
@@ -174,7 +209,7 @@ export async function checkCandidate(
         } else {
             // Wait for a slot on the shared schedule, not a private timer —
             // otherwise concurrent names all call the same service at once.
-            await LIMITS[kind]?.take();
+            await limitFor(kind)?.take();
             outcome = await runnerFor(kind)(name);
         }
         statuses[kind] = outcome.status;

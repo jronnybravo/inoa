@@ -25,6 +25,8 @@ export class Candidate extends BaseEntity {
      * .com verdict is in the column below.
      */
     domains!: Record<string, CheckStatus> | null;
+    /** One verdict per social platform this run asked for, keyed by platform. */
+    handles!: Record<string, CheckStatus> | null;
     /** @deprecated Superseded by `domains`. Read-only, for old rows. */
     com!: CheckStatus;
     appStore!: CheckStatus;
@@ -53,6 +55,7 @@ export const CandidateSchema = new EntitySchema<Candidate>({
         strategy: { ...short, nullable: true },
         position: { type: 'int', default: 0 },
         domains: { type: JSON_TYPE, nullable: true },
+        handles: { type: JSON_TYPE, nullable: true },
         com: { ...short, default: 'pending' },
         appStore: { ...short, default: 'pending' },
         playStore: { ...short, default: 'pending' },

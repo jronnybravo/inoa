@@ -14,6 +14,7 @@
 
 import {
     STORE_ORDER,
+    handleKind,
     tldKind,
     type CheckKind,
     type CheckStatus,
@@ -25,6 +26,10 @@ import {
 export interface RunChecksRow {
     tlds: string[] | null;
     requiredTlds: string[] | null;
+    handles: string[] | null;
+    requiredHandles: string[] | null;
+    stores: string[] | null;
+    requiredStores: string[] | null;
     requireCom: boolean;
     requireAppStore: boolean;
     requirePlayStore: boolean;
@@ -34,6 +39,7 @@ export interface RunChecksRow {
 /** The columns of a candidate this depends on. */
 export interface CandidateChecksRow {
     domains: Record<string, CheckStatus> | null;
+    handles: Record<string, CheckStatus> | null;
     com: CheckStatus;
     appStore: CheckStatus;
     playStore: CheckStatus;
@@ -51,13 +57,36 @@ export interface CandidateChecksRow {
 export function runChecks(run: RunChecksRow): RunChecks {
     const tlds = run.tlds ?? ['com'];
     const requiredTlds = run.requiredTlds ?? (run.requireCom ? ['com'] : []);
+    // Null on every run made before handles were a question, which is not the
+    // same as a run that chose none — but both mean 'do not check any'.
+    const handles = run.handles ?? [];
+    const requiredHandles = run.requiredHandles ?? [];
 
-    const kinds: CheckKind[] = [...tlds.map(tldKind), ...STORE_ORDER];
+    /*
+     * The stores default the other way.
+     *
+     * Null here means a run from when all three always ran, so the honest
+     * reading is 'all of them' — where a null handles list means 'none',
+     * because that was the state before handles existed at all. Same shape,
+     * opposite default, because the histories differ.
+     */
+    const stores = run.stores ?? [...STORE_ORDER];
+    const requiredStores =
+        run.requiredStores ?? STORE_ORDER.filter((kind) => STORE_REQUIRED[kind](run));
+
+    const kinds: CheckKind[] = [
+        ...tlds.map(tldKind),
+        ...handles.map(handleKind),
+        // Filtered from STORE_ORDER rather than taken as given, so they stay in
+        // cost order however they were picked — the funnel depends on it.
+        ...STORE_ORDER.filter((kind) => stores.includes(kind))
+    ];
     const required: CheckKind[] = [
-        // Intersected rather than trusted: a required TLD that is no longer
-        // among the checked ones could never clear, so every name would fail.
+        // Intersected rather than trusted: a requirement on something that is
+        // not being checked could never clear, so every name would fail.
         ...tlds.filter((tld) => requiredTlds.includes(tld)).map(tldKind),
-        ...STORE_ORDER.filter((kind) => STORE_REQUIRED[kind](run))
+        ...handles.filter((id) => requiredHandles.includes(id)).map(handleKind),
+        ...STORE_ORDER.filter((kind) => stores.includes(kind) && requiredStores.includes(kind))
     ];
 
     return { kinds, required };
@@ -86,6 +115,10 @@ export function candidateStatuses(row: CandidateChecksRow): CheckStatuses {
         statuses[tldKind('com')] = row.com;
     }
 
+    for (const [id, status] of Object.entries(row.handles ?? {})) {
+        statuses[handleKind(id)] = status;
+    }
+
     return statuses;
 }
 
@@ -98,18 +131,23 @@ export function candidateStatuses(row: CandidateChecksRow): CheckStatuses {
  */
 export function statusColumns(statuses: CheckStatuses): {
     domains: Record<string, CheckStatus>;
+    handles: Record<string, CheckStatus>;
     appStore: CheckStatus;
     playStore: CheckStatus;
     google: CheckStatus;
 } {
     const domains: Record<string, CheckStatus> = {};
+    const handles: Record<string, CheckStatus> = {};
     for (const [kind, status] of Object.entries(statuses)) {
         if (kind.startsWith('tld:') && status) {
             domains[kind.slice(4)] = status;
+        } else if (kind.startsWith('at:') && status) {
+            handles[kind.slice(3)] = status;
         }
     }
     return {
         domains,
+        handles,
         appStore: statuses.appStore ?? 'pending',
         playStore: statuses.playStore ?? 'pending',
         google: statuses.google ?? 'pending'

@@ -86,6 +86,7 @@
  */
 
 import * as cheerio from 'cheerio';
+import { searchConfigured } from '../../src/lib/search.ts';
 import { RateLimit } from './limiter.ts';
 import { isBrandCollision, jitter, sleep, squash, type CheckOutcome } from './shared.ts';
 
@@ -357,7 +358,10 @@ export const API_PROVIDERS: ApiProvider[] = [
 
 /** True when any tier-2 API is configured — the queue paces on this. */
 export function hasSearchApi(): boolean {
-    return API_PROVIDERS.some((p) => p.key());
+    // Delegated so the app and the worker cannot disagree about what counts as
+    // configured — the form's answer decides what it offers, and this one
+    // decides what actually runs.
+    return searchConfigured();
 }
 
 /**

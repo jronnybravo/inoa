@@ -13,12 +13,16 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { candidateStatuses, runChecks, statusColumns } from './checks.ts';
-import { checkLabel, checkSearch, statusOf, tldKind, tldOf } from './types.ts';
+import { checkLabel, checkSearch, handleKind, statusOf, tldKind, tldOf } from './types.ts';
 import type { CandidateChecksRow, RunChecksRow } from './checks.ts';
 
 const legacyRun = (over: Partial<RunChecksRow> = {}): RunChecksRow => ({
     tlds: null,
     requiredTlds: null,
+    handles: null,
+    requiredHandles: null,
+    stores: null,
+    requiredStores: null,
     requireCom: true,
     requireAppStore: true,
     requirePlayStore: false,
@@ -31,6 +35,7 @@ const modernRun = (tlds: string[], requiredTlds: string[]): RunChecksRow =>
 
 const legacyRow = (over: Partial<CandidateChecksRow> = {}): CandidateChecksRow => ({
     domains: null,
+    handles: null,
     com: 'taken',
     appStore: 'clear',
     playStore: 'clear',
@@ -140,6 +145,133 @@ describe('candidateStatuses', () => {
 
     it('answers pending for a check the row has no verdict for', () => {
         assert.equal(statusOf(candidateStatuses(legacyRow()), tldKind('xyz')), 'pending');
+    });
+});
+
+describe('handles', () => {
+    const withHandles = (handles: string[], required: string[]) =>
+        legacyRun({
+            tlds: ['com'],
+            requiredTlds: [],
+            requireCom: false,
+            handles,
+            requiredHandles: required
+        });
+
+    it('checks each platform asked for, after the domains', () => {
+        const { kinds } = runChecks(withHandles(['github', 'x'], []));
+        assert.deepEqual(kinds, [
+            tldKind('com'),
+            handleKind('github'),
+            handleKind('x'),
+            'appStore',
+            'playStore',
+            'google'
+        ]);
+    });
+
+    it('requires only the platforms asked to be requirements', () => {
+        const { required } = runChecks(withHandles(['github', 'x'], ['github']));
+        assert.deepEqual(required, [handleKind('github'), 'appStore']);
+    });
+
+    /* Same rule as the domains: a requirement nothing checks can never clear. */
+    it('drops a requirement on a platform that is not being checked', () => {
+        const { required } = runChecks(withHandles(['github'], ['github', 'x']));
+        assert.deepEqual(required, [handleKind('github'), 'appStore']);
+    });
+
+    it('checks none at all on a run written before handles existed', () => {
+        const { kinds } = runChecks(legacyRun());
+        assert.ok(!kinds.some((kind) => kind.startsWith('at:')));
+    });
+
+    it('reads the handle verdicts off a row', () => {
+        const statuses = candidateStatuses(legacyRow({ handles: { github: 'clear', x: 'taken' } }));
+        assert.equal(statuses[handleKind('github')], 'clear');
+        assert.equal(statuses[handleKind('x')], 'taken');
+    });
+
+    it('round-trips them back into their own column', () => {
+        const before = {
+            [tldKind('com')]: 'clear' as const,
+            [handleKind('github')]: 'taken' as const,
+            appStore: 'clear' as const,
+            playStore: 'pending' as const,
+            google: 'unknown' as const
+        };
+        const columns = statusColumns(before);
+        assert.deepEqual(columns.domains, { com: 'clear' });
+        assert.deepEqual(columns.handles, { github: 'taken' });
+        assert.deepEqual(candidateStatuses({ ...columns, com: 'pending' }), before);
+    });
+
+    it('labels and links a handle check for the platform it is for', () => {
+        assert.equal(checkLabel(handleKind('github')), '@GitHub');
+        assert.equal(checkSearch(handleKind('x'), 'Farm Well'), 'https://x.com/farmwell');
+        assert.equal(
+            checkSearch(handleKind('youtube'), 'Farmwell'),
+            'https://www.youtube.com/@farmwell'
+        );
+    });
+});
+
+describe('stores', () => {
+    const withStores = (stores: string[], required: string[]) =>
+        legacyRun({
+            tlds: [],
+            requiredTlds: [],
+            requireCom: false,
+            stores,
+            requiredStores: required
+        });
+
+    it('checks only the stores asked for', () => {
+        const { kinds } = runChecks(withStores(['google'], []));
+        assert.deepEqual(kinds, ['google']);
+    });
+
+    it('requires only the ones asked to be requirements', () => {
+        const { required } = runChecks(withStores(['appStore', 'google'], ['google']));
+        assert.deepEqual(required, ['google']);
+    });
+
+    /*
+     * The App Store is the slowest thing in a run — Apple tolerates about
+     * twenty calls a minute — so leaving it out has to actually leave it out,
+     * not merely stop it dropping names.
+     */
+    it('leaves a store out of the funnel entirely, not just out of the gates', () => {
+        const { kinds } = runChecks(withStores(['playStore', 'google'], []));
+        assert.ok(!kinds.includes('appStore'));
+    });
+
+    it('keeps them in cost order however they were picked', () => {
+        const { kinds } = runChecks(withStores(['google', 'appStore', 'playStore'], []));
+        assert.deepEqual(kinds, ['appStore', 'playStore', 'google']);
+    });
+
+    it('drops a requirement on a store that is not being checked', () => {
+        const { required } = runChecks(withStores(['appStore'], ['appStore', 'google']));
+        assert.deepEqual(required, ['appStore']);
+    });
+
+    it('accepts a run that checks no store at all', () => {
+        const { kinds } = runChecks(withStores([], []));
+        assert.deepEqual(kinds, []);
+    });
+
+    /*
+     * The opposite default to the handles, and deliberately so. A null handles
+     * list means a run from before handles existed, so none were checked; a
+     * null stores list means a run from when all three always ran.
+     */
+    it('checks all three on a run written before they could be chosen', () => {
+        const { kinds, required } = runChecks(
+            legacyRun({ requireAppStore: true, requirePlayStore: false, requireGoogle: false })
+        );
+        assert.deepEqual(kinds, [tldKind('com'), 'appStore', 'playStore', 'google']);
+        assert.deepEqual(required, [tldKind('com'), 'appStore']);
     });
 });
 

@@ -1846,35 +1846,6 @@
                         altogether. The App Store is the slowest thing in a run, so leaving it out
                         is worth having.
                     </p>
-                    {#if webIsLinkOnly}
-                        <!--
-                            In the rail, where every other row keeps its
-                            explanation. This was a paragraph beside the chips
-                            with a checkbox of its own, which put two different
-                            controls in one row to answer one question.
-                        -->
-                        <p class="mt-1 text-xs text-stone-500">
-                            No search provider is configured, so the web cannot be checked. Web
-                            instead adds a column of links to search yourself — never a verdict.
-                        </p>
-                        <!--
-                            Naming them is the whole point. 'No search provider
-                            is configured' describes the situation and leaves
-                            the one useful fact out: which words to put in the
-                            environment. Read from the same list the check
-                            itself reads, so the form cannot name a key that
-                            has stopped counting.
-                        -->
-                        <p class="mt-1 text-xs text-stone-500">
-                            Set any one of {#each SEARCH_KEYS as key, i (key)}<code
-                                    class="rounded bg-stone-100 px-1 py-px font-mono text-[0.7rem]
-                                           text-stone-600 dark:bg-stone-800 dark:text-stone-300"
-                                    >{key}</code
-                                >{listSeparator(i, SEARCH_KEYS.length)}{/each} and it becomes a real check.
-                            Set several and a run spreads across every allowance rather than draining
-                            one.
-                        </p>
-                    {/if}
                 </div>
                 <!--
                     Three chips rather than the search the domains and handles
@@ -1968,6 +1939,32 @@
                             {stores.length === 1 ? 'check' : 'checks'}
                         </span>
                     </div>
+                    <!--
+                        Under the control it is about, not in the rail.
+
+                        The rail is 18rem, so five env vars set in it wrapped to
+                        five lines and made this row the tallest on the form to
+                        explain the third of three chips. Out here it has the
+                        width of the column and costs a line or two.
+
+                        Shown only once Web is on, because that is when it
+                        stops being background and starts being the next thing
+                        to do — the chip's own tooltip already answers why it
+                        behaves differently before then.
+                    -->
+                    {#if webIsLinkOnly && webLinks}
+                        <p class="mt-3 max-w-3xl text-xs text-stone-500">
+                            No search provider is configured, so the web cannot be checked. Web adds
+                            a column of links to search yourself — never a verdict. Set any one of
+                            {#each SEARCH_KEYS as key, i (key)}<code
+                                    class="rounded bg-stone-100 px-1 py-px font-mono text-[0.7rem]
+                                           text-stone-600 dark:bg-stone-800 dark:text-stone-300"
+                                    >{key}</code
+                                >{listSeparator(i, SEARCH_KEYS.length)}{/each} and it becomes a real check.
+                            Set several and a run spreads across every allowance rather than draining
+                            one.
+                        </p>
+                    {/if}
                 </div>
             </div>
 

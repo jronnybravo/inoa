@@ -665,7 +665,18 @@
     const selected = $state<Record<string, boolean>>({});
     // Open while there is something to watch, closed once there is not: a
     // finished run spent 23rem of the results area on historical chatter.
-    let consoleOpen = $state(!data.run || !TERMINAL_STATUSES.includes(data.run.status));
+    /**
+     * Shut, always.
+     *
+     * It used to open itself for a run still going, which is the run whose
+     * results you are least able to read around a panel. The collapsed row
+     * carries the worker's latest line instead, so a live run still shows a
+     * pulse without taking the width to do it.
+     */
+    let consoleOpen = $state(false);
+
+    /** The worker's most recent line, for the row that stands in for the panel. */
+    const latest = $derived(events.at(-1));
     let copied = $state(false);
     let logEl = $state<HTMLDivElement | null>(null);
 
@@ -1634,7 +1645,6 @@
                                 </label>
                             {/each}
                         </div>
-
                         <!--
                             Other languages, out of the grid and full width,
                             because it is the only approach that takes a
@@ -2585,31 +2595,108 @@
         </p>
     {/if}
 
-    <!-- Table and console side by side: you read results while watching progress. -->
-    <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_23rem]">
-        <section class="min-w-0">
-            <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <label class="flex cursor-pointer items-center gap-2 text-sm">
-                    <input
-                        type="checkbox"
-                        bind:checked={onlyPassed}
-                        class="accent-stone-900 dark:accent-stone-100"
-                    />
-                    Only names that passed
-                </label>
-                <button
-                    onclick={copyCsv}
-                    class="rounded-lg border border-stone-500 px-3 py-1.5 text-sm transition-colors
-                 duration-150 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
-                >
-                    {copied
-                        ? 'Copied'
-                        : `Copy ${chosenCount} ${chosenCount === 1 ? 'row' : 'rows'}`}
-                </button>
-            </div>
+    <!--
+        The console, above the table and shut.
 
-            {#if byStrategy.length > 0}
-                <!--
+        The worker runs on another machine, so its console is piped here — and
+        it is watched during a run and ignored for the rest of a run's life.
+        Open by default it was a permanent 23rem column; closed it is a line,
+        and that line carries the latest thing the worker said, so a run still
+        shows a pulse without the panel being open.
+    -->
+    <section class="mt-4">
+        <button
+            onclick={() => (consoleOpen = !consoleOpen)}
+            aria-expanded={consoleOpen}
+            aria-controls="console"
+            class="flex w-full items-center gap-3 rounded-lg border border-stone-200 px-3 py-2
+                   text-left transition-colors duration-100 hover:bg-stone-100
+                   dark:border-stone-800 dark:hover:bg-stone-900"
+        >
+            <span
+                aria-hidden="true"
+                class="text-stone-500 transition-transform duration-150 dark:text-stone-400
+                       {consoleOpen ? 'rotate-90' : ''}">▸</span
+            >
+            <h2 class="text-sm font-medium">Console</h2>
+            <!--
+                The last line, where the panel used to be.
+
+                Shut, this row is the only sign the worker is alive, and 'Show
+                (214)' is a number rather than a sign of life. Hidden once the
+                panel is open, because it would then be saying the same thing
+                twice.
+            -->
+            {#if !consoleOpen && latest}
+                <span
+                    class="min-w-0 flex-1 truncate font-mono text-xs text-stone-500
+                           dark:text-stone-400">{latest.message}</span
+                >
+            {/if}
+            <span class="ml-auto shrink-0 text-xs text-stone-500 dark:text-stone-400"
+                >{consoleOpen ? 'Hide' : `${events.length} lines`}</span
+            >
+        </button>
+        {#if consoleOpen}
+            <div
+                id="console"
+                bind:this={logEl}
+                class="mt-2 h-64 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50 p-3
+                       font-mono text-xs leading-relaxed dark:border-stone-800 dark:bg-stone-950"
+            >
+                {#each events as e (e.id)}
+                    <div class="flex gap-2 py-px">
+                        <span class="shrink-0 text-stone-500 dark:text-stone-400 tabular-nums"
+                            >{time(e.at)}</span
+                        >
+                        <span class="{LEVEL[e.level] ?? LEVEL.info} break-words">{e.message}</span>
+                    </div>
+                {:else}
+                    <p class="text-stone-500 dark:text-stone-400">
+                        {#if run.status === 'queued'}
+                            Waiting for a worker to pick this run up.
+                        {:else if finished}
+                            This run recorded no console output.
+                        {:else}
+                            No console output. The run is working — see the counters above — but the
+                            worker process handling it started before console recording existed, so
+                            it has no way to report its progress here.
+                        {/if}
+                    </p>
+                {/each}
+            </div>
+        {/if}
+    </section>
+
+    <!--
+        The table gets the whole width.
+
+        It was two thirds of a two-column grid with the console holding the
+        rest, which cost the results 23rem for a panel that is watched during a
+        run and ignored afterwards. A dozen domains is a dozen columns, and
+        every one of them was being squeezed to pay that rent.
+    -->
+    <section class="mt-4 min-w-0">
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <label class="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                    type="checkbox"
+                    bind:checked={onlyPassed}
+                    class="accent-stone-900 dark:accent-stone-100"
+                />
+                Only names that passed
+            </label>
+            <button
+                onclick={copyCsv}
+                class="rounded-lg border border-stone-500 px-3 py-1.5 text-sm transition-colors
+                 duration-150 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
+            >
+                {copied ? 'Copied' : `Copy ${chosenCount} ${chosenCount === 1 ? 'row' : 'rows'}`}
+            </button>
+        </div>
+
+        {#if byStrategy.length > 0}
+            <!--
                     Passing out of generated, and nothing else.
 
                     Every entry carried a third number — 'Combination 0/2 of 6'
@@ -2619,54 +2706,51 @@
                     'checked' figure is in the card above, once, where it means
                     the same thing.
                 -->
-                <div
-                    class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500 dark:text-stone-400"
+            <div
+                class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500 dark:text-stone-400"
+            >
+                <span class="text-stone-600 dark:text-stone-300"
+                    >{totalNames} names, passing by approach</span
                 >
-                    <span class="text-stone-600 dark:text-stone-300"
-                        >{totalNames} names, passing by approach</span
-                    >
-                    {#each byStrategy as s (s.id)}
-                        <!--
+                {#each byStrategy as s (s.id)}
+                    <!--
                             Short form, matching the cells directly below. The
                             long names live in the compose form, where their
                             examples explain them; two names for one thing
                             within 100px made the tally unreadable against the
                             column it describes.
                         -->
-                        <span title="{s.label} — {s.passed} passing of {s.total} generated">
-                            {strategyLabel(s.id)}
-                            <b class="font-medium text-stone-700 dark:text-stone-300">{s.passed}</b
-                            >/{s.total}
-                        </span>
-                    {/each}
-                    {#if unattributed > 0}
-                        <span>{unattributed} without a recorded approach</span>
-                    {/if}
-                </div>
-            {/if}
+                    <span title="{s.label} — {s.passed} passing of {s.total} generated">
+                        {strategyLabel(s.id)}
+                        <b class="font-medium text-stone-700 dark:text-stone-300">{s.passed}</b
+                        >/{s.total}
+                    </span>
+                {/each}
+                {#if unattributed > 0}
+                    <span>{unattributed} without a recorded approach</span>
+                {/if}
+            </div>
+        {/if}
 
-            <!--
+        <!--
         The table scrolls inside its own panel rather than lengthening the page.
         A thousand rows on a page scroll takes the header away with it, and
         leaves the console stranded beside an endless column.
       -->
+        <!--
+            A cap, not a height.
+
+            It carried `lg:h-[calc(100vh-19rem)]` so it would match the console
+            standing beside it — and the console does not stand beside it any
+            more, so all that height bought was an empty box under a short run.
+            It grows with its rows now, and scrolls once there are more than
+            fit.
+        -->
+        <div
+            class="max-h-[40rem] overflow-auto rounded-xl border border-stone-200
+                   dark:border-stone-800"
+        >
             <!--
-                max-h below lg, a fixed height at and above it.
-
-                At lg this pane and the console beside it are one two-pane
-                layout and share a height, so a short table shrinking would
-                leave the columns ragged — that emptiness is the price of the
-                panes not jumping as rows and log lines arrive.
-
-                Stacked, there is no column to match. It was `h-[32rem]`
-                there too, so a run that found one name sat in 414px of
-                bordered nothing for no reason at all.
-            -->
-            <div
-                class="max-h-[32rem] overflow-auto rounded-xl border border-stone-200
-                  lg:h-[calc(100vh-19rem)] lg:max-h-none dark:border-stone-800"
-            >
-                <!--
           Fixed layout, and every column given a width.
           
           With automatic layout the browser sizes columns from their contents,
@@ -2676,7 +2760,7 @@
           takes widths from the first row alone, so a changed cell repaints
           itself and nothing else.
         -->
-                <!--
+            <!--
                     w-max, not w-full.
                     
                     A run can ask for a dozen domains, and a table told to fit
@@ -2689,303 +2773,355 @@
                     keeps a short run filling the panel rather than trailing
                     off halfway.
                 -->
-                <table class="w-max min-w-full table-fixed text-sm">
-                    <!--
+            <table class="w-max min-w-full table-fixed text-sm">
+                <!--
             Only the action column flexes, so every other width is fixed.
             They previously summed to more than the panel and left the name
             fourteen pixels wide. One column per check, generated: which
             checks there are is the run's own business.
           -->
-                    <colgroup>
-                        <col style="width: 2.25rem" />
-                        <col style="width: 10rem" />
-                        <col style="width: 7rem" />
-                        {#each columns as k (k)}
-                            <col style="width: 6.25rem" />
-                        {/each}
-                        {#if linkColumn}
-                            <col style="width: 6.25rem" />
-                        {/if}
-                        <col style="width: 6.5rem" />
-                    </colgroup>
+                <colgroup>
+                    <col style="width: 2.75rem" />
                     <!--
+                        Widest of the fixed columns, because it is the one
+                        being read.
+
+                        Left width-less it took its size from the longest name
+                        in the table, which put the total eight pixels past the
+                        panel and hung a scrollbar under a table that otherwise
+                        fitted. Fixed, the sum is knowable: the slack is shared
+                        out by min-w-full and nothing overflows until the
+                        checks genuinely need more room than there is.
+                    -->
+                    <col style="width: 12rem" />
+                    <col style="width: 7rem" />
+                    {#each columns as k (k)}
+                        <col style="width: 5.75rem" />
+                    {/each}
+                    {#if linkColumn}
+                        <col style="width: 5.75rem" />
+                    {/if}
+                    <!--
+                        Wide enough for what is in it.
+
+                        6.5rem was a guess the browser overrode: w-max sizes to
+                        content, so the Check button and its menu took 124px
+                        whatever this said, and the nine pixels of difference
+                        hung a scrollbar under a table that otherwise fitted.
+                    -->
+                    <col style="width: 7.75rem" />
+                </colgroup>
+                <!--
                         The heading is the label and its filter together. A
                         filtered column shows it: the control takes the accent
                         border and a clear button appears, so the reason a
                         table looks short is visible from the table.
                     -->
-                    <thead class="sticky top-0 z-10 text-left">
-                        <tr class="bg-stone-100 dark:bg-stone-900">
-                            <!--
+                <!--
+                    The header sits on the table's own ground.
+
+                    It was bg-stone-100 against white rows — a grey band across
+                    the top that read as a separate widget bolted above the
+                    results. The hairline under it is what separates a header
+                    from its rows; the fill was doing the job twice, and louder.
+                -->
+                <thead class="sticky top-0 z-10 bg-white text-left dark:bg-stone-950">
+                    <tr>
+                        <!--
                                 The column had no header at all, so a filled
                                 black checkbox on every row was the heaviest
                                 thing in the table and explained by nothing.
                                 This says what it is for and turns the lot on
                                 and off.
                             -->
-                            <th scope="col" class="px-3 py-2.5 align-bottom {HEADER_EDGE}">
-                                <input
-                                    type="checkbox"
-                                    checked={allChosen}
-                                    indeterminate={someChosen && !allChosen}
-                                    onchange={(e) => {
-                                        chooseAll(e.currentTarget.checked);
-                                    }}
-                                    aria-label="Choose every row for the CSV"
-                                    title="Rows to copy"
-                                    class="accent-stone-900 dark:accent-stone-100"
-                                />
-                            </th>
+                        <th scope="col" class="px-3 py-2.5 align-bottom {HEADER_EDGE}">
+                            <input
+                                type="checkbox"
+                                checked={allChosen}
+                                indeterminate={someChosen && !allChosen}
+                                onchange={(e) => {
+                                    chooseAll(e.currentTarget.checked);
+                                }}
+                                aria-label="Choose every row for the CSV"
+                                title="Rows to copy"
+                                class="accent-stone-500 dark:accent-stone-400"
+                            />
+                        </th>
 
-                            <th
-                                scope="col"
-                                class="sticky left-0 z-20 bg-stone-100 px-3 py-2.5 align-bottom
+                        <th
+                            scope="col"
+                            class="sticky left-0 z-20 bg-white px-3 py-2.5 align-bottom
                                 after:absolute after:inset-y-0 after:-right-px after:w-px
-                                after:bg-stone-200 dark:bg-stone-900 dark:after:bg-stone-800
+                                after:bg-stone-200 dark:bg-stone-950 dark:after:bg-stone-800
                                 {HEADER_EDGE}"
-                                aria-sort={nameSort === 'asc'
-                                    ? 'ascending'
-                                    : nameSort === 'desc'
-                                      ? 'descending'
-                                      : 'none'}
-                            >
-                                <!--
+                            aria-sort={nameSort === 'asc'
+                                ? 'ascending'
+                                : nameSort === 'desc'
+                                  ? 'descending'
+                                  : 'none'}
+                        >
+                            <!--
                                     The button is named for the column, not for
                                     what clicking does: it is the header's
                                     accessible name, and aria-sort above already
                                     carries the state. The hint goes in a title,
                                     where it helps without renaming the column.
                                 -->
-                                <button
-                                    onclick={() => (nameSort = NEXT_SORT[nameSort])}
-                                    title={SORT_HINT[nameSort]}
-                                    class="group flex items-center gap-1 pb-1 text-xs font-medium
+                            <button
+                                onclick={() => (nameSort = NEXT_SORT[nameSort])}
+                                title={SORT_HINT[nameSort]}
+                                class="group flex items-center gap-1 pb-1 text-xs font-medium
                                            text-stone-600 dark:text-stone-400 transition-colors duration-100
                                            hover:text-stone-900 dark:hover:text-stone-100"
+                            >
+                                Name
+                                <span
+                                    aria-hidden="true"
+                                    class={nameSort === 'none'
+                                        ? 'opacity-0 transition-opacity group-hover:opacity-60'
+                                        : ''}>{nameSort === 'desc' ? '↓' : '↑'}</span
                                 >
-                                    Name
-                                    <span
-                                        aria-hidden="true"
-                                        class={nameSort === 'none'
-                                            ? 'opacity-0 transition-opacity group-hover:opacity-60'
-                                            : ''}>{nameSort === 'desc' ? '↓' : '↑'}</span
+                            </button>
+                            <div class="relative">
+                                <input
+                                    bind:value={nameFilter}
+                                    type="text"
+                                    placeholder="contains…"
+                                    aria-label="Filter names"
+                                    class="{FILTER_INPUT} {nameFilter
+                                        ? FILTER_ACTIVE
+                                        : FILTER_IDLE} pr-6"
+                                />
+                                {#if nameFilter}
+                                    <button
+                                        onclick={() => (nameFilter = '')}
+                                        aria-label="Clear the name filter"
+                                        class={CLEAR_BUTTON}>×</button
                                     >
-                                </button>
-                                <div class="relative">
-                                    <input
-                                        bind:value={nameFilter}
-                                        type="text"
-                                        placeholder="contains…"
-                                        aria-label="Filter names"
-                                        class="{FILTER_INPUT} {nameFilter
-                                            ? FILTER_ACTIVE
-                                            : FILTER_IDLE} pr-6"
-                                    />
-                                    {#if nameFilter}
-                                        <button
-                                            onclick={() => (nameFilter = '')}
-                                            aria-label="Clear the name filter"
-                                            class={CLEAR_BUTTON}>×</button
-                                        >
-                                    {/if}
-                                </div>
-                            </th>
+                                {/if}
+                            </div>
+                        </th>
 
+                        <th
+                            scope="col"
+                            class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}"
+                        >
+                            <span
+                                class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
+                            >
+                                Approach
+                            </span>
+                            <div class="relative">
+                                <select
+                                    bind:value={approachFilter}
+                                    aria-label="Filter by approach"
+                                    class="{FILTER_INPUT} {approachFilter
+                                        ? FILTER_ACTIVE
+                                        : FILTER_IDLE} pr-6"
+                                >
+                                    <option value="">Any</option>
+                                    {#each byStrategy as s (s.id)}
+                                        <option value={s.id}>{strategyLabel(s.id)}</option>
+                                    {/each}
+                                </select>
+                                {#if approachFilter}
+                                    <button
+                                        onclick={() => (approachFilter = '')}
+                                        aria-label="Clear the approach filter"
+                                        class={CLEAR_BUTTON}>×</button
+                                    >
+                                {/if}
+                            </div>
+                        </th>
+
+                        <!--
+                            Centred, header and cell alike.
+
+                            Every one of these holds a single glyph in a
+                            five-and-a-half-rem column, and left-aligned that
+                            put a tick hard against the left edge with forty
+                            pixels of nothing after it — five columns of ragged
+                            marks that read as a mistake rather than a matrix.
+                        -->
+                        {#each columns as k (k)}
                             <th
                                 scope="col"
-                                class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}"
+                                class="px-3 py-2.5 text-center align-bottom whitespace-nowrap
+                                       {HEADER_EDGE}"
                             >
                                 <span
                                     class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
                                 >
-                                    Approach
+                                    {checkLabel(k)}
                                 </span>
                                 <div class="relative">
+                                    <!--
+                                        pr-6 only when there is a × to make
+                                        room for. Reserved unconditionally in a
+                                        five-and-a-half-rem column it left
+                                        about thirty pixels for the word, so
+                                        every idle filter read 'Ar'.
+                                    -->
                                     <select
-                                        bind:value={approachFilter}
-                                        aria-label="Filter by approach"
-                                        class="{FILTER_INPUT} {approachFilter
-                                            ? FILTER_ACTIVE
-                                            : FILTER_IDLE} pr-6"
+                                        bind:value={checkFilter[k]}
+                                        aria-label="Filter by {checkLabel(k)}"
+                                        class="{FILTER_INPUT} {checkFilter[k]
+                                            ? `${FILTER_ACTIVE} pr-6`
+                                            : FILTER_IDLE}"
                                     >
                                         <option value="">Any</option>
-                                        {#each byStrategy as s (s.id)}
-                                            <option value={s.id}>{strategyLabel(s.id)}</option>
+                                        {#each LEGEND as l (l.status)}
+                                            <option value={l.status}>{CELL[l.status].text}</option>
                                         {/each}
                                     </select>
-                                    {#if approachFilter}
+                                    {#if checkFilter[k]}
                                         <button
-                                            onclick={() => (approachFilter = '')}
-                                            aria-label="Clear the approach filter"
+                                            onclick={() => (checkFilter[k] = '')}
+                                            aria-label="Clear the {checkLabel(k)} filter"
                                             class={CLEAR_BUTTON}>×</button
                                         >
                                     {/if}
                                 </div>
                             </th>
+                        {/each}
 
-                            {#each columns as k (k)}
-                                <th
-                                    scope="col"
-                                    class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}"
-                                >
-                                    <span
-                                        class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
-                                    >
-                                        {checkLabel(k)}
-                                    </span>
-                                    <div class="relative">
-                                        <select
-                                            bind:value={checkFilter[k]}
-                                            aria-label="Filter by {checkLabel(k)}"
-                                            class="{FILTER_INPUT} {checkFilter[k]
-                                                ? FILTER_ACTIVE
-                                                : FILTER_IDLE} pr-6"
-                                        >
-                                            <option value="">Any</option>
-                                            {#each LEGEND as l (l.status)}
-                                                <option value={l.status}
-                                                    >{CELL[l.status].text}</option
-                                                >
-                                            {/each}
-                                        </select>
-                                        {#if checkFilter[k]}
-                                            <button
-                                                onclick={() => (checkFilter[k] = '')}
-                                                aria-label="Clear the {checkLabel(k)} filter"
-                                                class={CLEAR_BUTTON}>×</button
-                                            >
-                                        {/if}
-                                    </div>
-                                </th>
-                            {/each}
-
-                            {#if linkColumn}
-                                <!--
+                        {#if linkColumn}
+                            <!--
                                     No filter on this one. There is nothing to
                                     filter by: every cell is the same link, and
                                     a dropdown offering 'free' and 'taken' over
                                     a column that establishes neither would be
                                     the exact confusion this column avoids.
                                 -->
-                                <th
-                                    scope="col"
-                                    class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}"
-                                >
-                                    <span
-                                        class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
-                                    >
-                                        {checkLabel(linkColumn)}
-                                    </span>
-                                    <span class="block text-xs text-stone-500 dark:text-stone-400"
-                                        >look yourself</span
-                                    >
-                                </th>
-                            {/if}
-
                             <th
                                 scope="col"
-                                class="px-3 py-2.5 text-right align-bottom whitespace-nowrap {HEADER_EDGE}"
+                                class="px-3 py-2.5 text-center align-bottom whitespace-nowrap
+                                       {HEADER_EDGE}"
                             >
                                 <span
                                     class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
                                 >
-                                    Action
+                                    {checkLabel(linkColumn)}
                                 </span>
-                                <button
-                                    onclick={clearFilters}
-                                    disabled={!anyFilter}
-                                    class="w-full rounded border border-stone-500 px-2 py-1 text-xs
+                                <span class="block text-xs text-stone-500 dark:text-stone-400"
+                                    >look yourself</span
+                                >
+                            </th>
+                        {/if}
+
+                        <th
+                            scope="col"
+                            class="px-3 py-2.5 text-right align-bottom whitespace-nowrap {HEADER_EDGE}"
+                        >
+                            <span
+                                class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
+                            >
+                                Action
+                            </span>
+                            <button
+                                onclick={clearFilters}
+                                disabled={!anyFilter}
+                                class="w-full rounded border border-stone-500 px-2 py-1 text-xs
                                            transition-colors duration-100 enabled:hover:bg-stone-200
                                            disabled:opacity-0 dark:border-stone-700
                                            dark:enabled:hover:bg-stone-800"
-                                >
-                                    Clear all
-                                    <kbd class="ml-0.5 opacity-60">esc</kbd>
-                                </button>
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {#each shown as c (c.id)}
-                            <tr
-                                class="border-t border-stone-100 bg-white transition-colors
+                            >
+                                Clear all
+                                <kbd class="ml-0.5 opacity-60">esc</kbd>
+                            </button>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {#each shown as c (c.id)}
+                        <tr
+                            class="border-t border-stone-100 bg-white transition-colors
                          duration-100 hover:bg-stone-50 dark:border-stone-800/70
                          dark:bg-stone-950 dark:hover:bg-stone-900"
-                            >
-                                <td class="px-3 py-1.5">
-                                    <input
-                                        type="checkbox"
-                                        class="accent-stone-900 dark:accent-stone-100"
-                                        checked={selected[c.id] ?? true}
-                                        onchange={(e) => (selected[c.id] = e.currentTarget.checked)}
-                                    />
-                                </td>
-                                <!--
+                        >
+                            <!--
+                                Quieter than the rest of the form.
+
+                                accent-stone-900 puts a near-black square in
+                                every one of a thousand rows — a solid column
+                                down the left of the table, and the heaviest
+                                thing on the page for the least important thing
+                                on it.
+                            -->
+                            <td class="px-3 py-2">
+                                <input
+                                    type="checkbox"
+                                    class="accent-stone-500 dark:accent-stone-400"
+                                    checked={selected[c.id] ?? true}
+                                    onchange={(e) => (selected[c.id] = e.currentTarget.checked)}
+                                />
+                            </td>
+                            <!--
                     Pinned, because the results are read on a phone.
                     The table is 819px of content in a 340px panel, so
                     scrolling to the verdicts used to take the names with it
                     and leave anonymous rows of ticks. bg-inherit keeps the
                     row's hover tint on the pinned cell.
                   -->
-                                <td
-                                    class="sticky left-0 z-10 bg-inherit px-3 py-1.5 font-medium
+                            <td
+                                class="sticky left-0 z-10 bg-inherit px-3 py-2 font-medium
                                     after:absolute after:inset-y-0 after:-right-px after:w-px
                                     after:bg-stone-200 dark:after:bg-stone-800 {c.passed
-                                        ? ''
-                                        : 'text-stone-500 dark:text-stone-400'}"
-                                >
-                                    <!--
+                                    ? ''
+                                    : 'text-stone-500 dark:text-stone-400'}"
+                            >
+                                <!--
                     A button, because it is reachable by keyboard and a span
                     with a tabindex is not something a screen reader can
                     describe. The reason also stays in the title attribute, so
                     it survives without JavaScript and on touch.
                   -->
-                                    <button
-                                        type="button"
-                                        title={c.rationale ?? ''}
-                                        class="cursor-help text-left decoration-stone-300 decoration-dotted
+                                <button
+                                    type="button"
+                                    title={c.rationale ?? ''}
+                                    class="cursor-help text-left decoration-stone-300 decoration-dotted
                                  underline-offset-4 hover:underline dark:decoration-stone-600"
-                                        onmouseenter={(e) => {
-                                            showHint(e, c.rationale);
-                                        }}
-                                        onmouseleave={() => (hint = null)}
-                                        onfocus={(e) => {
-                                            showHint(e as unknown as MouseEvent, c.rationale);
-                                        }}
-                                        onblur={() => (hint = null)}>{c.name}</button
-                                    >
-                                </td>
-                                <td
-                                    class="px-3 py-1.5 whitespace-nowrap text-stone-500 dark:text-stone-400"
+                                    onmouseenter={(e) => {
+                                        showHint(e, c.rationale);
+                                    }}
+                                    onmouseleave={() => (hint = null)}
+                                    onfocus={(e) => {
+                                        showHint(e as unknown as MouseEvent, c.rationale);
+                                    }}
+                                    onblur={() => (hint = null)}>{c.name}</button
                                 >
-                                    {strategyLabel(c.strategy)}
-                                </td>
-                                {#each columns as k (k)}
-                                    <td
-                                        class="relative px-3 py-1.5 whitespace-nowrap {CELL[
-                                            statusOf(c.statuses, k)
-                                        ].class}"
-                                        title={c.detail?.[k] || CELL[statusOf(c.statuses, k)].text}
-                                    >
-                                        {#if c.detail?.[k]}
-                                            <!-- A verdict that found something links to what it found. -->
-                                            <a
-                                                href={checkSearch(k, c.name)}
-                                                target="_blank"
-                                                rel="external noopener noreferrer"
-                                                aria-label="{c.name} — {checkLabel(k)}: {CELL[
-                                                    statusOf(c.statuses, k)
-                                                ].text}"
-                                                class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                                                ><span aria-hidden="true"
-                                                    >{CELL[statusOf(c.statuses, k)].icon}</span
-                                                ></a
-                                            >
-                                        {:else}
-                                            <span aria-hidden="true"
+                            </td>
+                            <td
+                                class="px-3 py-2 whitespace-nowrap text-stone-500 dark:text-stone-400"
+                            >
+                                {strategyLabel(c.strategy)}
+                            </td>
+                            {#each columns as k (k)}
+                                <td
+                                    class="relative px-3 py-2 text-center whitespace-nowrap {CELL[
+                                        statusOf(c.statuses, k)
+                                    ].class}"
+                                    title={c.detail?.[k] || CELL[statusOf(c.statuses, k)].text}
+                                >
+                                    {#if c.detail?.[k]}
+                                        <!-- A verdict that found something links to what it found. -->
+                                        <a
+                                            href={checkSearch(k, c.name)}
+                                            target="_blank"
+                                            rel="external noopener noreferrer"
+                                            aria-label="{c.name} — {checkLabel(k)}: {CELL[
+                                                statusOf(c.statuses, k)
+                                            ].text}"
+                                            class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                                            ><span aria-hidden="true"
                                                 >{CELL[statusOf(c.statuses, k)].icon}</span
-                                            >
-                                            <!--
+                                            ></a
+                                        >
+                                    {:else}
+                                        <span aria-hidden="true"
+                                            >{CELL[statusOf(c.statuses, k)].icon}</span
+                                        >
+                                        <!--
                                                 The cell is positioned so this cannot escape it.
                                                 sr-only is position:absolute, and an absolutely
                                                 positioned box is only clipped by an ancestor that
@@ -2994,42 +3130,42 @@
                                                 table's full unscrolled height and leaving a
                                                 thousand pixels of empty scroll below the layout.
                                             -->
-                                            <span class="sr-only"
-                                                >{c.name} — {checkLabel(k)}: {CELL[
-                                                    statusOf(c.statuses, k)
-                                                ].text}</span
-                                            >
-                                        {/if}
-                                    </td>
-                                {/each}
-                                {#if linkColumn}
-                                    <!--
+                                        <span class="sr-only"
+                                            >{c.name} — {checkLabel(k)}: {CELL[
+                                                statusOf(c.statuses, k)
+                                            ].text}</span
+                                        >
+                                    {/if}
+                                </td>
+                            {/each}
+                            {#if linkColumn}
+                                <!--
                                         A link, not a verdict. No glyph, because
                                         every glyph in this table is a finding
                                         and this cell has none — it is the
                                         search somebody would have run.
                                     -->
-                                    <td class="px-3 py-1.5 whitespace-nowrap">
-                                        <a
-                                            href={checkSearch(linkColumn, c.name)}
-                                            target="_blank"
-                                            rel="external noopener noreferrer"
-                                            aria-label="Search the web for {c.name}"
-                                            class="text-stone-500 dark:text-stone-400 underline decoration-dotted underline-offset-2 hover:text-stone-900 hover:decoration-solid dark:hover:text-stone-100"
-                                            >search ↗</a
-                                        >
-                                    </td>
-                                {/if}
-                                <!--
+                                <td class="px-3 py-2 text-center whitespace-nowrap">
+                                    <a
+                                        href={checkSearch(linkColumn, c.name)}
+                                        target="_blank"
+                                        rel="external noopener noreferrer"
+                                        aria-label="Search the web for {c.name}"
+                                        class="text-stone-500 dark:text-stone-400 underline decoration-dotted underline-offset-2 hover:text-stone-900 hover:decoration-solid dark:hover:text-stone-100"
+                                        >search ↗</a
+                                    >
+                                </td>
+                            {/if}
+                            <!--
                   One button for the ordinary case - run whatever this run
                   requires - and a menu for the one check you actually doubt.
                 -->
-                                <td class="px-3 py-1.5 text-right whitespace-nowrap">
-                                    <span
-                                        class="inline-flex overflow-hidden rounded border border-stone-500
+                            <td class="px-3 py-2 text-right whitespace-nowrap">
+                                <span
+                                    class="inline-flex overflow-hidden rounded border border-stone-500
                                dark:border-stone-700"
-                                    >
-                                        <!--
+                                >
+                                    <!--
                                             Both labels occupy one grid cell, so
                                             the button is as wide as the longer
                                             of them and does not resize when the
@@ -3037,78 +3173,78 @@
                                             width mid-click makes the whole
                                             column look unstable.
                                         -->
-                                        <button
-                                            onclick={() => recheck(c)}
-                                            disabled={rechecking[c.id]}
-                                            title="Re-run the checks this run requires"
-                                            class="grid px-2 py-0.5 text-xs transition-colors
+                                    <button
+                                        onclick={() => recheck(c)}
+                                        disabled={rechecking[c.id]}
+                                        title="Re-run the checks this run requires"
+                                        class="grid px-2 py-0.5 text-xs transition-colors
                                                    duration-100 hover:bg-stone-100
                                                    disabled:opacity-50 dark:hover:bg-stone-800"
+                                    >
+                                        <span
+                                            class="col-start-1 row-start-1"
+                                            class:invisible={rechecking[c.id]}>Check</span
                                         >
-                                            <span
-                                                class="col-start-1 row-start-1"
-                                                class:invisible={rechecking[c.id]}>Check</span
-                                            >
-                                            <span
-                                                class="col-start-1 row-start-1"
-                                                class:invisible={!rechecking[c.id]}>Checking…</span
-                                            >
-                                        </button>
-                                        <button
-                                            onclick={(e) => {
-                                                const r = (
-                                                    e.currentTarget as HTMLElement
-                                                ).getBoundingClientRect();
-                                                menu =
-                                                    menu?.id === c.id
-                                                        ? null
-                                                        : {
-                                                              id: c.id,
-                                                              x: r.right,
-                                                              y: r.bottom + 4,
-                                                              anchorTop: r.top
-                                                          };
-                                            }}
-                                            disabled={rechecking[c.id]}
-                                            id="row-menu-{c.id}"
-                                            aria-haspopup="menu"
-                                            aria-expanded={menu?.id === c.id}
-                                            aria-label="Check one thing for {c.name}"
-                                            class="border-l border-stone-300 px-1.5 py-0.5 text-xs transition-colors
+                                        <span
+                                            class="col-start-1 row-start-1"
+                                            class:invisible={!rechecking[c.id]}>Checking…</span
+                                        >
+                                    </button>
+                                    <button
+                                        onclick={(e) => {
+                                            const r = (
+                                                e.currentTarget as HTMLElement
+                                            ).getBoundingClientRect();
+                                            menu =
+                                                menu?.id === c.id
+                                                    ? null
+                                                    : {
+                                                          id: c.id,
+                                                          x: r.right,
+                                                          y: r.bottom + 4,
+                                                          anchorTop: r.top
+                                                      };
+                                        }}
+                                        disabled={rechecking[c.id]}
+                                        id="row-menu-{c.id}"
+                                        aria-haspopup="menu"
+                                        aria-expanded={menu?.id === c.id}
+                                        aria-label="Check one thing for {c.name}"
+                                        class="border-l border-stone-300 px-1.5 py-0.5 text-xs transition-colors
                              duration-100 hover:bg-stone-100 disabled:opacity-50
                              dark:border-stone-700 dark:hover:bg-stone-800">▾</button
-                                        >
-                                    </span>
-                                </td>
-                            </tr>
-                        {:else}
-                            <tr
-                                ><td
-                                    colspan="8"
-                                    class="px-4 py-12 text-center text-sm text-stone-500 dark:text-stone-400"
-                                >
-                                    {#if run.status === 'stopped'}
-                                        Stopped before any name was generated.
-                                    {:else if run.status === 'queued'}
-                                        Queued. Waiting for the worker to pick this up.
-                                    {:else if run.status === 'generating'}
-                                        Generating {run.targetCount} names. They appear here in batches
-                                        as they are written - the first arrives in a few minutes.
-                                    {:else if anyFilter}
-                                        No name matches these filters.
-                                    {:else if onlyPassed}
-                                        Nothing has cleared every requirement yet. Untick “only
-                                        names that passed” to watch the checks land.
-                                    {:else}
-                                        Nothing yet.
-                                    {/if}
-                                </td></tr
+                                    >
+                                </span>
+                            </td>
+                        </tr>
+                    {:else}
+                        <tr
+                            ><td
+                                colspan="8"
+                                class="px-4 py-12 text-center text-sm text-stone-500 dark:text-stone-400"
                             >
-                        {/each}
-                    </tbody>
-                </table>
-            </div>
-            <!--
+                                {#if run.status === 'stopped'}
+                                    Stopped before any name was generated.
+                                {:else if run.status === 'queued'}
+                                    Queued. Waiting for the worker to pick this up.
+                                {:else if run.status === 'generating'}
+                                    Generating {run.targetCount} names. They appear here in batches as
+                                    they are written - the first arrives in a few minutes.
+                                {:else if anyFilter}
+                                    No name matches these filters.
+                                {:else if onlyPassed}
+                                    Nothing has cleared every requirement yet. Untick “only names
+                                    that passed” to watch the checks land.
+                                {:else}
+                                    Nothing yet.
+                                {/if}
+                            </td></tr
+                        >
+                    {/each}
+                </tbody>
+            </table>
+        </div>
+        <!--
                 Under the table, not above it.
 
                 It is a reference — consulted the first time a mark is
@@ -3118,65 +3254,20 @@
                 wider column gap separates the pairs by more than the term
                 separates from its own definition.
             -->
-            <dl
-                class="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-stone-500 dark:text-stone-400"
-            >
-                {#each LEGEND as l (l.status)}
-                    <div class="flex items-center gap-1.5 whitespace-nowrap">
-                        <dt class="font-medium {CELL[l.status].class}">
-                            {CELL[l.status].icon}
-                            {CELL[l.status].text}
-                        </dt>
-                        <dd>{l.note}</dd>
-                    </div>
-                {/each}
-            </dl>
-        </section>
-
-        <!-- The worker runs on another machine, so its console is piped here. -->
-        <section class="lg:sticky lg:top-6 lg:self-start">
-            <button
-                onclick={() => (consoleOpen = !consoleOpen)}
-                class="mb-2 flex w-full items-center justify-between text-sm"
-            >
-                <h2 class="font-medium">Console</h2>
-                <span class="text-xs text-stone-500 dark:text-stone-400"
-                    >{consoleOpen ? 'Hide' : `Show (${events.length})`}</span
-                >
-            </button>
-            {#if consoleOpen}
-                <div
-                    bind:this={logEl}
-                    class="h-72 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50 p-3
-                 font-mono text-xs leading-relaxed lg:h-[calc(100vh-19rem)]
-                 dark:border-stone-800 dark:bg-stone-950"
-                >
-                    {#each events as e (e.id)}
-                        <div class="flex gap-2 py-px">
-                            <span class="shrink-0 text-stone-500 dark:text-stone-400 tabular-nums"
-                                >{time(e.at)}</span
-                            >
-                            <span class="{LEVEL[e.level] ?? LEVEL.info} break-words"
-                                >{e.message}</span
-                            >
-                        </div>
-                    {:else}
-                        <p class="text-stone-500 dark:text-stone-400">
-                            {#if run.status === 'queued'}
-                                Waiting for a worker to pick this run up.
-                            {:else if finished}
-                                This run recorded no console output.
-                            {:else}
-                                No console output. The run is working - see the counters above - but
-                                the worker process handling it started before console recording
-                                existed, so it has no way to report its progress here.
-                            {/if}
-                        </p>
-                    {/each}
+        <dl
+            class="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-stone-500 dark:text-stone-400"
+        >
+            {#each LEGEND as l (l.status)}
+                <div class="flex items-center gap-1.5 whitespace-nowrap">
+                    <dt class="font-medium {CELL[l.status].class}">
+                        {CELL[l.status].icon}
+                        {CELL[l.status].text}
+                    </dt>
+                    <dd>{l.note}</dd>
                 </div>
-            {/if}
-        </section>
-    </div>
+            {/each}
+        </dl>
+    </section>
 
     {#if hint}
         <div

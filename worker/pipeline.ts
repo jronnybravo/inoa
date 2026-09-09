@@ -1,10 +1,15 @@
 /**
  * The checking funnel.
  *
- * Checks run cheapest-first — .com, App Store, Play Store, then web — because
- * the expensive ones are the rate-limited ones. Apple tolerates roughly 20
- * calls a minute and the web tier costs a browser or an API credit, so every
- * name the .com gate drops is a name they never have to see.
+ * Checks run cheapest-first — the domains, then App Store, Play Store, then
+ * web — because the expensive ones are the rate-limited ones. Apple tolerates
+ * roughly 20 calls a minute and the web tier costs a browser or an API credit,
+ * while a domain costs a DNS lookup and nobody's quota, so every name a domain
+ * gate drops is a name they never have to see.
+ *
+ * Which domains is the run's own business. One run asks about the .com, another
+ * about eight TLDs; the funnel does not care how many, only that they come
+ * first and that a required one can end a name.
  *
  * A REQUIRED check that comes back 'taken' drops the name immediately and the
  * remaining checks are marked skipped. An unrequired check never drops a name;
@@ -19,36 +24,59 @@
  * slowly — see worker/webqueue.ts for why.
  */
 
-import { CHECK_ORDER, type CheckKind, type CheckStatus } from '../src/lib/types.ts';
+import { statusOf, tldOf, type CheckKind, type CheckStatuses } from '../src/lib/types.ts';
 import { checkAppStore } from './checks/appstore.ts';
-import { checkCom } from './checks/domain.ts';
+import { checkDomain } from './checks/domain.ts';
 import { appleLimit, playLimit, webLimit } from './checks/limiter.ts';
 import { checkPlayStore } from './checks/playstore.ts';
 import { type CheckOutcome } from './checks/shared.ts';
 import { checkWeb, hasSearchApi } from './checks/web.ts';
 import type { RateLimit } from './checks/limiter.ts';
 
-const RUNNERS: Record<CheckKind, (name: string) => Promise<CheckOutcome>> = {
-    com: checkCom,
+const STORE_RUNNERS: Record<string, (name: string) => Promise<CheckOutcome>> = {
     appStore: checkAppStore,
     playStore: checkPlayStore,
     google: checkWeb
 };
 
+/** What actually answers a check. Every TLD shares one runner. */
+export function runnerFor(kind: CheckKind): (name: string) => Promise<CheckOutcome> {
+    const tld = tldOf(kind);
+    return tld
+        ? (name: string) => checkDomain(name, tld)
+        : (STORE_RUNNERS[kind] ?? (() => Promise.resolve({ status: 'unknown' as const })));
+}
+
 /**
  * Which shared limiter each check queues against.
  *
- * The .com check has none: it is DNS and one request against a different host
- * every time, with nobody's quota to exhaust.
+ * Domain checks have none: each is DNS and one request against a different
+ * host, with nobody's quota to exhaust. That is also what makes asking for
+ * eight TLDs reasonable — it costs time, not somebody's allowance.
  */
-const LIMITS: Partial<Record<CheckKind, RateLimit>> = {
+const LIMITS: Record<string, RateLimit> = {
     appStore: appleLimit,
     playStore: playLimit,
     google: webLimit
 };
 
 /**
- * The checks that run in the main funnel.
+ * The order to actually run checks in, for these requirements.
+ *
+ * Required first, then the rest, each group keeping the run's own order —
+ * which is domains before stores, because domains cost no quota. With Play
+ * Store alone required that is playStore, then the TLDs, then appStore and
+ * google.
+ */
+export function checkOrder(kinds: CheckKind[], required: Requirements): CheckKind[] {
+    return [
+        ...kinds.filter((kind) => required.includes(kind)),
+        ...kinds.filter((kind) => !required.includes(kind))
+    ];
+}
+
+/**
+ * The checks that run in the main funnel, out of the ones this run makes.
  *
  * The web check joins them whenever a search API is configured, because then
  * it costs about a second. Without a key it needs a browser at roughly a name
@@ -58,22 +86,8 @@ const LIMITS: Partial<Record<CheckKind, RateLimit>> = {
  * last when it has to drive a browser, because a minute a name is not a cost
  * that any ordering can make worthwhile.
  */
-/**
- * The order to actually run checks in, for these requirements.
- *
- * Required first, then the rest, each group in cost order. With Play Store
- * alone required that is playStore, com, appStore, google; with the two stores
- * required it is appStore, playStore, com, google.
- */
-export function checkOrder(required: Requirements): CheckKind[] {
-    return [
-        ...CHECK_ORDER.filter((kind) => required[kind]),
-        ...CHECK_ORDER.filter((kind) => !required[kind])
-    ];
-}
-
-export function fastChecks(): CheckKind[] {
-    return hasSearchApi() ? CHECK_ORDER : CHECK_ORDER.filter((k) => k !== 'google');
+export function fastChecks(kinds: CheckKind[]): CheckKind[] {
+    return hasSearchApi() ? kinds : kinds.filter((k) => k !== 'google');
 }
 
 /**
@@ -84,22 +98,24 @@ export function fastChecks(): CheckKind[] {
  */
 export type PriorVerdict = (name: string, kind: CheckKind) => Promise<CheckOutcome | null>;
 
-export interface Requirements {
-    com: boolean;
-    appStore: boolean;
-    playStore: boolean;
-    google: boolean;
-}
+/**
+ * The checks that can drop a name.
+ *
+ * A list rather than a record of booleans: the keys are no longer known ahead
+ * of time, and a record whose shape depends on a person's choice is a record
+ * the type system cannot check anything about.
+ */
+export type Requirements = readonly CheckKind[];
 
 export interface CandidateResult {
     /**
-     * Every check has a state, including the ones this pass did not run.
+     * A state for every check this run makes, including ones this pass did not.
      *
-     * A partial record forced each caller to assert the keys back into
-     * existence, which is a lie the type system cannot check. 'pending' is the
-     * honest value for a check nobody made.
+     * Populated for each kind rather than left sparse, so a caller never has to
+     * decide what a missing key means — and where one is missing anyway,
+     * statusOf() answers 'pending' rather than each caller guessing.
      */
-    statuses: Record<CheckKind, CheckStatus>;
+    statuses: CheckStatuses;
     detail: Partial<Record<CheckKind, string>>;
     /** null while a required check has not answered yet. */
     passed: boolean | null;
@@ -113,33 +129,28 @@ export interface CandidateResult {
  * check has yet to answer — which is what keeps a name out of the results
  * email until the slow web queue has actually reached it.
  */
-export function computePassed(
-    statuses: Partial<Record<CheckKind, CheckStatus>>,
-    required: Requirements
-): boolean | null {
-    const relevant = CHECK_ORDER.filter((kind) => required[kind]);
-    if (relevant.some((kind) => (statuses[kind] ?? 'pending') === 'pending')) {
+export function computePassed(statuses: CheckStatuses, required: Requirements): boolean | null {
+    if (required.some((kind) => statusOf(statuses, kind) === 'pending')) {
         return null;
     }
-    return relevant.every((kind) => statuses[kind] === 'clear');
+    return required.every((kind) => statuses[kind] === 'clear');
 }
 
 export async function checkCandidate(
     name: string,
     required: Requirements,
-    kinds: CheckKind[] = CHECK_ORDER,
-    prior?: PriorVerdict
+    kinds: CheckKind[],
+    prior?: PriorVerdict,
+    all: CheckKind[] = kinds
 ): Promise<CandidateResult> {
-    const statuses: Record<CheckKind, CheckStatus> = {
-        com: 'pending',
-        appStore: 'pending',
-        playStore: 'pending',
-        google: 'pending'
-    };
+    const statuses: CheckStatuses = {};
+    for (const kind of all) {
+        statuses[kind] = 'pending';
+    }
     const detail: Partial<Record<CheckKind, string>> = {};
     let droppedBy: CheckKind | null = null;
 
-    for (const kind of checkOrder(required)) {
+    for (const kind of checkOrder(all, required)) {
         // Checks this pass is not responsible for keep whatever state they hold.
         if (!kinds.includes(kind)) {
             continue;
@@ -164,14 +175,14 @@ export async function checkCandidate(
             // Wait for a slot on the shared schedule, not a private timer —
             // otherwise concurrent names all call the same service at once.
             await LIMITS[kind]?.take();
-            outcome = await RUNNERS[kind](name);
+            outcome = await runnerFor(kind)(name);
         }
         statuses[kind] = outcome.status;
         if (outcome.detail) {
             detail[kind] = outcome.detail;
         }
 
-        if (required[kind] && outcome.status === 'taken') {
+        if (required.includes(kind) && outcome.status === 'taken') {
             droppedBy = kind;
         }
     }

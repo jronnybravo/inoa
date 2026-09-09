@@ -13,33 +13,93 @@
  */
 export type CheckStatus = 'pending' | 'clear' | 'taken' | 'unknown' | 'skipped';
 
-export type CheckKind = 'com' | 'appStore' | 'playStore' | 'google';
-
-/** Order is the funnel: cheapest and least rate-limited first. */
-export const CHECK_ORDER: CheckKind[] = ['com', 'appStore', 'playStore', 'google'];
-
 /**
+ * The places a name can be taken, other than a domain.
+ *
  * The 'google' key is historical: the check asks a search API first, falls back
  * to Bing, and only reaches a browser against Google when neither is available.
  * The column is labelled for what it actually establishes — whether anyone is
  * trading under the name on the open web — rather than for one of the engines
  * that might answer.
  */
-export const CHECK_LABEL: Record<CheckKind, string> = {
-    com: '.com',
+export type StoreKind = 'appStore' | 'playStore' | 'google';
+
+/**
+ * One domain check, named for its TLD.
+ *
+ * Prefixed rather than bare, and the prefix is load-bearing: '.google' and
+ * '.app' are both real top-level domains, and 'google' and 'appStore' are
+ * already checks. Without the namespace a run asking for the .google domain
+ * would silently address the web check instead.
+ */
+export type TldKind = `tld:${string}`;
+
+export type CheckKind = StoreKind | TldKind;
+
+/** Order is the funnel: cheapest and least rate-limited last-resort. */
+export const STORE_ORDER: StoreKind[] = ['appStore', 'playStore', 'google'];
+
+const STORE_LABEL: Record<StoreKind, string> = {
     appStore: 'App Store',
     playStore: 'Play Store',
     google: 'Web'
 };
 
+export const tldKind = (tld: string): TldKind => `tld:${tld}`;
+
+/** The TLD a check is for, or null if it is not a domain check. */
+export function tldOf(kind: CheckKind): string | null {
+    return kind.startsWith('tld:') ? kind.slice(4) : null;
+}
+
+export function isTldKind(kind: CheckKind): kind is TldKind {
+    return kind.startsWith('tld:');
+}
+
+/** What to call a check in a column heading or a sentence. */
+export function checkLabel(kind: CheckKind): string {
+    const tld = tldOf(kind);
+    // Not a TLD kind, so it is a store kind: the union has no third case.
+    return tld ? `.${tld}` : STORE_LABEL[kind as StoreKind];
+}
+
 /** Where a person can go and look for themselves, per check. */
-export const CHECK_SEARCH: Record<CheckKind, (name: string) => string> = {
-    com: (n) => `https://${n.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
-    appStore: (n) => `https://www.apple.com/us/search/${encodeURIComponent(n)}?src=globalnav`,
-    playStore: (n) => `https://play.google.com/store/search?q=${encodeURIComponent(n)}&c=apps`,
-    google: (n) =>
-        `https://www.google.com/search?q=${encodeURIComponent(`"${n}" (app OR software OR platform OR company)`)}`
-};
+export function checkSearch(kind: CheckKind, name: string): string {
+    const tld = tldOf(kind);
+    if (tld) {
+        return `https://${name.toLowerCase().replace(/[^a-z0-9]/g, '')}.${tld}`;
+    }
+    if (kind === 'appStore') {
+        return `https://www.apple.com/us/search/${encodeURIComponent(name)}?src=globalnav`;
+    }
+    if (kind === 'playStore') {
+        return `https://play.google.com/store/search?q=${encodeURIComponent(name)}&c=apps`;
+    }
+    return `https://www.google.com/search?q=${encodeURIComponent(`"${name}" (app OR software OR platform OR company)`)}`;
+}
+
+/** Every check a run makes, and the subset that can drop a name. */
+export interface RunChecks {
+    /** In funnel order: domains first, then the stores, then the web. */
+    kinds: CheckKind[];
+    /** A 'taken' here ends the name. Always a subset of `kinds`. */
+    required: CheckKind[];
+}
+
+/** Statuses by check. A key that is absent was never asked. */
+export type CheckStatuses = Partial<Record<CheckKind, CheckStatus>>;
+
+/**
+ * 'pending' for a check nobody has made yet.
+ *
+ * The map used to be a total record so that no caller had to assert a key back
+ * into existence. It cannot be total now that the keys depend on the run, so
+ * the same guarantee is made here instead: there is one place that decides
+ * what an absent key means, and it is not the caller.
+ */
+export function statusOf(statuses: CheckStatuses | null, kind: CheckKind): CheckStatus {
+    return statuses?.[kind] ?? 'pending';
+}
 
 /**
  * 'stopped' is a decision, not a failure.
@@ -79,10 +139,8 @@ export interface CandidateView {
     name: string;
     rationale: string | null;
     strategy: StrategyId | null;
-    com: CheckStatus;
-    appStore: CheckStatus;
-    playStore: CheckStatus;
-    google: CheckStatus;
+    /** Keyed by check. Read through statusOf(), which answers for absent keys. */
+    statuses: CheckStatuses;
     detail: Partial<Record<CheckKind, string>> | null;
     passed: boolean | null;
     droppedBy: CheckKind | null;
@@ -92,10 +150,14 @@ export interface RunView {
     id: string;
     brief: string;
     strategies: StrategyId[] | null;
-    requireCom: boolean;
-    requireAppStore: boolean;
-    requirePlayStore: boolean;
-    requireGoogle: boolean;
+    /**
+     * The checks this run makes, resolved on the server.
+     *
+     * Sent rather than derived here: the rules for reading a run written
+     * before the TLDs were a choice live in one module on the server, and a
+     * second copy on the client is a second thing to get wrong.
+     */
+    checks: RunChecks;
     email: string;
     status: RunStatus;
     targetCount: number;
@@ -113,7 +175,14 @@ export interface RunEventView {
 
 export interface StrategyTally {
     strategy: StrategyId | null;
+    /** Generated under this approach. */
     total: number;
+    /**
+     * Actually asked about: `passed` is a boolean, and null means the checks
+     * never reached this name. Without this number a stopped run reports
+     * everything it never examined as a failure.
+     */
+    checked: number;
     passed: number;
 }
 

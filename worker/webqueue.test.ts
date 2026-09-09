@@ -17,6 +17,7 @@
 
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
+import { tldKind } from '../src/lib/types.ts';
 import type { CheckOutcome } from './checks/shared.ts';
 import type { Requirements } from './pipeline.ts';
 import type { Candidate } from '../src/lib/server/entities/candidate.ts';
@@ -29,13 +30,15 @@ const { drainWebQueue } = await import('./webqueue.ts');
 /** Consecutive challenges the queue tolerates before abandoning the run. */
 const MAX_BACKOFFS = 3;
 
-const REQUIRED: Requirements = { com: true, appStore: true, playStore: true, google: true };
+const COM = tldKind('com');
+const REQUIRED: Requirements = [COM, 'appStore', 'playStore', 'google'];
 
 interface Row {
     id: string;
     name: string;
     position: number;
     runId: string;
+    domains: Record<string, CheckStatus> | null;
     com: CheckStatus;
     appStore: CheckStatus;
     playStore: CheckStatus;
@@ -58,11 +61,12 @@ function store(names: string[]) {
         name,
         position: index,
         runId: 'run-1',
+        domains: { com: 'clear' },
         com: 'clear',
         appStore: 'clear',
         playStore: 'clear',
         google: 'pending',
-        detail: { com: 'the .com is free' },
+        detail: { [COM]: 'the .com is free' },
         passed: null
     }));
 
@@ -169,7 +173,7 @@ describe('draining a queue that is answering', () => {
         await drainWebQueue(candidates, 'run-1', REQUIRED, undefined, check);
 
         assert.deepEqual(at(rows, 0).detail, {
-            com: 'the .com is free',
+            [COM]: 'the .com is free',
             google: 'No competing brand found (Tavily)'
         });
     });
@@ -180,7 +184,7 @@ describe('draining a queue that is answering', () => {
 
         await drainWebQueue(candidates, 'run-1', REQUIRED, undefined, check);
 
-        assert.deepEqual(at(rows, 0).detail, { com: 'the .com is free' });
+        assert.deepEqual(at(rows, 0).detail, { [COM]: 'the .com is free' });
     });
 
     /*

@@ -1,5 +1,7 @@
 import { db } from '$lib/server/db';
+import { Candidate } from '$lib/server/entities/candidate';
 import { Run } from '$lib/server/entities/run';
+import { candidateView, runView } from '$lib/server/views';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -19,8 +21,22 @@ export const load: PageServerLoad = async ({ url }) => {
         if (!run) {
             return { run: null, notFound: true };
         }
-        const { email, ...safe } = run;
-        return { run: { ...safe, email: email.replace(/(.).*(@.*)/, '$1•••$2') } };
+        /*
+         * The rows travel with the run.
+         *
+         * Sending the run alone meant a finished thousand-name run painted
+         * '— passing' over an empty table until the first poll answered, two
+         * and a half seconds later. That is the moment somebody arrives from
+         * the results email, and it was answering 'nothing' before it answered
+         * anything.
+         */
+        const candidates = await Candidate.find({
+            where: { runId: run.id },
+            order: { position: 'ASC' },
+            take: 2000
+        });
+
+        return { run: runView(run), candidates: candidates.map(candidateView) };
     } catch {
         // A missing DATABASE_URL should show the form, not a 500.
         return { run: null };

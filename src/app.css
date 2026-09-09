@@ -1,1 +1,13 @@
 @import 'tailwindcss';
+
+/*
+ * Tell the browser this page has both themes.
+ *
+ * Without it every native control stays in light mode regardless of the
+ * palette around it: in dark mode the unchecked checkboxes rendered as solid
+ * white squares, and the number spinner, select popups and both scrollbars
+ * stayed light against a near-black page.
+ */
+:root {
+    color-scheme: light dark;
+}

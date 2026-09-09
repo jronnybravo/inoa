@@ -26,6 +26,16 @@ export class Run extends BaseEntity {
     brief!: string;
     /** Null rather than defaulted: MySQL forbids a DEFAULT on a TEXT column. */
     strategies!: StrategyId[] | null;
+    /**
+     * The TLDs to check, and which of them a name must be free on.
+     *
+     * Null on runs made before a run could ask for anything but the .com;
+     * `runChecks()` reads those through requireCom instead, which is why that
+     * column is still here.
+     */
+    tlds!: string[] | null;
+    requiredTlds!: string[] | null;
+    /** @deprecated Superseded by tlds/requiredTlds. Read-only, for old rows. */
     requireCom!: boolean;
     requireAppStore!: boolean;
     requirePlayStore!: boolean;
@@ -52,6 +62,8 @@ export const RunSchema = new EntitySchema<Run>({
         id: { type: UUID_TYPE, length: UUID_LENGTH, primary: true, generated: 'uuid' },
         brief: { type: 'text' },
         strategies: { type: JSON_TYPE, nullable: true },
+        tlds: { type: JSON_TYPE, nullable: true },
+        requiredTlds: { type: JSON_TYPE, nullable: true },
         requireCom: { type: 'boolean', default: false },
         requireAppStore: { type: 'boolean', default: false },
         requirePlayStore: { type: 'boolean', default: false },

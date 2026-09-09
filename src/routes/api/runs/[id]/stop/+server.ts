@@ -11,7 +11,11 @@ import type { RequestHandler } from './$types';
  * The app cannot reach the worker - they are on different machines, which is
  * the whole shape of this project - so stopping is a fact written to the row
  * rather than a message sent to a process. The worker reads it on its next
- * heartbeat and puts itself down.
+ * heartbeat and lets go of this run.
+ *
+ * This stops one run and nothing else. The worker itself stays up and goes
+ * back to polling, so anything queued behind this run starts as normal; the
+ * only way to stop the process is Ctrl-C in the terminal running it.
  *
  * That indirection is also what makes this work when no worker is running at
  * all. A run whose worker died sits in 'generating' with an expired lease,
@@ -39,7 +43,9 @@ export const POST: RequestHandler = async ({ params }) => {
     await RunEvent.insert({
         runId: run.id,
         level: 'warn',
-        message: 'Stop requested. The worker finishes the name in hand and puts itself down.'
+        message:
+            'Stop requested. The worker finishes the name in hand, keeps everything ' +
+            'found so far, and moves on to the next run.'
     });
 
     return json({ status: 'stopped', alreadyFinished: false });

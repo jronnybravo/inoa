@@ -1,5 +1,5 @@
 /**
- * The .com — but only a LIVE BUSINESS counts as taken.
+ * A domain — but only a LIVE BUSINESS counts as taken.
  *
  * Registered is not the same as unavailable. Parked pages, for-sale listings,
  * registrar placeholders, squatted names and dormant registrations are all
@@ -346,7 +346,7 @@ function causeCode(error: unknown): string | undefined {
 /**
  * A page verdict, plus whether anything else could still settle it.
  *
- * The flag exists so checkCom can tell one 'unknown' from another without
+ * The flag exists so checkDomain can tell one 'unknown' from another without
  * reading the detail string back. Only the thin-page case is worth a DNS
  * query; a 5xx or a timeout is not going to be explained by a delegation.
  */
@@ -428,7 +428,7 @@ const UNREACHABLE_CODES = new Set([
  * A failure verdict, plus whether DNS could still settle it.
  *
  * The flag keeps readFailure pure and synchronous: it says what the error
- * establishes on its own, and checkCom decides whether that is worth a
+ * establishes on its own, and checkDomain decides whether that is worth a
  * second question.
  */
 export interface FailureVerdict extends CheckOutcome {
@@ -481,8 +481,8 @@ export function readFailure(domain: string, error: unknown): FailureVerdict {
     };
 }
 
-export async function checkCom(name: string): Promise<CheckOutcome> {
-    const domain = `${squash(name)}.com`;
+export async function checkDomain(name: string, tld: string): Promise<CheckOutcome> {
+    const domain = `${squash(name)}.${tld}`;
     try {
         const response = await fetch(`https://${domain}`, {
             redirect: 'follow',

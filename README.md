@@ -1,7 +1,8 @@
 # Inoa
 
 Generate brand names from a brief, then screen each one against the places a
-name can already be taken: the `.com`, the App Store, Google Play, and the web.
+name can already be taken: the domains you care about, the App Store, Google
+Play, and the web.
 
 ![A finished naming run: fifty candidates, each with a verdict per check](docs/screenshot.png)
 
@@ -137,13 +138,27 @@ reason is recorded — see `worker/checks/web.ts` for the clearest example.
 
 ## How a name is judged
 
-Checks run cheapest-first — `.com`, App Store, Play Store, web — because the
-expensive ones are the rate-limited ones. Apple tolerates about 20 calls a
-minute, so every name the `.com` gate drops is a name Apple never sees.
+Checks run cheapest-first — the domains, then App Store, Play Store, web —
+because the expensive ones are the rate-limited ones. Apple tolerates about 20
+calls a minute, while a domain costs a DNS lookup and nobody's quota, so every
+name a domain gate drops is a name Apple never sees.
 
 A **required** check that returns `taken` drops the name immediately and the
 rest are marked skipped. An unrequired check never drops anything; it is
 recorded so the table stays complete.
+
+### Choosing domains
+
+A run picks any of the ~1,050 top-level domains anybody can register, up to
+twelve at a time, and marks which of them are required. Everything picked gets
+a column and a verdict; only the required ones can end a name. The list is
+generated from three sources — IANA for what exists, ICANN for what is open to
+the public rather than a brand's own registry, and the Tranco top million for
+the order — by `node scripts/generate-tlds.mjs`.
+
+Twelve is the cap because each domain is one request per name: at a thousand
+names, twelve TLDs is twelve thousand requests. They cost no quota, but they
+cost time.
 
 Every cell has three real states, not two:
 
@@ -187,7 +202,7 @@ again later:
 ```bash
 npm run recheck -- <runId>                     # every unverified cell
 npm run recheck -- <runId> playStore           # just one check
-npm run recheck -- <runId> com --include-clear # revisit 'free' too
+npm run recheck -- <runId> tld:com --include-clear # revisit 'free' too
 ```
 
 `--include-clear` exists for the case where a checker itself was wrong: a stored
@@ -279,7 +294,7 @@ Run `npm run doctor` before a long run.
 
 ### Why it runs on its own clock
 
-`.com`, App Store and Play Store always run inline, paced against limits that
+Domains, App Store and Play Store always run inline, paced against limits that
 announce themselves — Apple says 403 at around twenty calls a minute. Where the
 web check runs depends on whether you have an API key.
 

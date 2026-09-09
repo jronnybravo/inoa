@@ -17,7 +17,7 @@
 
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { CHECK_ORDER, type CheckKind, type CheckStatus } from '../src/lib/types.ts';
+import { tldKind, type CheckKind, type CheckStatus } from '../src/lib/types.ts';
 import {
     checkCandidate,
     checkOrder,
@@ -27,13 +27,17 @@ import {
     type Requirements
 } from './pipeline.ts';
 
-const ALL: Requirements = { com: true, appStore: true, playStore: true, google: true };
-const NONE: Requirements = { com: false, appStore: false, playStore: false, google: false };
+/**
+ * A run that asks about one domain, which is the shape every run had before
+ * the TLDs became a choice — so these cases still describe the same funnel.
+ */
+const COM = tldKind('com');
+const KINDS: CheckKind[] = [COM, 'appStore', 'playStore', 'google'];
 
-const requiring = (...kinds: CheckKind[]): Requirements => ({
-    ...NONE,
-    ...Object.fromEntries(kinds.map((kind) => [kind, true]))
-});
+const ALL: Requirements = KINDS;
+const NONE: Requirements = [];
+
+const requiring = (...kinds: CheckKind[]): Requirements => kinds;
 
 /**
  * Every check answered from a script, and a record of which were asked.
@@ -54,10 +58,10 @@ function scripted(script: Partial<Record<CheckKind, CheckStatus>>) {
 
 describe('computePassed', () => {
     it('passes only when every required check positively cleared', () => {
-        assert.equal(computePassed({ com: 'clear', appStore: 'clear' }, requiring('com')), true);
+        assert.equal(computePassed({ [COM]: 'clear', appStore: 'clear' }, requiring(COM)), true);
         assert.equal(
             computePassed(
-                { com: 'clear', appStore: 'clear', playStore: 'clear', google: 'clear' },
+                { [COM]: 'clear', appStore: 'clear', playStore: 'clear', google: 'clear' },
                 ALL
             ),
             true
@@ -65,8 +69,8 @@ describe('computePassed', () => {
     });
 
     it('ignores checks nobody required, however they came out', () => {
-        const statuses = { com: 'clear', appStore: 'taken', playStore: 'unknown' } as const;
-        assert.equal(computePassed(statuses, requiring('com')), true);
+        const statuses = { [COM]: 'clear', appStore: 'taken', playStore: 'unknown' } as const;
+        assert.equal(computePassed(statuses, requiring(COM)), true);
     });
 
     /*
@@ -75,12 +79,12 @@ describe('computePassed', () => {
      * answer is still coming, and this one has arrived.
      */
     it('does not pass an unknown, which is not a finding of absence', () => {
-        assert.equal(computePassed({ com: 'unknown' }, requiring('com')), false);
+        assert.equal(computePassed({ [COM]: 'unknown' }, requiring(COM)), false);
     });
 
     it('does not pass a required check that was skipped or taken', () => {
-        assert.equal(computePassed({ com: 'skipped' }, requiring('com')), false);
-        assert.equal(computePassed({ com: 'taken' }, requiring('com')), false);
+        assert.equal(computePassed({ [COM]: 'skipped' }, requiring(COM)), false);
+        assert.equal(computePassed({ [COM]: 'taken' }, requiring(COM)), false);
     });
 
     /*
@@ -90,13 +94,13 @@ describe('computePassed', () => {
      */
     it('withholds a verdict while a required check is pending', () => {
         assert.equal(
-            computePassed({ com: 'clear', google: 'pending' }, requiring('com', 'google')),
+            computePassed({ [COM]: 'clear', google: 'pending' }, requiring(COM, 'google')),
             null
         );
     });
 
     it('treats a missing key as pending rather than as absent evidence', () => {
-        assert.equal(computePassed({ com: 'clear' }, requiring('com', 'google')), null);
+        assert.equal(computePassed({ [COM]: 'clear' }, requiring(COM, 'google')), null);
     });
 
     it('passes a name with no requirements at all, having nothing to fail', () => {
@@ -106,29 +110,29 @@ describe('computePassed', () => {
 
 describe('checkOrder', () => {
     it('runs required checks first, each group in cost order', () => {
-        assert.deepEqual(checkOrder(requiring('playStore')), [
+        assert.deepEqual(checkOrder(KINDS, requiring('playStore')), [
             'playStore',
-            'com',
+            COM,
             'appStore',
             'google'
         ]);
-        assert.deepEqual(checkOrder(requiring('appStore', 'playStore')), [
+        assert.deepEqual(checkOrder(KINDS, requiring('appStore', 'playStore')), [
             'appStore',
             'playStore',
-            'com',
+            COM,
             'google'
         ]);
     });
 
     it('falls back to plain cost order when everything or nothing is required', () => {
-        assert.deepEqual(checkOrder(ALL), CHECK_ORDER);
-        assert.deepEqual(checkOrder(NONE), CHECK_ORDER);
+        assert.deepEqual(checkOrder(KINDS, ALL), KINDS);
+        assert.deepEqual(checkOrder(KINDS, NONE), KINDS);
     });
 
     it('names every check exactly once, whatever the requirements', () => {
-        for (const required of [ALL, NONE, requiring('google'), requiring('com', 'google')]) {
-            const order = checkOrder(required);
-            assert.deepEqual([...order].sort(), [...CHECK_ORDER].sort());
+        for (const required of [ALL, NONE, requiring('google'), requiring(COM, 'google')]) {
+            const order = checkOrder(KINDS, required);
+            assert.deepEqual([...order].sort(), [...KINDS].sort());
         }
     });
 });
@@ -167,23 +171,23 @@ describe('fastChecks', () => {
      */
     it('leaves the web check out of the funnel when no provider is configured', () => {
         clear();
-        assert.deepEqual(fastChecks(), ['com', 'appStore', 'playStore']);
+        assert.deepEqual(fastChecks(KINDS), [COM, 'appStore', 'playStore']);
     });
 
     it('runs every check inline once a provider can answer in seconds', () => {
         clear();
         process.env.TAVILY_API_KEY = 'tvly-test';
-        assert.deepEqual(fastChecks(), CHECK_ORDER);
+        assert.deepEqual(fastChecks(KINDS), KINDS);
     });
 });
 
 describe('checkCandidate — a required collision stops the funnel', () => {
     it('drops the name and marks everything after it skipped', async () => {
-        const { prior } = scripted({ com: 'taken' });
-        const result = await checkCandidate('Keystone', ALL, CHECK_ORDER, prior);
+        const { prior } = scripted({ [COM]: 'taken' });
+        const result = await checkCandidate('Keystone', ALL, KINDS, prior);
 
-        assert.equal(result.droppedBy, 'com');
-        assert.equal(result.statuses.com, 'taken');
+        assert.equal(result.droppedBy, COM);
+        assert.equal(result.statuses[COM], 'taken');
         assert.deepEqual(
             [result.statuses.appStore, result.statuses.playStore, result.statuses.google],
             ['skipped', 'skipped', 'skipped']
@@ -197,40 +201,40 @@ describe('checkCandidate — a required collision stops the funnel', () => {
      * a name that never reaches it is the cheapest kind of name.
      */
     it('never even asks the checks it skipped', async () => {
-        const { prior, asked } = scripted({ com: 'taken' });
-        await checkCandidate('Keystone', ALL, CHECK_ORDER, prior);
-        assert.deepEqual(asked, ['com']);
+        const { prior, asked } = scripted({ [COM]: 'taken' });
+        await checkCandidate('Keystone', ALL, KINDS, prior);
+        assert.deepEqual(asked, [COM]);
     });
 
     it('keeps the detail of the check that did the dropping', async () => {
-        const { prior } = scripted({ com: 'taken' });
-        const result = await checkCandidate('Keystone', ALL, CHECK_ORDER, prior);
-        assert.equal(result.detail.com, 'com: taken');
+        const { prior } = scripted({ [COM]: 'taken' });
+        const result = await checkCandidate('Keystone', ALL, KINDS, prior);
+        assert.equal(result.detail[COM], `${COM}: taken`);
     });
 });
 
 describe('checkCandidate — a check nobody required', () => {
     it('records a collision without dropping the name', async () => {
-        const { prior, asked } = scripted({ com: 'taken', appStore: 'clear' });
-        const result = await checkCandidate('Keystone', requiring('appStore'), CHECK_ORDER, prior);
+        const { prior, asked } = scripted({ [COM]: 'taken', appStore: 'clear' });
+        const result = await checkCandidate('Keystone', requiring('appStore'), KINDS, prior);
 
         assert.equal(result.droppedBy, null);
-        assert.equal(result.statuses.com, 'taken');
+        assert.equal(result.statuses[COM], 'taken');
         assert.equal(result.passed, true);
         // The funnel ran to the end, so the table is complete for a survivor.
-        assert.deepEqual([...asked].sort(), [...CHECK_ORDER].sort());
+        assert.deepEqual([...asked].sort(), [...KINDS].sort());
     });
 });
 
 describe('checkCandidate — unknown is not a pass and not a drop', () => {
     it('carries on through the remaining checks', async () => {
         const { prior, asked } = scripted({
-            com: 'clear',
+            [COM]: 'clear',
             appStore: 'unknown',
             playStore: 'clear',
             google: 'clear'
         });
-        const result = await checkCandidate('Keystone', ALL, CHECK_ORDER, prior);
+        const result = await checkCandidate('Keystone', ALL, KINDS, prior);
 
         assert.equal(result.droppedBy, null);
         assert.equal(result.statuses.playStore, 'clear', 'the funnel kept going');
@@ -241,12 +245,20 @@ describe('checkCandidate — unknown is not a pass and not a drop', () => {
 
 describe('checkCandidate — the checks this pass owns', () => {
     it('leaves a check outside its remit pending rather than guessing', async () => {
-        const { prior, asked } = scripted({ com: 'clear', appStore: 'clear', playStore: 'clear' });
+        const { prior, asked } = scripted({
+            [COM]: 'clear',
+            appStore: 'clear',
+            playStore: 'clear'
+        });
+        // The fifth argument is every check the run makes; the third is the
+        // ones this pass is responsible for. That gap is the whole subject
+        // here — a deferred check has to exist and be pending, not be absent.
         const result = await checkCandidate(
             'Keystone',
             ALL,
-            ['com', 'appStore', 'playStore'],
-            prior
+            [COM, 'appStore', 'playStore'],
+            prior,
+            KINDS
         );
 
         assert.equal(result.statuses.google, 'pending');
@@ -261,8 +273,8 @@ describe('checkCandidate — the checks this pass owns', () => {
      * dropped name should read 'skipped' — this pass must not decide it here.
      */
     it('does not mark a deferred check skipped when an earlier gate drops', async () => {
-        const { prior } = scripted({ com: 'taken' });
-        const result = await checkCandidate('Keystone', ALL, ['com', 'appStore'], prior);
+        const { prior } = scripted({ [COM]: 'taken' });
+        const result = await checkCandidate('Keystone', ALL, [COM, 'appStore'], prior, KINDS);
 
         assert.equal(result.statuses.appStore, 'skipped');
         assert.equal(result.statuses.google, 'pending');
@@ -270,7 +282,7 @@ describe('checkCandidate — the checks this pass owns', () => {
 
     it('asks the required check first, whatever order the kinds arrive in', async () => {
         const { prior, asked } = scripted({ playStore: 'clear' });
-        await checkCandidate('Keystone', requiring('playStore'), CHECK_ORDER, prior);
+        await checkCandidate('Keystone', requiring('playStore'), KINDS, prior);
         assert.equal(asked[0], 'playStore');
     });
 });

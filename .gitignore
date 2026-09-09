@@ -52,3 +52,5 @@ Thumbs.db
 agentdb.rvf
 agentdb.rvf.idmap.json
 ruvector.db
+.impeccable/
+agentdb.*

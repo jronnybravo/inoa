@@ -27,11 +27,12 @@
  * and is paced in seconds, not minutes.
  */
 
+import { candidateStatuses } from '../src/lib/checks.ts';
 import { Candidate } from '../src/lib/server/entities/candidate.ts';
 import { jitter, sleep, type CheckOutcome } from './checks/shared.ts';
 import { checkWeb, hasSearchApi } from './checks/web.ts';
 import { computePassed, type Requirements } from './pipeline.ts';
-import type { CheckKind, CheckStatus } from '../src/lib/types.ts';
+import type { CheckStatus, CheckStatuses } from '../src/lib/types.ts';
 
 /** One a minute when we are driving a browser; seconds when Brave answers. */
 const BROWSER_INTERVAL_MS = Number(process.env.INOA_WEB_INTERVAL_MS ?? 60_000);
@@ -121,10 +122,9 @@ export async function drainWebQueue(
             continue;
         }
 
-        const statuses: Partial<Record<CheckKind, CheckStatus>> = {
-            com: candidate.com,
-            appStore: candidate.appStore,
-            playStore: candidate.playStore,
+        // Everything already on record, with the verdict this queue just made.
+        const statuses: CheckStatuses = {
+            ...candidateStatuses(candidate),
             google: outcome.status
         };
 
@@ -165,15 +165,7 @@ export async function drainWebQueue(
         await candidates.update(candidate.id, {
             google: 'unknown',
             detail: { ...candidate.detail, google: 'Search was blocked; not verified' },
-            passed: computePassed(
-                {
-                    com: candidate.com,
-                    appStore: candidate.appStore,
-                    playStore: candidate.playStore,
-                    google: 'unknown'
-                },
-                required
-            )
+            passed: computePassed({ ...candidateStatuses(candidate), google: 'unknown' }, required)
         });
     }
 

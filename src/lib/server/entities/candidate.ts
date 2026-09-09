@@ -17,6 +17,15 @@ export class Candidate extends BaseEntity {
     /** Which naming approach produced it. Null for runs made before this existed. */
     strategy!: string | null;
     position!: number;
+    /**
+     * One verdict per TLD this run asked for, keyed by the bare TLD.
+     *
+     * A column each stopped being possible when the TLDs became the person's
+     * choice out of a thousand. Null on rows written before that, whose single
+     * .com verdict is in the column below.
+     */
+    domains!: Record<string, CheckStatus> | null;
+    /** @deprecated Superseded by `domains`. Read-only, for old rows. */
     com!: CheckStatus;
     appStore!: CheckStatus;
     playStore!: CheckStatus;
@@ -43,6 +52,7 @@ export const CandidateSchema = new EntitySchema<Candidate>({
         rationale: { type: 'text', nullable: true },
         strategy: { ...short, nullable: true },
         position: { type: 'int', default: 0 },
+        domains: { type: JSON_TYPE, nullable: true },
         com: { ...short, default: 'pending' },
         appStore: { ...short, default: 'pending' },
         playStore: { ...short, default: 'pending' },

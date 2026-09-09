@@ -153,5 +153,19 @@ export default ts.config(
          */
         files: ['*.config.js', '*.config.ts'],
         extends: [ts.configs.disableTypeChecked]
+    },
+
+    {
+        /*
+         * Linted, but not type-aware.
+         *
+         * scripts/ runs under plain Node before anything is built and is not
+         * in the app's tsconfig, so the typed rules have no program to consult
+         * and error out on the file rather than checking it. The ordinary
+         * rules still apply.
+         */
+        files: ['scripts/**/*.mjs'],
+        languageOptions: { parserOptions: { projectService: false, project: false } },
+        extends: [ts.configs.disableTypeChecked]
     }
 );

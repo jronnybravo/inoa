@@ -1,9 +1,12 @@
+import { runChecks } from '$lib/checks';
 import { searchConfigured } from '$lib/search';
 import { db } from '$lib/server/db';
 import { mailConfigured } from '$lib/server/email';
 import { Candidate } from '$lib/server/entities/candidate';
 import { Run } from '$lib/server/entities/run';
 import { candidateView, runView } from '$lib/server/views';
+import { STORE_ORDER } from '$lib/types';
+import type { RunSettings } from '$lib/types';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -11,6 +14,50 @@ import type { PageServerLoad } from './$types';
  * an editable form; with it the same fields render locked, above the results as
  * they arrive.
  */
+/** Everything the form asks for, read off a run that already answered it. */
+async function settingsOf(id: string): Promise<RunSettings | null> {
+    try {
+        await db();
+        const run = await Run.findOneBy({ id });
+        if (!run) {
+            return null;
+        }
+        /*
+         * Through runChecks, not off the columns.
+         *
+         * It is the one place that knows what a null tlds list means on a run
+         * from before the TLDs were a choice, and what a null stores list
+         * means on one from before the stores were. Reading the columns here
+         * would be a second copy of that, and the older half of it is exactly
+         * the half nobody would remember to update.
+         */
+        const { kinds, required } = runChecks(run);
+        const named = (prefix: string, from: readonly string[]): string[] =>
+            from.filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length));
+        const stores = (from: readonly string[]): string[] =>
+            STORE_ORDER.filter((kind) => from.includes(kind));
+
+        return {
+            brief: run.brief,
+            strategies: run.strategies ?? [],
+            languages: run.languages ?? [],
+            tlds: named('tld:', kinds),
+            requiredTlds: named('tld:', required),
+            handles: named('at:', kinds),
+            requiredHandles: named('at:', required),
+            stores: stores(kinds),
+            requiredStores: stores(required),
+            webLinks: run.webLinks,
+            targetCount: run.targetCount,
+            // Never the address. It is masked everywhere else it is shown, and
+            // an unmasked one here would be a way to read it back off a link.
+            email: null
+        };
+    } catch {
+        return null;
+    }
+}
+
 export const load: PageServerLoad = async ({ url }) => {
     /*
      * Whether this deployment can send mail decides whether the form asks for
@@ -23,7 +70,16 @@ export const load: PageServerLoad = async ({ url }) => {
 
     const id = url.searchParams.get('requestid');
     if (!id) {
-        return { run: null, mail, search };
+        /*
+         * ?from= is this same empty form with a run's settings already in it.
+         *
+         * 'Edit the options and run again' needs no second screen — editing
+         * settings is what this form is, and the only thing missing was a way
+         * to arrive with them filled in. A separate copy of every control
+         * rendered somewhere else would be two forms to keep in step.
+         */
+        const from = url.searchParams.get('from');
+        return { run: null, mail, search, prefill: from ? await settingsOf(from) : null };
     }
 
     try {

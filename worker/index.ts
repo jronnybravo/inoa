@@ -173,24 +173,25 @@ async function processRun(run: Run): Promise<void> {
          */
         const stopped = (): boolean => stop.aborted;
         /**
-         * Resume rather than start over where that is possible.
+         * Top up. Never start over.
          *
-         * Generation is the expensive half. An attempt that already produced the
-         * full set and died during checking should carry on checking; only a
-         * half-generated set has to be discarded, because topping it up would need
-         * the exclusion list that died with the process.
+         * A half-generated set used to be deleted and regenerated, on the
+         * grounds that topping it up needed an exclusion list that died with
+         * the process. It did not — the names are rows, and reading them back
+         * is one query. Deleting them threw away real model calls to avoid a
+         * SELECT.
+         *
+         * Which is also what 'find more' asks for: the same run, its target
+         * raised, everything already found kept. One rule covers both, so
+         * there is no mode to get wrong.
          */
-        const leftover = await Candidate.countBy({ runId: run.id });
-        const resuming = leftover >= run.targetCount;
-
-        if (leftover > 0 && !resuming) {
-            await Candidate.delete({ runId: run.id });
-            await log(
-                `Restarting — discarded ${leftover} partial names from an interrupted attempt`,
-                'warn'
-            );
-            await Run.update(run.id, { generatedCount: 0, checkedCount: 0 });
-        }
+        const held = await Candidate.find({
+            where: { runId: run.id },
+            order: { position: 'ASC' }
+        });
+        const leftover = held.length;
+        const wanted = Math.max(0, run.targetCount - leftover);
+        const resuming = wanted === 0;
 
         /**
          * Generation and checking run together.
@@ -205,15 +206,15 @@ async function processRun(run: Run): Promise<void> {
 
         if (resuming) {
             await log(`Resuming — ${leftover} names already generated`, 'success');
+        } else if (leftover > 0) {
+            await log(`Adding ${wanted} names to the ${leftover} already found`, 'success');
         } else {
             await log(`Generating ${run.targetCount} names`);
         }
 
         const generating = resuming
             ? Promise.resolve(
-                  (
-                      await Candidate.find({ where: { runId: run.id }, order: { position: 'ASC' } })
-                  ).map((c) => ({
+                  held.map((c) => ({
                       name: c.name,
                       rationale: c.rationale ?? '',
                       strategy: (c.strategy ?? 'compound') as never
@@ -222,7 +223,7 @@ async function processRun(run: Run): Promise<void> {
             : generateNames(
                   run.brief,
                   (run.strategies ?? ['compound']) as never,
-                  run.targetCount,
+                  wanted,
                   languagesCovered(run.languages ?? []),
                   async (fresh, total) => {
                       if (fresh.length > 0) {
@@ -237,16 +238,24 @@ async function processRun(run: Run): Promise<void> {
                           );
                           stored_count += fresh.length;
                       }
-                      await Run.update(run.id, { generatedCount: total });
-                      await log(`Generated ${total} of ${run.targetCount}`);
+                      await Run.update(run.id, { generatedCount: leftover + total });
+                      await log(`Generated ${leftover + total} of ${run.targetCount}`);
                   },
-                  async (reason) => log(`Generation: ${reason}`, 'warn')
+                  async (reason) => log(`Generation: ${reason}`, 'warn'),
+                  held.map((c) => c.name)
               );
 
         // Whichever TLDs this run asked for, plus the stores it required.
         const { kinds: all, required } = runChecks(run);
 
-        let checked = 0;
+        /*
+         * Seeded, not zeroed.
+         *
+         * The page reads this counter, and a run being topped up has already
+         * checked everything it held — starting from zero would walk the
+         * number backwards in front of somebody watching.
+         */
+        let checked = held.filter((c) => c.checkedAt).length;
 
         const kinds = fastChecks(all);
         const deferWeb = defersWeb(all);

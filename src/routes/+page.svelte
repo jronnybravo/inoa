@@ -38,8 +38,19 @@
      */
     const watching = $derived(Boolean(data.run));
 
-    let brief = $state(data.run?.brief ?? '');
-    let strategies = $state<string[]>(data.run?.strategies ?? ['compound', 'invented']);
+    /**
+     * A finished run's settings, when this form was opened from one.
+     *
+     * Every field below reads it before its own default, so ?from= lands you
+     * on the form you would have filled in — with one thing changed being the
+     * point, rather than all of it retyped.
+     */
+    const seed = data.prefill ?? null;
+
+    let brief = $state(data.run?.brief ?? seed?.brief ?? '');
+    let strategies = $state<string[]>(
+        data.run?.strategies ?? seed?.strategies ?? ['compound', 'invented']
+    );
 
     /**
      * Which languages 'Other languages' may draw on. Empty means any.
@@ -48,7 +59,7 @@
      * unconstrained is what the approach meant before it could be narrowed,
      * and it is still right for somebody with no preference.
      */
-    let languages = $state<string[]>([]);
+    let languages = $state<string[]>(seed?.languages ?? []);
     let languageQuery = $state('');
 
     /**
@@ -148,8 +159,8 @@
      * end a name. Everything picked is checked and reported; only the required
      * ones drop anything.
      */
-    let tlds = $state<string[]>(['com']);
-    let requiredTlds = $state<string[]>(['com']);
+    let tlds = $state<string[]>(seed?.tlds ?? ['com']);
+    let requiredTlds = $state<string[]>(seed?.requiredTlds ?? ['com']);
 
     /**
      * Social handles, the same two questions as the domains.
@@ -159,8 +170,8 @@
      * for a free handle, and most do not. Off by default: a name can be a good
      * name without a matching GitHub org.
      */
-    let handles = $state<string[]>([...DEFAULT_PLATFORMS]);
-    let requiredHandles = $state<string[]>([]);
+    let handles = $state<string[]>(seed?.handles ?? [...DEFAULT_PLATFORMS]);
+    let requiredHandles = $state<string[]>(seed?.requiredHandles ?? []);
 
     let handleQuery = $state('');
 
@@ -225,9 +236,9 @@
      */
     let stores = $state<string[]>(
         // The web check is only offered where something can answer it.
-        data.search ? [...STORE_ORDER] : STORE_ORDER.filter((k) => k !== 'google')
+        seed?.stores ?? (data.search ? [...STORE_ORDER] : STORE_ORDER.filter((k) => k !== 'google'))
     );
-    let requiredStores = $state<string[]>(['appStore', 'playStore']);
+    let requiredStores = $state<string[]>(seed?.requiredStores ?? ['appStore', 'playStore']);
 
     /**
      * A Web column of search links, in place of a web check.
@@ -239,7 +250,7 @@
      */
     // let, not const: bind:checked writes to it, which prefer-const cannot see.
 
-    let webLinks = $state(false);
+    let webLinks = $state(seed?.webLinks ?? false);
 
     /**
      * What goes after the nth item of a spoken list: ', ' between, ' or ' last.
@@ -343,7 +354,7 @@
     };
 
     let email = $state(data.run?.email ?? '');
-    let targetCount = $state(data.run?.targetCount ?? 1000);
+    let targetCount = $state(data.run?.targetCount ?? seed?.targetCount ?? 1000);
 
     /**
      * What this selection will cost, in requests.
@@ -888,6 +899,11 @@
         short: 'Abstract'
     };
 
+    /** One look for the three rerun controls, two of which are buttons and one a link. */
+    const RERUN =
+        'rounded-lg border border-stone-500 px-3 py-1.5 text-sm transition-colors ' +
+        'duration-150 hover:bg-stone-100 dark:hover:bg-stone-800';
+
     /** The hairline under a sticky header, which a border would scroll away from. */
     const FILTER_INPUT =
         'w-full rounded border bg-white px-1.5 py-1 text-xs font-normal ' +
@@ -1150,6 +1166,70 @@
     }
 
     /**
+     * Which rerun is in flight, so its own button says so and both are held.
+     *
+     * Empty when nothing is running, which is also what the buttons read to
+     * decide whether they are disabled.
+     */
+    let rerunning = $state<'' | 'fresh' | 'continue'>('');
+    /**
+     * Bumped to restart polling.
+     *
+     * The poll loop returns for good when a run reaches a terminal status,
+     * which is right — and wrong the moment a finished run is asked for more
+     * names, because the page is then watching something that has started
+     * moving again. Reading this inside the effect is what lets that happen
+     * without a reload.
+     */
+    let pollEpoch = $state(0);
+
+    /**
+     * Run these settings again.
+     *
+     * 'fresh' is a new run beside this one: the settings copied, the names
+     * gone. 'continue' is this run asked for as many again, keeping every
+     * name and every verdict already paid for.
+     *
+     * Changing something first is neither of these — that is `?from=`, which
+     * is this run's settings loaded into the compose form.
+     */
+    async function rerun(mode: 'fresh' | 'continue') {
+        const current = run;
+        if (!current || rerunning) {
+            return;
+        }
+        rerunning = mode;
+        problem = '';
+        try {
+            const response = await fetch(`/api/runs/${current.id}/rerun`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ mode })
+            });
+            const body = (await response.json()) as { id?: string; message?: string };
+            if (!response.ok || !body.id) {
+                throw new Error(body.message ?? 'Could not start it again');
+            }
+            if (mode === 'fresh') {
+                await openRun(body.id);
+                return;
+            }
+            /*
+             * Same run, same URL, so there is nothing to navigate to — but the
+             * poll stopped when this run finished and has to be told the run
+             * is moving again. Optimistic on the status so the strip does not
+             * sit on 'Done' for a tick and a half.
+             */
+            run = { ...current, status: 'queued' };
+            pollEpoch += 1;
+        } catch (e) {
+            problem = (e as Error).message;
+        } finally {
+            rerunning = '';
+        }
+    }
+
+    /**
      * Reopen the prompt for a run that is already waiting on a code.
      *
      * Closing the dialog leaves the run in 'awaiting_verification', which no
@@ -1235,6 +1315,9 @@
         if (!data.run) {
             return;
         }
+        // Read, not used: this is what a rerun bumps to bring the loop back
+        // after it retired on a terminal status.
+        void pollEpoch;
         // Redundant while the layout keys this component on the run id, and
         // kept because it costs nothing: the run on screen should follow the
         // run in `data` whether or not something above decides to remount.
@@ -2356,6 +2439,42 @@
                 >
             </div>
         {/each}
+
+        <!--
+            Three ways to run this again, where the run's own numbers are.
+
+            'Again' means two different things and the difference is the whole
+            decision: a brief that produced nothing usable wants a clean sheet,
+            one that produced four good names wants a fifth — and starting over
+            would throw those four away along with every check paid for.
+
+            Changing something first is the third, and it is a link rather than
+            a button: it goes to the compose form with these settings in it,
+            which is the screen for editing settings.
+        -->
+        {#if finished}
+            <div class="ml-auto flex flex-wrap items-center gap-2">
+                <button
+                    onclick={() => rerun('continue')}
+                    disabled={rerunning !== ''}
+                    title="Keep every name and verdict here, and look for as many again."
+                    class="{RERUN} disabled:opacity-40"
+                    >{rerunning === 'continue' ? 'Asking…' : 'Find more'}</button
+                >
+                <button
+                    onclick={() => rerun('fresh')}
+                    disabled={rerunning !== ''}
+                    title="A new run beside this one: same settings, no names carried over."
+                    class="{RERUN} disabled:opacity-40"
+                    >{rerunning === 'fresh' ? 'Starting…' : 'Run again'}</button
+                >
+                <a
+                    href="{resolve('/')}?from={run.id}"
+                    title="The compose form, with these settings already in it."
+                    class={RERUN}>Edit and run</a
+                >
+            </div>
+        {/if}
     </section>
 
     <!--

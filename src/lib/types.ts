@@ -180,6 +180,28 @@ export interface CandidateView {
     droppedBy: CheckKind | null;
 }
 
+/**
+ * The settings a run was composed with, as the form takes them.
+ *
+ * Written down as a type because it now travels: out of a finished run,
+ * through ?from=, and back into the fields somebody is about to change.
+ */
+export interface RunSettings {
+    brief: string;
+    strategies: string[];
+    languages: string[];
+    tlds: string[];
+    requiredTlds: string[];
+    handles: string[];
+    requiredHandles: string[];
+    stores: string[];
+    requiredStores: string[];
+    webLinks: boolean;
+    targetCount: number;
+    /** Always null over the wire — the address is never sent back out. */
+    email: string | null;
+}
+
 export interface RunView {
     id: string;
     brief: string;

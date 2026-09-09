@@ -289,9 +289,19 @@ export async function generateNames(
      * makes a working run look like a stalled one.
      */
     onBatch?: (fresh: GeneratedName[], total: number) => Promise<void> | void,
-    onProblem?: (reason: string) => Promise<void> | void
+    onProblem?: (reason: string) => Promise<void> | void,
+    /**
+     * Names this run already holds, which the new ones must not repeat.
+     *
+     * `target` counts what is produced here, not what the run ends up with, so
+     * a run topping itself up asks for the shortfall and hands over what it
+     * already has. Seeded into the same set the batches build, which is what
+     * every request's exclusion list is read from — so a name found an hour
+     * ago is avoided exactly as firmly as one found a second ago.
+     */
+    already: string[] = []
 ): Promise<GeneratedName[]> {
-    const seen = new Set<string>();
+    const seen = new Set(already.map((name) => name.toLowerCase()));
     const all: GeneratedName[] = [];
 
     /**

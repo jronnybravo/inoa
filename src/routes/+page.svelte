@@ -552,6 +552,17 @@
      */
     let verifyProblem = $state('');
 
+    /**
+     * What came of the last request for another code.
+     *
+     * Its own line rather than `verifyProblem`, which describes the code that
+     * was typed. 'Give it 40 more seconds' is not a verdict on six digits, and
+     * putting it where a wrong-code message goes reads as one.
+     */
+    let resendNote = $state('');
+    let resendOk = $state(false);
+    let resending = $state(false);
+
     let run = $state<RunView | null>(data.run ?? null);
     // Seeded from the server load, so a finished run is populated at first
     // paint rather than after the first poll.
@@ -1134,7 +1145,48 @@
      */
     function askForCode() {
         verifyProblem = '';
+        resendNote = '';
         verifyDialog?.showModal();
+    }
+
+    /**
+     * Ask for another code.
+     *
+     * The reason this exists: a code lasts twenty minutes and tolerates six
+     * wrong guesses, and past either the run was stranded in a status nothing
+     * could move it out of. The only way on was to compose it all again.
+     */
+    async function resendCode() {
+        resending = true;
+        resendNote = '';
+        try {
+            const response = await fetch(`/api/runs/${pendingRunId}/resend`, { method: 'POST' });
+            const body = (await response.json()) as {
+                sent?: boolean;
+                problem?: string;
+                message?: string;
+                minutes?: number;
+            };
+            if (!response.ok) {
+                throw new Error(body.message ?? 'Could not send another code');
+            }
+            resendOk = body.sent === true;
+            resendNote = body.sent
+                ? `A new code is on its way to ${email}. It is good for ${body.minutes} minutes.`
+                : (body.problem ?? 'The code could not be sent.');
+            if (body.sent) {
+                // The old digits are dead the moment a newer code exists, so
+                // leaving them in the box invites one more wrong attempt.
+                code = '';
+                verifyProblem = '';
+                emailProblem = '';
+            }
+        } catch (e) {
+            resendOk = false;
+            resendNote = (e as Error).message;
+        } finally {
+            resending = false;
+        }
     }
 
     async function verify() {
@@ -2107,6 +2159,15 @@
             {#if verifyProblem}
                 <p class="mt-2 text-sm text-rose-700 dark:text-rose-400">{verifyProblem}</p>
             {/if}
+            {#if resendNote}
+                <p
+                    class="mt-2 text-sm {resendOk
+                        ? 'text-stone-600 dark:text-stone-400'
+                        : 'text-rose-700 dark:text-rose-400'}"
+                >
+                    {resendNote}
+                </p>
+            {/if}
             <!--
                 Closing is not cancelling. The run exists and is waiting on this
                 code; the header button becomes 'Enter code' and brings the
@@ -2116,11 +2177,26 @@
                 <p class="text-xs text-stone-500">
                     Close this and the run waits. Reopen it from Enter code.
                 </p>
-                <button
-                    onclick={() => verifyDialog?.close()}
-                    class="rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-100
-                           hover:bg-stone-100 dark:hover:bg-stone-800">Close</button
-                >
+                <div class="flex items-center gap-1">
+                    <!--
+                        Quiet, but present. A code that never arrived or has
+                        since expired used to leave the run stranded, and the
+                        only route on was to fill the form in again.
+                    -->
+                    <button
+                        onclick={resendCode}
+                        disabled={resending}
+                        class="rounded-lg px-3 py-2 text-sm font-medium transition-colors
+                               duration-100 hover:bg-stone-100 disabled:opacity-40
+                               dark:hover:bg-stone-800"
+                        >{resending ? 'Sending…' : 'Send another code'}</button
+                    >
+                    <button
+                        onclick={() => verifyDialog?.close()}
+                        class="rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-100
+                               hover:bg-stone-100 dark:hover:bg-stone-800">Close</button
+                    >
+                </div>
             </div>
         </dialog>
     </section>

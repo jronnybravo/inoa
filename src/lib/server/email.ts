@@ -43,7 +43,16 @@ export function mailConfigured(): boolean {
     return Boolean(process.env.RESEND_API_KEY);
 }
 
-export async function sendVerificationCode(to: string, code: string): Promise<SendResult> {
+/**
+ * `minutes` travels with the code rather than being repeated here: the mail
+ * says how long the code lasts, and the only thing that knows is whatever
+ * issued it.
+ */
+export async function sendVerificationCode(
+    to: string,
+    code: string,
+    minutes: number
+): Promise<SendResult> {
     const resend = client();
     if (!resend) {
         return { sent: false, reason: 'No RESEND_API_KEY configured' };
@@ -53,7 +62,7 @@ export async function sendVerificationCode(to: string, code: string): Promise<Se
             from,
             to,
             subject: `${code} is your verification code`,
-            text: `Your verification code is ${code}. It expires in 20 minutes.`
+            text: `Your verification code is ${code}. It expires in ${minutes} minutes.`
         });
         if (error) {
             return { sent: false, reason: error.message };

@@ -1,4 +1,3 @@
-import { randomInt } from 'node:crypto';
 import { json, error } from '@sveltejs/kit';
 import { IsNull, Not } from 'typeorm';
 import { z } from 'zod';
@@ -6,9 +5,10 @@ import { isPlatform } from '$lib/handles';
 import { isLanguage } from '$lib/languages';
 import { searchConfigured } from '$lib/search';
 import { db } from '$lib/server/db';
-import { mailConfigured, sendVerificationCode } from '$lib/server/email';
+import { mailConfigured } from '$lib/server/email';
 import { Run } from '$lib/server/entities/run';
 import { Verification } from '$lib/server/entities/verification';
+import { issueCode } from '$lib/server/verification';
 import { isTld } from '$lib/tlds';
 import { STORE_ORDER, STRATEGIES, type StrategyId } from '$lib/types';
 import type { RequestHandler } from './$types';
@@ -189,16 +189,7 @@ export const POST: RequestHandler = async ({ request }) => {
         emailVerified: false
     }).save();
 
-    // Six digits, from a CSPRNG rather than Math.random.
-    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    await Verification.create({
-        runId: run.id,
-        email,
-        code,
-        expiresAt: new Date(Date.now() + 20 * 60_000)
-    }).save();
-
-    const { sent, reason } = await sendVerificationCode(email, code);
+    const { sent, reason } = await issueCode(run.id, email);
     // The reason travels to the client: a run whose code never arrived is
     // otherwise indistinguishable from one the user simply has not opened yet.
     return json({ id: run.id, verified: false, emailSent: sent, emailProblem: reason });

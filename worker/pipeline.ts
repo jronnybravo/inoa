@@ -126,6 +126,23 @@ export function fastChecks(kinds: CheckKind[]): CheckKind[] {
 }
 
 /**
+ * Is this run's web check being left to the slow queue?
+ *
+ * Both halves matter. `fastChecks` removes the web check when there is no
+ * search API, so a run that wanted it needs the browser queue afterwards — but
+ * a run that never asked for the web check is missing it for the other reason,
+ * and reads identically if you only look at what came back.
+ *
+ * That is worth a function rather than an expression at the call site, because
+ * getting it wrong is silent: the queue then browser-scrapes every surviving
+ * name at a minute apiece for a check nobody asked for, and the only symptom
+ * is a run that takes hours.
+ */
+export function defersWeb(all: CheckKind[]): boolean {
+    return all.includes('google') && !fastChecks(all).includes('google');
+}
+
+/**
  * A verdict this name already has from an earlier run, if any.
  *
  * Passed in rather than looked up here, so the funnel stays a pure sequence of

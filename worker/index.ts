@@ -28,7 +28,7 @@ import { sleep } from './checks/shared.ts';
 import { closeBrowser } from './checks/web.ts';
 import { generateNames } from './generate.ts';
 import { makeLogger } from './log.ts';
-import { checkCandidate, fastChecks } from './pipeline.ts';
+import { checkCandidate, defersWeb, fastChecks } from './pipeline.ts';
 import { drainWebQueue } from './webqueue.ts';
 
 /**
@@ -249,7 +249,7 @@ async function processRun(run: Run): Promise<void> {
         let checked = 0;
 
         const kinds = fastChecks(all);
-        const deferWeb = !kinds.includes('google');
+        const deferWeb = defersWeb(all);
 
         /** Drain names as they appear, and keep draining until generation is over. */
         const checking = (async () => {

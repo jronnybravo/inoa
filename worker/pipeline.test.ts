@@ -22,6 +22,7 @@ import {
     checkCandidate,
     checkOrder,
     computePassed,
+    defersWeb,
     fastChecks,
     type PriorVerdict,
     type Requirements
@@ -137,7 +138,7 @@ describe('checkOrder', () => {
     });
 });
 
-describe('fastChecks', () => {
+describe('where the web check runs', () => {
     const KEYS = [
         'TAVILY_API_KEY',
         'FIRECRAWL_API_KEY',
@@ -178,6 +179,41 @@ describe('fastChecks', () => {
         clear();
         process.env.TAVILY_API_KEY = 'tvly-test';
         assert.deepEqual(fastChecks(KINDS), KINDS);
+    });
+
+    /*
+     * The web check can be absent from the funnel for two unrelated reasons,
+     * and the browser queue is only the answer to one of them.
+     *
+     * This was a live bug. `!fastChecks(all).includes('google')` was written
+     * when every run checked the web, so it could only mean 'wanted, but too
+     * slow to run inline'. Once the stores became a choice, a run that had
+     * declined the web check answered the same way — and every surviving name
+     * went to the browser queue at a minute apiece for a check nobody asked
+     * for. A three-hundred name run took about five hours to admit it was done.
+     */
+    const noWeb: CheckKind[] = [COM, 'appStore', 'playStore'];
+
+    it('defers a wanted web check when nothing can answer it quickly', () => {
+        clear();
+        assert.equal(defersWeb(KINDS), true);
+    });
+
+    it('does not defer a web check that is running inline', () => {
+        clear();
+        process.env.TAVILY_API_KEY = 'tvly-test';
+        assert.equal(defersWeb(KINDS), false);
+    });
+
+    it('does not defer a web check the run never asked for', () => {
+        clear();
+        assert.equal(defersWeb(noWeb), false);
+    });
+
+    it('still does not defer one the run declined, key or no key', () => {
+        clear();
+        process.env.TAVILY_API_KEY = 'tvly-test';
+        assert.equal(defersWeb(noWeb), false);
     });
 });
 

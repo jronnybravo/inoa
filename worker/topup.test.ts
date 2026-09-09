@@ -20,7 +20,7 @@
 
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import { generateNames } from './generate.ts';
+import { exclusions, generateNames, promptFor } from './generate.ts';
 
 const BRIEF = 'A marketplace connecting local farms to restaurant kitchens in coastal towns.';
 
@@ -89,5 +89,89 @@ describe('generating more for a run that already has names', () => {
     /* An empty list is the ordinary case, and must behave as it always did. */
     it('is unchanged for a run starting from nothing', async () => {
         assert.deepEqual(names(await compose(10, [])), names(await compose(10)));
+    });
+});
+
+/**
+ * Which names a request is told not to repeat.
+ *
+ * The list is a thrift, not a correctness measure — `absorb` is what actually
+ * guarantees no duplicate is kept. But a request that is not told about a name
+ * will happily propose it, and every one it proposes is a name paid for and
+ * thrown away on arrival, so what gets left out matters.
+ */
+describe('the exclusion list a request carries', () => {
+    const many = (n: number, prefix = 'Name'): string[] =>
+        Array.from({ length: n }, (_, i) => `${prefix}${i.toString().padStart(4, '0')}`);
+
+    it('sends the lot when the lot fits', () => {
+        const all = many(50);
+        const listed = exclusions(all);
+        assert.equal(listed.complete, true);
+        assert.deepEqual(listed.names, all);
+    });
+
+    it('says so when it cannot', () => {
+        const listed = exclusions(many(4000));
+        assert.equal(listed.complete, false);
+        assert.ok(listed.names.length < 4000);
+    });
+
+    it('spends the budget it is given and no more', () => {
+        const listed = exclusions(many(4000), 1_000);
+        const width = listed.names.join(', ').length;
+        assert.ok(width <= 1_000, `used ${width} characters of a 1,000 budget`);
+        assert.ok(width > 800, `used only ${width} of 1,000 — the budget is going to waste`);
+    });
+
+    /*
+     * The bug this replaced. `slice(-400)` kept the newest, and on a run being
+     * topped up the run's own names are seeded into the set first — so the
+     * names the model had never been told about were the first to be dropped.
+     */
+    it('keeps a share of the oldest names, not only the newest', () => {
+        const held = many(3000, 'Held');
+        const listed = exclusions(held, 2_000);
+
+        const first = held.slice(0, 500);
+        const last = held.slice(-500);
+        const kept = new Set(listed.names);
+
+        assert.ok(
+            first.some((n) => kept.has(n)),
+            'nothing from the start of the list survived, which is what slice(-400) did'
+        );
+        assert.ok(
+            last.some((n) => kept.has(n)),
+            'nothing from the end of the list survived'
+        );
+    });
+
+    it('holds no opinion about an empty list', () => {
+        assert.deepEqual(exclusions([]), { names: [], complete: true });
+    });
+});
+
+describe('what the request says about the names it must not repeat', () => {
+    const many = (n: number): string[] =>
+        Array.from({ length: n }, (_, i) => `Name${i.toString().padStart(4, '0')}`);
+
+    it('names them plainly when it can name them all', () => {
+        const prompt = promptFor(BRIEF, 'compound', 20, ['Brivos', 'Lumora']);
+        assert.match(prompt, /Do not repeat any of these already-generated names: Brivos, Lumora/);
+    });
+
+    /*
+     * A partial list offered as a complete one is a small lie with a cost: it
+     * invites the model to treat everything unlisted as fair game, which is
+     * the opposite of what a truncated list means.
+     */
+    it('admits when the list is a sample, and of how many', () => {
+        const prompt = promptFor(BRIEF, 'compound', 20, many(4000));
+        assert.match(prompt, /these \d+ of the 4000 already-generated names/);
+    });
+
+    it('says nothing at all when there is nothing to avoid', () => {
+        assert.doesNotMatch(promptFor(BRIEF, 'compound', 20, []), /Do not repeat/);
     });
 });

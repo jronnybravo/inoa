@@ -40,6 +40,57 @@ const BATCH_SIZE = Number(process.env.INOA_BATCH_SIZE ?? 50);
  */
 const CONCURRENCY = Number(process.env.INOA_CONCURRENCY ?? 5);
 
+/**
+ * How much of a request may be spent listing names not to repeat.
+ *
+ * Characters rather than a count of names, because characters are what costs.
+ * Twelve thousand is roughly three thousand tokens — a small fraction of any
+ * model's window, and enough for about fifteen hundred names, which is more
+ * than most runs ever hold.
+ */
+const AVOID_BUDGET = 12_000;
+
+/**
+ * Which already-generated names to name, when there are more than fit.
+ *
+ * The cap used to be `slice(-400)`: the last four hundred, silently. On a run
+ * being topped up that is exactly the wrong four hundred — the names it
+ * already held are seeded into the set first and so were dropped first, and
+ * those are precisely the ones the model has never been told about. It would
+ * happily propose them again, and every one it proposed was a name paid for
+ * and thrown away by the dedupe on arrival.
+ *
+ * An even stride keeps a share of every era instead: some of what the run
+ * started with, some of what the last batch returned. The prompt says how many
+ * of how many, so a partial list is never offered as a complete one.
+ *
+ * This is a thrift, not a correctness measure. `absorb` is what actually
+ * guarantees no duplicate is ever kept; this only makes the model waste less.
+ */
+export function exclusions(
+    avoid: readonly string[],
+    budget: number = AVOID_BUDGET
+): { names: string[]; complete: boolean } {
+    const width = (list: readonly string[]): number =>
+        list.reduce((sum, name) => sum + name.length + 2, -2);
+
+    if (avoid.length === 0 || width(avoid) <= budget) {
+        return { names: [...avoid], complete: true };
+    }
+
+    const average = width(avoid) / avoid.length;
+    const fits = Math.max(1, Math.floor(budget / average));
+    const stride = avoid.length / fits;
+    const names: string[] = [];
+    for (let i = 0; i < fits; i++) {
+        const pick = avoid[Math.floor(i * stride)];
+        if (pick !== undefined) {
+            names.push(pick);
+        }
+    }
+    return { names, complete: false };
+}
+
 export interface GeneratedName {
     name: string;
     rationale: string;
@@ -47,7 +98,8 @@ export interface GeneratedName {
     strategy: StrategyId;
 }
 
-function promptFor(
+/** Exported for the tests: what a request actually says is the product. */
+export function promptFor(
     brief: string,
     strategy: StrategyId,
     count: number,
@@ -55,6 +107,7 @@ function promptFor(
     languages: string[] = []
 ): string {
     const chosen = STRATEGIES.find((s) => s.id === strategy);
+    const listed = exclusions(avoid);
 
     /*
      * Naming the languages matters more than it sounds.
@@ -88,8 +141,10 @@ function promptFor(
         '- Word combinations must be grammatical: adjective+noun or noun+noun,',
         '  never verb+noun. "Warmgrove" and "Ironforge" yes; "Soakedmart" no.',
         '- Vary the material. Do not build most of the list from the same few roots.',
-        avoid.length
-            ? `- Do not repeat any of these already-generated names: ${avoid.slice(-400).join(', ')}`
+        listed.names.length
+            ? `- Do not repeat any of these${
+                  listed.complete ? '' : ` ${listed.names.length} of the ${avoid.length}`
+              } already-generated names: ${listed.names.join(', ')}`
             : '',
         '',
         'Output format: one name per line, then a tab, then a six-word reason.',
@@ -364,6 +419,8 @@ export async function generateNames(
      * readily. Round-robin gives an even spread and records the origin.
      */
     let turn = 0;
+    /** Said once, not per batch — every request after the first says the same. */
+    let saidSampled = false;
 
     const spawn = () => {
         const id = nextId++;
@@ -373,6 +430,26 @@ export async function generateNames(
         // The exclusion list is read HERE, at launch, so a batch starting now knows
         // everything every earlier batch has already returned.
         const avoid = [...seen];
+
+        /*
+         * A list too long to send in full is worth saying out loud.
+         *
+         * It used to be trimmed to the last four hundred with nothing said, so
+         * a long run quietly started proposing names it already had — visible
+         * only as batches that returned less than they cost. Duplicates are
+         * still dropped on arrival either way; this is the line that explains
+         * why there are more of them.
+         */
+        if (!saidSampled) {
+            const listed = exclusions(avoid);
+            if (!listed.complete) {
+                saidSampled = true;
+                void onProblem?.(
+                    `Too many names to list in full — each request now names ${listed.names.length} ` +
+                        `of ${avoid.length} as ones to avoid. Repeats are still dropped when they arrive.`
+                );
+            }
+        }
         pool.set(
             id,
             settledBatch(brief, strategy, want, avoid, id, palette, languages, onProblem).then(

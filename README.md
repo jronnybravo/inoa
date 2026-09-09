@@ -18,8 +18,8 @@ Two halves, and the split is deliberate.
 **The app** (SvelteKit on Vercel) takes the brief, verifies the email, and
 displays results. Every function it runs is a sub-second read or write.
 
-**The worker** (this machine) does everything expensive: generation through the
-signed-in Claude CLI, then the checks. It exists because a run takes tens of
+**The worker** (this machine) does everything expensive: generation, then the
+checks. It exists because a run takes tens of
 minutes against a Vercel function cap near a minute — and because store and
 search endpoints block datacentre addresses far more readily than a residential
 one, so the checks are simply more reliable from here.
@@ -136,6 +136,138 @@ Comments explain _why_, not what. Most of the surprising code here exists
 because something failed in a specific way, and the comment is where that
 reason is recorded — see `worker/checks/web.ts` for the clearest example.
 
+## Where names come from
+
+**A signed-in CLI first.** `claude login` once and you are done; a Codex CLI on
+your PATH is used the same way. Several rotate — a batch each, turn by turn —
+which spreads the rate limits and, more usefully, widens the shortlist: a
+thousand names from one model is a thousand names with one model's taste in
+them, and taste is most of what a naming run is buying.
+
+That order is measured rather than assumed. A batch of fifty names takes
+**~108s** through the CLI, of which the process spawn and auth check are
+**5.5s** — five per cent, against a cost difference of everything versus
+nothing. Both reach the same model family for what is a single-turn prompt.
+
+**API keys as failover.** A subscription that hits its usage limit used to end
+generation dead; with `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` set it moves to
+the key instead. Batches are shared only within the leading tier, so a working
+subscription is never quietly billed against a key sitting beside it.
+`INOA_GENERATOR` asks for both together when that is what you want.
+
+### Without a model
+
+Set `INOA_AI=off`, or configure nothing at all, and names are composed here
+instead — from the brief's own vocabulary, a free thesaurus, and a bundled word
+list. No key, no subscription, no cost, and the brief never leaves the
+building.
+
+Each of the six approaches has a rule. Compounds and blends draw on words
+related to the brief; invented names are assembled from onsets, vowels and
+codas that a reader can say on sight; the metaphor and foreign approaches draw
+on bundled lists, and every foreign root carries its gloss, because a name you
+cannot translate is a name you cannot explain.
+
+It is seeded rather than random, so the same brief produces the same names and
+a bad one can be found twice. It is **not** a fallback for a model that failed
+mid-run: a source that quietly changes what it is halfway through leaves half a
+table from one thing and half from another, with nothing recording which.
+
+### Social handles
+
+Thirteen platforms, defaulting to **Instagram, Facebook and TikTok**. Each was
+probed both ways — a handle somebody holds and a handle nobody could — before
+being added, and they answer in four different ways:
+
+| how it answers                     | platforms                                                         |
+| ---------------------------------- | ----------------------------------------------------------------- |
+| status code — the profile URL 404s | X, GitHub, YouTube, Substack, SoundCloud, Vimeo                   |
+| public API                         | Bluesky (AT Protocol identity), TikTok (oEmbed), Twitch (GraphQL) |
+| link preview                       | Instagram, Facebook — as the crawler that renders previews        |
+| page marker                        | Telegram (`View`/`Launch` vs `Contact`), Pinterest (empty title)  |
+
+The list was three long when it only knew the first of those, and the three it
+was missing were the three that matter most. None of Instagram, Facebook or
+TikTok answers a plain request — a login wall, a redirect, and a 1.4KB bot wall
+respectively — but all three still publish a link preview, because they want
+their own links to look right in everybody else's app. **A link preview for a
+profile that does not exist is exactly the signal being looked for.** Instagram
+titles a real profile `NASA (@nasa) • Instagram photos…` and a free handle just
+`Instagram`; Facebook does the same with the page name.
+
+Weaker signals are read strictly. A page that matches no recognised shape comes
+back `unverified`, and an unrecognised one reads as `taken` rather than `free` —
+a wrong `taken` costs a good name, a wrong `free` ships a brand somebody else
+owns.
+
+Still out, and now genuinely rather than for want of trying: Reddit is `403`
+without a token on both `www` and `old`, Medium sits behind a Cloudflare
+interstitial, LinkedIn blocks outright.
+
+Unlike a domain, every handle check reaches the same host, so each platform
+gets its own rate limiter (`INOA_HANDLE_INTERVAL_MS`, default 1200ms).
+
+## Runs
+
+`/runs` lists every run this database holds, newest first — brief, status,
+names found, how many passed, and how long it took. A run's id used to be its
+only handle: an hour of work reachable through one link in one email, and gone
+the moment that link was.
+
+Everything is visible to everyone, which is the rule the run pages already
+follow — anybody holding a link can open one. There is no account to scope a
+list to, and pretending otherwise would be a privacy claim this cannot keep.
+
+## Running without Resend
+
+`RESEND_API_KEY` is optional. Without it the form does not ask for an address
+and runs start immediately: there is no way to send a verification code, so
+nothing to prove, and nowhere to send results — asking anyway would collect a
+detail nothing can use. Results live on the run's page, and `/runs` is how you
+find it again.
+
+Set the key and verification comes back: an address proves itself once, results
+are emailed when a run finishes, and the CSV is attached.
+
+### The web check without a provider
+
+With no `TAVILY_API_KEY` or equivalent, the web check is not offered. It can
+only be answered by driving a browser at about a name a minute — sixteen hours
+for a thousand names — so the form leaves it out rather than queueing that
+behind your back.
+
+The Web chip stays in the row — a hole where a control was is its own kind of
+confusion — but it becomes two states rather than three: a **column of search
+links**, or nothing. There is no verdict to report and so nothing that could be
+required, and it carries its own mark, a magnifier, rather than borrowing the
+one that means "checked and reported".
+
+That column has no filter and never reaches `computePassed` — because the
+moment "we did not look" can be counted, it starts counting as "nothing
+found".
+
+### Choosing languages
+
+The **Other languages** approach draws on any language by default. Pick a
+family (`Nordic`, `Romance`, `Bantu`) or a single language (`Japanese`,
+`Tagalog`, `Old Norse`) to narrow it — the picker only appears when that
+approach is selected, and an empty selection means any, which is what the
+approach meant before it could be narrowed.
+
+Naming the sources matters more than it sounds. Asked for "other languages"
+with nothing narrowed, a model reaches for Japanese and Latin almost every
+time; a brief that wanted Nordic austerity got `Kizuna` either way. Listed
+explicitly, the constraint holds — a live run narrowed to Nordic returned
+`Pelto`, `Eldhus`, `Matgard`, `Niitty`, `Groska`, `Kelda`, all of them Finnish,
+Old Norse, Swedish or Icelandic.
+
+The constraint reaches the deterministic generator too, which filters its
+bundled roots by the same language names — so the `covers` lists in
+`src/lib/languages.ts` and the `from` fields in `worker/words.ts` have to
+agree. It applies only to that one approach: a compound or invented batch never
+draws on those roots, and narrowing them would constrain material they do not
+use.
+
 ## How a name is judged
 
 Checks run cheapest-first — the domains, then App Store, Play Store, web —
@@ -147,18 +279,41 @@ A **required** check that returns `taken` drops the name immediately and the
 rest are marked skipped. An unrequired check never drops anything; it is
 recorded so the table stays complete.
 
+Every check is one of three states, chosen the same way in all three rows of
+the form: not checked at all, checked and reported, or required. The App Store
+is the slowest thing in a run — Apple tolerates about twenty calls a minute —
+so being able to leave it out entirely is worth having.
+
 ### Choosing domains
 
-A run picks any of the ~1,050 top-level domains anybody can register, up to
-twelve at a time, and marks which of them are required. Everything picked gets
-a column and a verdict; only the required ones can end a name. The list is
-generated from three sources — IANA for what exists, ICANN for what is open to
-the public rather than a brand's own registry, and the Tranco top million for
-the order — by `node scripts/generate-tlds.mjs`.
+A run picks any number of top-level domains and marks which of them are
+required. Everything picked gets a column and a verdict; only the required ones
+can end a name.
 
-Twelve is the cap because each domain is one request per name: at a thousand
-names, twelve TLDs is twelve thousand requests. They cost no quota, but they
-cost time.
+The list is generated by `node scripts/generate-tlds.mjs` from three sources:
+IANA for which TLDs exist, a registrar's public price list for which of those
+anybody can actually buy, and the Tranco top million for the order. That leaves
+**539 of the 1,438 delegated TLDs**, each with an indicative first-year price.
+
+The registrar is the part that earns its place. Filtering on ICANN's registry
+agreements instead — dropping brand TLDs like `.bmw` and keeping the rest —
+left 1,059 entries, hundreds of which nobody can register: `.aero` and
+`.museum` want credentials, `.bv` and `.sj` were never issued, `.kp` and `.cu`
+are unobtainable, and residency-restricted ccTLDs sat near the top because they
+are popular rather than available. A price is proof that somebody will sell it
+to you.
+
+The cost is coverage: that registrar does not carry `.fr`, `.jp`, `.br` or
+`.it`, which are buyable elsewhere, so they are absent. One catalogue of things
+you can definitely buy beats a longer list that is part fiction.
+
+There is no cap. There were two — twelve, then twenty-five — and both were
+numbers picked rather than measured. A domain check is DNS and one request to a
+host nobody else is calling, with no shared quota behind it, while the store
+checks are paced against Apple's twenty a minute and dominate the clock
+regardless. Nothing needs rationing on anybody else's behalf, so the form shows
+the arithmetic — `domains x names` requests, live — and leaves the choice to
+whoever is spending the afternoon.
 
 Every cell has three real states, not two:
 
@@ -219,6 +374,7 @@ Everything the worker paces itself by, all optional:
 | ------------------------- | -------------- | ------------------------------------------------------ |
 | `INOA_MODEL`              | the CLI's own  | which model the Claude CLI generates with              |
 | `INOA_GENERATOR`          | CLI, then keys | which sources generate, and in what order              |
+| `INOA_AI`                 | on             | `off` composes names here instead of asking a model    |
 | `INOA_ANTHROPIC_MODEL`    | claude-opus-5  | model for the Anthropic API source                     |
 | `INOA_OPENAI_MODEL`       | gpt-5.6        | model for the OpenAI source                            |
 | `INOA_BATCH_SIZE`         | 50             | names asked for per generation call                    |

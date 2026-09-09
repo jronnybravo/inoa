@@ -6,10 +6,18 @@
  * two a model reaches for unprompted. Naming the sources is the difference
  * between a brief that wants Nordic austerity and one that wants Bantu warmth.
  *
- * Groups and single languages in one list on purpose. Somebody either knows
- * exactly what they want ('Japanese') or knows the flavour ('Romance'), and
- * making them pick five languages to express the second is a worse control
- * than offering the family.
+ * The form offers families only — twelve of them. It offered the families and
+ * thirty-two single languages together, which is forty-four options for a
+ * setting most runs leave empty, and 'Japanese' next to 'East Asian' asks
+ * somebody to know the difference before they can pick either.
+ *
+ * The single entries stay in this list. They are how a run stored before the
+ * change still resolves, and how an id somebody has in a link keeps working —
+ * they are simply not among the things offered. LANGUAGE_GROUPS is what the
+ * form shows; LANGUAGES is what anything looking an id up should read.
+ *
+ * Every single language here is inside a family, so nothing was lost by
+ * narrowing the list — catalogs.test.ts fails if that ever stops being true.
  *
  * `covers` is the list a group expands to, and it is what the deterministic
  * generator matches its word list against — so the names there and the names
@@ -31,9 +39,9 @@ export interface LanguageChoice {
      * Turkish is not. A family carries roughly the sum of its members.
      *
      * Speakers rather than 'how often a brand reaches for it', which would be
-     * a guess dressed as data. It does put Latin and Greek low despite their
-     * long history in brand names, which is why they are also reachable by
-     * name in one keystroke.
+     * a guess dressed as data. It does put Latin & Greek near the bottom
+     * despite their long history in brand names — the ordering is a default,
+     * and typing three letters beats any hand-ranking.
      */
     speakers: number;
 }
@@ -118,6 +126,21 @@ const KNOWN_LANGUAGES: LanguageChoice[] = [
         covers: ['Japanese', 'Korean', 'Mandarin', 'Cantonese'],
         speakers: 1600
     },
+    /*
+     * Added when the form narrowed to families.
+     *
+     * Turkish was the one language in this file that belonged to no family —
+     * fine while it was offered on its own, and a hole the moment the families
+     * became the whole list. The word list has Turkish roots, so dropping it
+     * would have left roots nothing could reach.
+     */
+    {
+        id: 'turkic',
+        label: 'Turkic',
+        group: true,
+        covers: ['Turkish', 'Azerbaijani', 'Uzbek', 'Kazakh', 'Turkmen', 'Kyrgyz'],
+        speakers: 200
+    },
 
     // Then the individual languages, for somebody who knows exactly what they
     // want. Ordered by how often a brand actually reaches for them.
@@ -165,6 +188,14 @@ const KNOWN_LANGUAGES: LanguageChoice[] = [
 export const LANGUAGES: readonly LanguageChoice[] = [...KNOWN_LANGUAGES].sort(
     (a, b) => b.speakers - a.speakers || a.label.localeCompare(b.label)
 );
+
+/**
+ * The families, which is what the form offers.
+ *
+ * Derived rather than kept as a second list, so a family added above is
+ * offered without anyone remembering to add it here twice.
+ */
+export const LANGUAGE_GROUPS: readonly LanguageChoice[] = LANGUAGES.filter((l) => l.group);
 
 const BY_ID = new Map(LANGUAGES.map((l) => [l.id, l]));
 

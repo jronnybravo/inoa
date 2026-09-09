@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { FOREIGN } from '../../worker/words.ts';
 import { asHandle, DEFAULT_PLATFORMS, isPlatform, platform, PLATFORMS } from './handles.ts';
-import { isLanguage, language, LANGUAGES, languagesCovered } from './languages.ts';
+import { isLanguage, language, LANGUAGE_GROUPS, LANGUAGES, languagesCovered } from './languages.ts';
 import { ALL_TLDS, isTld } from './tlds.ts';
 
 const ids = (list: readonly { id: string }[]): string[] => list.map((x) => x.id);
@@ -157,6 +157,48 @@ describe('the language list', () => {
         assert.equal(isLanguage('nordic'), true);
         assert.equal(isLanguage('klingon'), false);
         assert.equal(language('nordic')?.group, true);
+    });
+});
+
+/*
+ * The form offers families and nothing else, which is only honest if the
+ * families reach everywhere the old list did.
+ *
+ * Turkish was the counter-example that made this file necessary: a single
+ * language in no family at all. Offered on its own that was invisible; the
+ * moment the families became the whole list it was a language, and a set of
+ * word-list roots, that nothing could ask for.
+ */
+describe('the families cover everything the list can name', () => {
+    const covered = new Set(LANGUAGE_GROUPS.flatMap((g) => g.covers));
+
+    it('offers families only', () => {
+        for (const l of LANGUAGE_GROUPS) {
+            assert.equal(l.group, true, `${l.label} is offered but is not a family`);
+        }
+    });
+
+    it('leaves no single language outside a family', () => {
+        for (const l of LANGUAGES.filter((x) => !x.group)) {
+            const orphans = l.covers.filter((name) => !covered.has(name));
+            assert.deepEqual(orphans, [], `${l.label} is in no family, so nothing can select it`);
+        }
+    });
+
+    /*
+     * Said against the word list directly rather than through the entries, so
+     * a root stays reachable even if the single language it belongs to is one
+     * day removed from the catalogue entirely.
+     */
+    it('leaves no word-list root a family cannot reach', () => {
+        for (const from of new Set(FOREIGN.map((r) => r.from))) {
+            assert.ok(covered.has(from), `${from} roots exist but no family covers ${from}`);
+        }
+    });
+
+    it('still resolves an id from before the families were the whole list', () => {
+        assert.deepEqual(languagesCovered(['japanese']), ['Japanese']);
+        assert.equal(isLanguage('turkish'), true);
     });
 });
 

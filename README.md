@@ -269,16 +269,25 @@ its source and is judged on that instead.
 
 ### Choosing languages
 
-The **Other languages** approach draws on any language by default. Pick a
-family (`Nordic`, `Romance`, `Bantu`) or a single language (`Japanese`,
-`Tagalog`, `Old Norse`) to narrow it. The picker lives inside that approach's
-own card, revealed by the checkbox that enables it, and an empty selection
-means any — which is what the approach meant before it could be narrowed.
+The **Other languages** approach draws on any language by default. Pick one or
+more of the twelve families — `Nordic`, `Romance`, `Bantu`, `East Asian` — to
+narrow it. The picker lives inside that approach's own card, revealed by the
+checkbox that enables it, and an empty selection means any, which is what the
+approach meant before it could be narrowed.
 
-Families and single languages sit in one list, ordered by speakers. That is a
-metric rather than a guess, and it does put Latin and Greek low despite their
-long history in brand names — which is why both are also reachable by name in
-one keystroke.
+Families only, ordered by speakers. The list held the families and thirty-two
+single languages together, which is forty-four options for a setting most runs
+leave empty, and `Japanese` sitting beside `East Asian` asks you to know the
+difference before you can pick either. Searching still works by language: type
+`japanese` and you get East Asian, `swahili` and you get Bantu — each family's
+row names what it covers.
+
+Every language the list can name is inside a family, so nothing became
+unreachable. Turkish was the one that wasn't, which is why there is a `Turkic`
+family; `catalogs.test.ts` fails if a language or a word-list root is ever left
+outside one again. The single entries are still in `src/lib/languages.ts` —
+they are how a run stored before the change still resolves — they are simply
+not offered.
 
 Naming the sources matters more than it sounds. Asked for "other languages"
 with nothing narrowed, a model reaches for Japanese and Latin almost every

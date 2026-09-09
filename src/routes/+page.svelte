@@ -2,7 +2,7 @@
     import AppHeader from '$lib/AppHeader.svelte';
     import FieldIcon from '$lib/FieldIcon.svelte';
     import { DEFAULT_PLATFORMS, PLATFORMS, isPlatform } from '$lib/handles';
-    import { LANGUAGES, isLanguage } from '$lib/languages';
+    import { LANGUAGE_GROUPS, LANGUAGES, isLanguage } from '$lib/languages';
     import { SEARCH_KEYS } from '$lib/search';
     import { ALL_TLDS, isTld, type TldEntry } from '$lib/tlds';
     import TokenSearch from '$lib/TokenSearch.svelte';
@@ -54,23 +54,25 @@
     /**
      * Matches, best first.
      *
-     * Ranked rather than filtered, and the ranking is the whole point: the
-     * families are listed before the single languages, so an unranked search
-     * for 'japan' offered 'East Asian' — which covers Japanese — ahead of
-     * Japanese itself, and Enter took it. What somebody typed the name of
-     * comes first; what merely contains it comes last.
+     * The last tier is what makes a families-only list usable. Somebody who
+     * wants Japanese types 'japanese', which is not the name of anything on
+     * offer — it is a language East Asian covers, and matching against
+     * `covers` is the only reason that search finds anything at all.
+     *
+     * The tiers above it keep a name somebody typed ahead of one that merely
+     * contains it, which is what the ranking was written for.
      */
     const languageMatches = $derived.by(() => {
         const q = languageQuery.trim().toLowerCase();
         const chosen = new Set(languages);
-        const available = LANGUAGES.filter((l) => !chosen.has(l.id));
+        const available = LANGUAGE_GROUPS.filter((l) => !chosen.has(l.id));
         if (!q) {
             return available.slice(0, 40);
         }
 
-        // Four tiers, because two were not enough: 'lat' prefix-matches both
-        // 'Latin' and 'Latin & Greek', and the one somebody typed exactly
-        // should not lose to the one that merely starts the same way.
+        // Four tiers: typed exactly, then starts the same way, then merely
+        // contains it — and last, a family reached through a language it
+        // covers, which is how 'japanese' arrives at East Asian.
         const exact: typeof available = [];
         const starts: typeof available = [];
         const contains: typeof available = [];
@@ -112,7 +114,7 @@
      */
     const languageAlready = $derived(
         languageQuery.trim()
-            ? LANGUAGES.filter(
+            ? LANGUAGE_GROUPS.filter(
                   (l) =>
                       languages.includes(l.id) &&
                       l.label.toLowerCase().startsWith(languageQuery.trim().toLowerCase())
@@ -1555,19 +1557,24 @@
                                            dark:border-stone-700"
                                 >
                                     <span id="languages-label" class="text-xs text-stone-500">
-                                        Which languages to draw on. Pick a family or a single
-                                        language; leave it empty for any.
+                                        Which languages to draw on. Twelve families, each covering
+                                        several — search a language and you get the family it
+                                        belongs to. Leave it empty for any.
                                     </span>
                                     <TokenSearch
                                         id="languages"
                                         labelledBy="languages-label"
-                                        placeholder="Search languages — Nordic, Japanese, Bantu…"
+                                        placeholder="Search families — Nordic, Bantu, Japanese…"
                                         matches={languageMatches.map((l) => ({
                                             id: l.id,
                                             label: l.label,
-                                            note: l.group
-                                                ? l.covers.slice(0, 4).join(', ')
-                                                : undefined
+                                            // Every option is a family now, and what
+                                            // it covers is the only way to tell which
+                                            // one you want. Trailing '…' where the
+                                            // list goes on, so four never reads as all.
+                                            note:
+                                                l.covers.slice(0, 4).join(', ') +
+                                                (l.covers.length > 4 ? '…' : '')
                                         }))}
                                         already={languageAlready.map((l) => ({
                                             id: l.id,
@@ -1608,7 +1615,7 @@
                                                 class="self-center text-xs text-stone-500 dark:text-stone-400"
                                             >
                                                 {languages.length}
-                                                {languages.length === 1 ? 'language' : 'languages'}
+                                                {languages.length === 1 ? 'family' : 'families'}
                                             </span>
                                         </div>
                                     {:else}

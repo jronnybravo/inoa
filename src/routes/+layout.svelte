@@ -40,7 +40,31 @@
 </svelte:head>
 
 <div class="min-h-screen bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-100">
-    <main class="mx-auto max-w-7xl px-6 py-10">
-        {@render children()}
+    <!--
+        No top padding: the page's own header is a sticky bar and supplies its
+        own, so it sits against the top of the window rather than 40px down it
+        and then jumping there on the first scroll.
+    -->
+    <main class="mx-auto max-w-7xl px-6 pb-10">
+        <!--
+            One route, two documents.
+
+            The page is a compose form without ?requestid= and a results table
+            with one, and Svelte keeps a component alive across a client-side
+            navigation between them. That is the right default nearly
+            everywhere, and wrong here: every piece of the page's state is
+            initialised from the run it was mounted with, so 'Start another'
+            handed back the last run's brief, strategies, count and masked
+            address rather than an empty form - and the mask is not an address,
+            so the server rejected a field the person never typed.
+
+            Keying on the run identity makes leaving a run mean leaving it.
+            Resetting the fields by hand instead would have to be revisited
+            every time a new piece of state is added, which is exactly how this
+            appeared in the first place.
+        -->
+        {#key page.url.searchParams.get('requestid') ?? ''}
+            {@render children()}
+        {/key}
     </main>
 </div>

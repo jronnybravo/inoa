@@ -4,6 +4,7 @@ import { db } from '$lib/server/db';
 import { Candidate } from '$lib/server/entities/candidate';
 import { RunEvent } from '$lib/server/entities/event';
 import { Run } from '$lib/server/entities/run';
+import { candidateView, runView } from '$lib/server/views';
 import type { RequestHandler } from './$types';
 
 /**
@@ -43,9 +44,12 @@ export const GET: RequestHandler = async ({ params, url }) => {
         .select('c.strategy', 'strategy')
         .addSelect('COUNT(*)', 'total')
         .addSelect('COUNT(CASE WHEN c.passed THEN 1 END)', 'passed')
+        // `passed` is null until every required check has answered, so a plain
+        // count of true reads 'not yet asked' and 'asked and failed' as one.
+        .addSelect('COUNT(c.passed)', 'checked')
         .where('c.runId = :id', { id: run.id })
         .groupBy('c.strategy')
-        .getRawMany<{ strategy: string | null; total: string; passed: string }>();
+        .getRawMany<{ strategy: string | null; total: string; passed: string; checked: string }>();
 
     const onlyPassed = url.searchParams.get('passed') === '1';
     const candidates = await Candidate.find({
@@ -54,27 +58,15 @@ export const GET: RequestHandler = async ({ params, url }) => {
         take: 2000
     });
 
-    const { email, ...safe } = run;
     return json({
-        run: { ...safe, email: email.replace(/(.).*(@.*)/, '$1•••$2') },
+        run: runView(run),
         events: events.map((e) => ({ id: e.id, at: e.at, level: e.level, message: e.message })),
         tallies: tallies.map((t) => ({
             strategy: t.strategy,
             total: Number(t.total),
+            checked: Number(t.checked),
             passed: Number(t.passed)
         })),
-        candidates: candidates.map((c) => ({
-            id: c.id,
-            name: c.name,
-            rationale: c.rationale,
-            strategy: c.strategy,
-            com: c.com,
-            appStore: c.appStore,
-            playStore: c.playStore,
-            google: c.google,
-            detail: c.detail,
-            passed: c.passed,
-            droppedBy: c.droppedBy
-        }))
+        candidates: candidates.map(candidateView)
     });
 };

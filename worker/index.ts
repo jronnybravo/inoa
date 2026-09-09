@@ -15,12 +15,13 @@
  */
 
 import 'dotenv/config';
-import { LessThan } from 'typeorm';
+import { IsNull, LessThan } from 'typeorm';
+import { candidateStatuses, runChecks, statusColumns } from '../src/lib/checks.ts';
 import { db } from '../src/lib/server/db.ts';
 import { sendResults } from '../src/lib/server/email.ts';
 import { Candidate } from '../src/lib/server/entities/candidate.ts';
 import { Run } from '../src/lib/server/entities/run.ts';
-import { CHECK_LABEL } from '../src/lib/types.ts';
+import { checkLabel } from '../src/lib/types.ts';
 import { priorVerdict } from './checks/reuse.ts';
 import { sleep } from './checks/shared.ts';
 import { closeBrowser } from './checks/web.ts';
@@ -150,8 +151,11 @@ async function processRun(run: Run): Promise<void> {
         const kept = await Candidate.countBy({ runId: run.id });
         const checkedSoFar = await Candidate.countBy({ runId: run.id, passed: true });
         await Run.update(run.id, { status: 'stopped', finishedAt: new Date() });
+        // The last line names what did not happen, because 'stopped' on its
+        // own reads as though the whole worker went down with it.
         await log(
-            `Stopped on request — ${kept} names kept, ${checkedSoFar} passing so far`,
+            `Stopped on request — ${kept} names kept, ${checkedSoFar} passing so far. ` +
+                'The worker is free and will take the next queued run.',
             'warn'
         );
     }
@@ -237,21 +241,17 @@ async function processRun(run: Run): Promise<void> {
                   async (reason) => log(`Generation: ${reason}`, 'warn')
               );
 
-        const required = {
-            com: run.requireCom,
-            appStore: run.requireAppStore,
-            playStore: run.requirePlayStore,
-            google: run.requireGoogle
-        };
+        // Whichever TLDs this run asked for, plus the stores it required.
+        const { kinds: all, required } = runChecks(run);
 
         let checked = 0;
 
-        const kinds = fastChecks();
+        const kinds = fastChecks(all);
         const deferWeb = !kinds.includes('google');
 
         /** Drain names as they appear, and keep draining until generation is over. */
         const checking = (async () => {
-            await log(`Checking as names arrive — ${kinds.map((k) => CHECK_LABEL[k]).join(', ')}`);
+            await log(`Checking as names arrive — ${kinds.map(checkLabel).join(', ')}`);
 
             let borrowed = 0;
 
@@ -266,12 +266,12 @@ async function processRun(run: Run): Promise<void> {
                             borrowed++;
                         }
                         return found;
-                    }
+                    },
+                    all
                 );
+                const columns = statusColumns(result.statuses);
                 await Candidate.update(candidate.id, {
-                    com: result.statuses.com,
-                    appStore: result.statuses.appStore,
-                    playStore: result.statuses.playStore,
+                    ...columns,
                     /*
                      * When the web check runs here, its own verdict stands.
                      *
@@ -283,11 +283,7 @@ async function processRun(run: Run): Promise<void> {
                      * checkCandidate already marks the checks an earlier gate cut short as
                      * 'skipped', so its answer needs no correcting.
                      */
-                    google: deferWeb
-                        ? result.droppedBy
-                            ? 'skipped'
-                            : 'pending'
-                        : result.statuses.google,
+                    google: deferWeb ? (result.droppedBy ? 'skipped' : 'pending') : columns.google,
                     detail: result.detail,
                     passed: result.passed,
                     droppedBy: result.droppedBy,
@@ -302,7 +298,7 @@ async function processRun(run: Run): Promise<void> {
                     // name is taken is an assertion; one naming the listing is evidence.
                     const found = result.detail[result.droppedBy]?.split(' | ')[0]?.slice(0, 60);
                     await log(
-                        `${candidate.name} — taken on ${CHECK_LABEL[result.droppedBy]}` +
+                        `${candidate.name} — taken on ${checkLabel(result.droppedBy)}` +
                             (found ? `: ${found}` : '')
                     );
                 }
@@ -312,8 +308,15 @@ async function processRun(run: Run): Promise<void> {
                 if (stopped()) {
                     return;
                 }
+                /*
+                 * Unchecked means unstamped, not '.com still pending'.
+                 *
+                 * The old query asked for a pending .com, which stopped being
+                 * a question once a run could decline to check the .com at all
+                 * — every name would have looked unchecked forever.
+                 */
                 const batch = await Candidate.find({
-                    where: { runId: run.id, com: 'pending' as never },
+                    where: { runId: run.id, checkedAt: IsNull() },
                     order: { position: 'ASC' },
                     take: CHECK_CONCURRENCY * 3
                 });
@@ -434,13 +437,8 @@ async function processRun(run: Run): Promise<void> {
             run.email,
             run.id,
             run.brief,
-            survivors.map((c) => ({
-                name: c.name,
-                com: c.com,
-                appStore: c.appStore,
-                playStore: c.playStore,
-                google: c.google
-            })),
+            survivors.map((c) => ({ name: c.name, statuses: candidateStatuses(c) })),
+            all,
             `${APP_URL}/?requestid=${run.id}`
         );
         if (mail.sent) {

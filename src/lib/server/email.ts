@@ -11,7 +11,13 @@
  */
 
 import { Resend } from 'resend';
-import { CHECK_LABEL, CHECK_ORDER, type CheckStatus } from '../types.ts';
+import {
+    checkLabel,
+    statusOf,
+    type CheckKind,
+    type CheckStatus,
+    type CheckStatuses
+} from '../types.ts';
 
 const from = process.env.RESEND_FROM ?? 'Inoa <onboarding@resend.dev>';
 const client = () => {
@@ -45,12 +51,15 @@ export async function sendVerificationCode(to: string, code: string): Promise<Se
     }
 }
 
+/**
+ * One row of the results, with a verdict per check the run made.
+ *
+ * The checks are no longer a fixed four, so the columns travel with the rows
+ * rather than being knowable from this file.
+ */
 interface ResultRow {
     name: string;
-    com: CheckStatus;
-    appStore: CheckStatus;
-    playStore: CheckStatus;
-    google: CheckStatus;
+    statuses: CheckStatuses;
 }
 
 /** The same words the page uses; a CSV row should not need the page to read. */
@@ -62,10 +71,10 @@ const CELL: Record<CheckStatus, string> = {
     pending: 'waiting'
 };
 
-export function toCsv(rows: ResultRow[]): string {
-    const header = ['Name', ...CHECK_ORDER.map((k) => CHECK_LABEL[k])].join(',');
+export function toCsv(rows: ResultRow[], kinds: CheckKind[]): string {
+    const header = ['Name', ...kinds.map(checkLabel)].join(',');
     const body = rows.map((r) =>
-        [r.name, ...CHECK_ORDER.map((k) => CELL[r[k]])].map((v) => `"${v}"`).join(',')
+        [r.name, ...kinds.map((k) => CELL[statusOf(r.statuses, k)])].map((v) => `"${v}"`).join(',')
     );
     return [header, ...body].join('\n');
 }
@@ -75,6 +84,7 @@ export async function sendResults(
     runId: string,
     brief: string,
     rows: ResultRow[],
+    kinds: CheckKind[],
     url: string
 ): Promise<SendResult> {
     const resend = client();
@@ -87,7 +97,11 @@ export async function sendResults(
         .map(
             (r) =>
                 `<tr><td style="padding:4px 10px"><b>${r.name}</b></td>` +
-                CHECK_ORDER.map((k) => `<td style="padding:4px 10px">${CELL[r[k]]}</td>`).join('') +
+                kinds
+                    .map(
+                        (k) => `<td style="padding:4px 10px">${CELL[statusOf(r.statuses, k)]}</td>`
+                    )
+                    .join('') +
                 '</tr>'
         )
         .join('');
@@ -100,7 +114,7 @@ export async function sendResults(
             html:
                 `<p>Your naming run finished. <a href="${url}">Open the full results</a>.</p>` +
                 `<table style="border-collapse:collapse;font-family:system-ui,sans-serif;font-size:14px">` +
-                `<tr>${['Name', ...CHECK_ORDER.map((k) => CHECK_LABEL[k])]
+                `<tr>${['Name', ...kinds.map(checkLabel)]
                     .map((h) => `<th align="left" style="padding:4px 10px">${h}</th>`)
                     .join('')}</tr>${table}</table>` +
                 (rows.length > 60
@@ -111,7 +125,7 @@ export async function sendResults(
                     filename: `names-${runId.slice(0, 8)}.csv`,
                     // Resend's types accept a string here; the base64 form is
                     // what its API documents for an attachment.
-                    content: Buffer.from(toCsv(rows), 'utf8').toString('base64')
+                    content: Buffer.from(toCsv(rows, kinds), 'utf8').toString('base64')
                 }
             ]
         });

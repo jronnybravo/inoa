@@ -14,7 +14,9 @@
  * answer, and reusing that would preserve a failure rather than retry it.
  */
 
+import { candidateStatuses } from '../../src/lib/checks.ts';
 import { Candidate } from '../../src/lib/server/entities/candidate.ts';
+import { statusOf } from '../../src/lib/types.ts';
 import type { CheckOutcome } from './shared.ts';
 import type { CheckKind, CheckStatus } from '../../src/lib/types.ts';
 
@@ -62,7 +64,7 @@ export async function priorVerdict(
             break;
         }
 
-        const status: CheckStatus = row[kind];
+        const status: CheckStatus = statusOf(candidateStatuses(row), kind);
         if (status !== 'clear' && status !== 'taken') {
             continue;
         }

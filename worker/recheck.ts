@@ -22,32 +22,25 @@
  */
 
 import 'dotenv/config';
-import { In } from 'typeorm';
+import { candidateStatuses, runChecks, statusColumns } from '../src/lib/checks.ts';
 import { db } from '../src/lib/server/db.ts';
 import { Candidate } from '../src/lib/server/entities/candidate.ts';
 import { Run } from '../src/lib/server/entities/run.ts';
-import { CHECK_ORDER, type CheckKind, type CheckStatus } from '../src/lib/types.ts';
-import { checkAppStore } from './checks/appstore.ts';
-import { checkCom } from './checks/domain.ts';
-import { checkPlayStore } from './checks/playstore.ts';
-import { jitter, sleep, type CheckOutcome } from './checks/shared.ts';
-import { checkWeb, closeBrowser, hasSearchApi } from './checks/web.ts';
-import { computePassed } from './pipeline.ts';
+import { isTldKind, statusOf, type CheckKind, type CheckStatus } from '../src/lib/types.ts';
+import { jitter, sleep } from './checks/shared.ts';
+import { closeBrowser, hasSearchApi } from './checks/web.ts';
+import { computePassed, runnerFor } from './pipeline.ts';
 
-const RUNNERS: Record<CheckKind, (name: string) => Promise<CheckOutcome>> = {
-    com: checkCom,
-    appStore: checkAppStore,
-    playStore: checkPlayStore,
-    google: checkWeb
-};
-
-const PACE: Record<CheckKind, number> = {
-    com: 150,
+/** How long to leave between two calls of the same kind. */
+const STORE_PACE: Record<string, number> = {
     appStore: 3200,
     playStore: 1200,
     // The web check is the one that needs real distance when no API is set.
     google: 800
 };
+
+// A domain check is DNS and one request to a host nobody else is calling.
+const DOMAIN_PACE = 150;
 
 const KNOWN_FLAGS = new Set(['--include-clear', '--yes']);
 
@@ -69,7 +62,10 @@ function usage(problem?: string): never {
         console.error(`recheck: ${problem}\n`);
     }
     console.error('usage: npm run recheck -- <runId> [checkKind] [--include-clear] [--yes]\n');
-    console.error(`  checkKind        one of ${CHECK_ORDER.join(', ')} (default: all of them)`);
+    // Not listed: which checks exist depends on the run, and usage() is
+    // reachable before one has been loaded.
+    console.error("  checkKind        one of the run's own checks, e.g. tld:com or appStore");
+    console.error('                   (default: all of them)');
     console.error("  --include-clear  also revisit cells that currently say 'clear', for");
     console.error('                   correcting verdicts stored before a checker was fixed');
     console.error('  --yes            start a long pass without asking');
@@ -100,15 +96,8 @@ if (extra.length > 0) {
 if (!runId) {
     usage('a run id is required');
 }
-// Cast rather than checked, this used to hand an unknown column to the driver.
-if (only !== undefined && !CHECK_ORDER.includes(only as CheckKind)) {
-    usage(`${only} is not a check; expected one of ${CHECK_ORDER.join(', ')}`);
-}
-
 const includeClear = flags.includes('--include-clear');
 const confirmed = flags.includes('--yes');
-
-const kinds: CheckKind[] = only ? [only as CheckKind] : CHECK_ORDER;
 const revisit: CheckStatus[] = includeClear ? ['unknown', 'clear'] : ['unknown'];
 
 const source = await db();
@@ -118,15 +107,21 @@ if (!run) {
     process.exit(1);
 }
 
-const required = {
-    com: run.requireCom,
-    appStore: run.requireAppStore,
-    playStore: run.requirePlayStore,
-    google: run.requireGoogle
-};
+// Which checks exist is now the run's own business, so the argument is
+// validated against that run rather than against a fixed list.
+const { kinds: all, required } = runChecks(run);
+if (only !== undefined && !all.includes(only as CheckKind)) {
+    usage(`${only} is not a check in this run; expected one of ${all.join(', ')}`);
+}
 
-const paceFor = (kind: CheckKind): number =>
-    kind === 'google' && !hasSearchApi() ? 60_000 : PACE[kind];
+const kinds: CheckKind[] = only ? [only as CheckKind] : all;
+
+const paceFor = (kind: CheckKind): number => {
+    if (isTldKind(kind)) {
+        return DOMAIN_PACE;
+    }
+    return kind === 'google' && !hasSearchApi() ? 60_000 : (STORE_PACE[kind] ?? DOMAIN_PACE);
+};
 
 /**
  * The cells one check has to revisit, as they stand right now.
@@ -138,16 +133,24 @@ const paceFor = (kind: CheckKind): number =>
  * recomputing `passed` from its stale verdict. The plan below is a forecast;
  * the work itself needs current rows.
  */
-const rowsFor = (kind: CheckKind): Promise<Candidate[]> =>
-    Candidate.find({
-        where: { runId, [kind]: In(revisit) } as never,
-        order: { position: 'ASC' }
-    });
+const rowsFor = async (kind: CheckKind): Promise<Candidate[]> => {
+    /*
+     * Filtered here rather than in SQL.
+     *
+     * The store verdicts are still columns, but the domain ones live together
+     * in a JSON value, and querying inside one is the sort of thing every
+     * dialect spells differently — this project runs on three. A run is at
+     * most a couple of thousand rows, so reading them and asking in JavaScript
+     * costs a fraction of a second and works everywhere.
+     */
+    const rows = await Candidate.find({ where: { runId }, order: { position: 'ASC' } });
+    return rows.filter((row) => revisit.includes(statusOf(candidateStatuses(row), kind)));
+};
 
 /** Everything to do, priced, before any of it is done. */
 const jobs: { kind: CheckKind; count: number; interval: number; cost: number }[] = [];
 for (const kind of kinds) {
-    const count = await Candidate.countBy({ runId, [kind]: In(revisit) });
+    const count = (await rowsFor(kind)).length;
     if (count > 0) {
         const interval = paceFor(kind);
         jobs.push({ kind, count, interval, cost: count * interval * JITTER_FACTOR });
@@ -187,17 +190,11 @@ for (const { kind, interval } of jobs) {
     let resolved = 0;
     let changed = 0;
     for (const [i, candidate] of rows.entries()) {
-        const before = candidate[kind];
-        const outcome = await RUNNERS[kind](candidate.name);
-        const statuses = {
-            com: candidate.com,
-            appStore: candidate.appStore,
-            playStore: candidate.playStore,
-            google: candidate.google,
-            [kind]: outcome.status
-        };
+        const before = statusOf(candidateStatuses(candidate), kind);
+        const outcome = await runnerFor(kind)(candidate.name);
+        const statuses = { ...candidateStatuses(candidate), [kind]: outcome.status };
         await Candidate.update(candidate.id, {
-            [kind]: outcome.status,
+            ...statusColumns(statuses),
             detail: { ...candidate.detail, [kind]: outcome.detail ?? '' },
             passed: computePassed(statuses, required),
             checkedAt: new Date()

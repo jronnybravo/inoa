@@ -12,6 +12,8 @@
     keyboard, and what a row looks like.
 -->
 <script lang="ts">
+    import { Input } from 'flowbite-svelte';
+
     /** One row of the list. `note` sits beside the label, `meta` at the end. */
     export interface Option {
         id: string;
@@ -111,7 +113,7 @@
 </script>
 
 <div class="relative max-w-sm">
-    <input
+    <Input
         {id}
         {placeholder}
         bind:value={query}
@@ -127,7 +129,7 @@
         aria-controls="{id}-list"
         aria-labelledby={labelledBy}
         autocomplete="off"
-        class="w-full rounded-lg border border-stone-500 bg-white px-3 py-2 text-sm placeholder:text-stone-500 dark:placeholder:text-stone-400 focus:ring-2 focus:ring-stone-900/10 dark:bg-stone-950 dark:focus:ring-white/10"
+        class="w-full text-sm"
     />
     {#if open}
         <div

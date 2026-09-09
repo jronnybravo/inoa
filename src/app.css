@@ -56,6 +56,26 @@
     --color-gray-800: var(--color-stone-800);
     --color-gray-900: var(--color-stone-900);
     --color-gray-950: var(--color-stone-950);
+
+    /*
+     * The library's error colour is `red`; this app has always used `rose`.
+     *
+     * Mapped for the same reason as the others: a Flowbite input asks for
+     * border-red-500 when it is told color="red", so the useful move is to
+     * make red-500 mean the rose the rest of the app already shows for a
+     * problem, rather than to hand every field a class string instead.
+     */
+    --color-red-50: var(--color-rose-50);
+    --color-red-100: var(--color-rose-100);
+    --color-red-200: var(--color-rose-200);
+    --color-red-300: var(--color-rose-300);
+    --color-red-400: var(--color-rose-400);
+    --color-red-500: var(--color-rose-500);
+    --color-red-600: var(--color-rose-600);
+    --color-red-700: var(--color-rose-700);
+    --color-red-800: var(--color-rose-800);
+    --color-red-900: var(--color-rose-900);
+    --color-red-950: var(--color-rose-950);
 }
 
 /*

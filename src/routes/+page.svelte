@@ -1,7 +1,10 @@
 <script lang="ts">
     import {
+        Button,
+        Checkbox,
         Input,
         Select,
+        Textarea,
         Table,
         TableBody,
         TableBodyCell,
@@ -920,14 +923,12 @@
         respell: 'Respelled'
     };
 
+    /** What a field with a problem looks like, in one place. */
+    const FIELD_ERROR = 'border-rose-400 focus:border-rose-500 dark:border-rose-800';
+
     /** One look for the recap's chips, so the two groups differ by label and not by style. */
     const RECAP_CHIP =
         'rounded bg-stone-100 px-1.5 py-0.5 text-stone-600 dark:bg-stone-800 dark:text-stone-400';
-
-    /** One look for the three rerun controls, two of which are buttons and one a link. */
-    const RERUN =
-        'rounded-lg border border-stone-500 px-3 py-1.5 text-sm transition-colors ' +
-        'duration-150 hover:bg-stone-100 dark:hover:bg-stone-800';
 
     /** The hairline under a sticky header, which a border would scroll away from. */
     const FILTER_INPUT =
@@ -1549,21 +1550,30 @@
                     and made the row look like it had come up short.
                 -->
                 <div class="flex h-full flex-col">
-                    <textarea
+                    <!--
+                        One token, not the library's `color="red"`.
+
+                        Two reasons. Textarea has no `color` prop at all, so
+                        passing one lands a stray attribute and changes
+                        nothing; and Input's red variant paints a rose-200
+                        border where this app has always shown rose-400, so
+                        using it on the fields that do accept it would have
+                        left two fields disagreeing about what a problem looks
+                        like — the exact thing the library is here to stop.
+                    -->
+                    <Textarea
                         id="brief"
                         bind:value={brief}
-                        rows="2"
+                        rows={2}
                         placeholder="A marketplace connecting local farms to restaurant kitchens."
                         aria-invalid={problemFor('brief') ? 'true' : undefined}
                         aria-describedby={problemFor('brief')
                             ? 'brief-help brief-error'
                             : 'brief-help'}
-                        class="w-full flex-1 rounded-lg border bg-white px-3 py-2 text-sm placeholder:text-stone-500 dark:placeholder:text-stone-400 focus:ring-2 dark:bg-stone-950 {problemFor(
-                            'brief'
-                        )
-                            ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 dark:border-rose-800'
-                            : 'border-stone-500 focus:ring-stone-900/10 dark:focus:ring-white/10'}"
-                    ></textarea>
+                        class="h-full w-full flex-1 text-sm {problemFor('brief')
+                            ? FIELD_ERROR
+                            : ''}"
+                    />
                     {#if problemFor('brief')}
                         <p id="brief-error" class="mt-1 text-xs text-rose-700 dark:text-rose-400">
                             {problemFor('brief')}
@@ -1627,9 +1637,8 @@
                                         ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
                                         : 'border-stone-500 hover:border-stone-900 dark:hover:border-stone-100'}"
                                 >
-                                    <input
-                                        type="checkbox"
-                                        class="mt-0.5 accent-stone-900 dark:accent-stone-100"
+                                    <Checkbox
+                                        class="mt-0.5"
                                         checked={strategies.includes(s.id)}
                                         onchange={(e) => {
                                             const on = e.currentTarget.checked;
@@ -1668,9 +1677,8 @@
                                 : 'border-stone-500 hover:border-stone-900 dark:hover:border-stone-100'}"
                         >
                             <label class="flex cursor-pointer items-start gap-2.5 p-3 text-sm">
-                                <input
-                                    type="checkbox"
-                                    class="mt-0.5 accent-stone-900 dark:accent-stone-100"
+                                <Checkbox
+                                    class="mt-0.5"
                                     checked={onForeign}
                                     onchange={(e) => {
                                         const on = e.currentTarget.checked;
@@ -2149,7 +2157,7 @@
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
                     <div class="flex items-center gap-2">
                         <label for="count" class="sr-only">How many names to generate</label>
-                        <input
+                        <Input
                             id="count"
                             bind:value={targetCount}
                             type="number"
@@ -2158,11 +2166,9 @@
                             step="50"
                             aria-invalid={problemFor('count') ? 'true' : undefined}
                             aria-describedby={problemFor('count') ? 'count-error' : undefined}
-                            class="w-24 rounded-lg border bg-white px-3 py-2 text-sm tabular-nums
-                                   focus:ring-2 dark:bg-stone-950
-                                   {problemFor('count')
-                                ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 dark:border-rose-800'
-                                : 'border-stone-500 focus:ring-stone-900/10 dark:focus:ring-white/10'}"
+                            class="w-24 text-sm tabular-nums {problemFor('count')
+                                ? FIELD_ERROR
+                                : ''}"
                         />
                         <span class="text-sm text-stone-600 dark:text-stone-400"
                             >{data.mail ? 'names, emailed to' : 'names'}</span
@@ -2181,18 +2187,14 @@
                     -->
                     {#if data.mail}
                         <label for="email" class="sr-only">Email the results to</label>
-                        <input
+                        <Input
                             id="email"
                             bind:value={email}
                             type="email"
                             placeholder="you@example.com"
                             aria-invalid={problemFor('email') ? 'true' : undefined}
                             aria-describedby={problemFor('email') ? 'email-error' : undefined}
-                            class="w-56 rounded-lg border bg-white px-3 py-2 text-sm placeholder:text-stone-500 dark:placeholder:text-stone-400 focus:ring-2 dark:bg-stone-950 {problemFor(
-                                'email'
-                            )
-                                ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 dark:border-rose-800'
-                                : 'border-stone-500 focus:ring-stone-900/10 dark:focus:ring-white/10'}"
+                            class="w-56 text-sm {problemFor('email') ? FIELD_ERROR : ''}"
                         />
                     {/if}
 
@@ -2211,17 +2213,15 @@
                         The icon takes the button's own colour rather than the
                         rail's muted grey, which is what the empty class is for.
                     -->
-                    <button
+                    <Button
                         onclick={pendingRunId ? askForCode : execute}
                         disabled={submitting}
-                        class="ml-auto flex items-center gap-2 rounded-lg bg-stone-900 px-5 py-2
-                               text-sm font-medium text-white transition-opacity duration-150
-                               hover:opacity-90 disabled:opacity-40 dark:bg-white
-                               dark:text-stone-900"
+                        color="primary"
+                        class="ml-auto flex items-center gap-2"
                     >
                         <FieldIcon paths={ICONS.play} class="size-4" />
                         {#if submitting}Starting…{:else if pendingRunId}Enter code{:else}Execute{/if}
-                    </button>
+                    </Button>
 
                     <!-- w-full so a message takes its own line rather than
                          pushing the button off the end of the row. -->
@@ -2310,27 +2310,18 @@
             -->
             <div class="mt-4 flex gap-2">
                 <label for="code" class="sr-only">Six-digit code</label>
-                <input
+                <Input
                     id="code"
                     bind:value={code}
                     inputmode="numeric"
-                    maxlength="6"
+                    maxlength={6}
                     autocomplete="one-time-code"
                     placeholder="000000"
-                    class="w-32 rounded-lg border border-stone-500 px-3 py-2 text-sm tracking-[0.3em]
-                           focus:border-stone-500 focus:ring-2
-                           focus:ring-stone-900/10 dark:border-stone-700 dark:bg-stone-950
-                           dark:focus:ring-white/10"
+                    class="w-32 text-sm tracking-[0.3em]"
                 />
-                <button
-                    onclick={verify}
-                    disabled={submitting || code.length < 6}
-                    class="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white
-                           transition-opacity duration-150 enabled:hover:opacity-90
-                           disabled:opacity-40 dark:bg-white dark:text-stone-900"
-                >
+                <Button onclick={verify} disabled={submitting || code.length < 6} color="primary">
                     {submitting ? 'Verifying…' : 'Verify and run'}
-                </button>
+                </Button>
             </div>
             {#if verifyProblem}
                 <p class="mt-2 text-sm text-rose-700 dark:text-rose-400">{verifyProblem}</p>
@@ -2359,19 +2350,10 @@
                         since expired used to leave the run stranded, and the
                         only route on was to fill the form in again.
                     -->
-                    <button
-                        onclick={resendCode}
-                        disabled={resending}
-                        class="rounded-lg px-3 py-2 text-sm font-medium transition-colors
-                               duration-100 hover:bg-stone-100 disabled:opacity-40
-                               dark:hover:bg-stone-800"
-                        >{resending ? 'Sending…' : 'Send another code'}</button
+                    <Button onclick={resendCode} disabled={resending} color="alternative"
+                        >{resending ? 'Sending…' : 'Send another code'}</Button
                     >
-                    <button
-                        onclick={() => verifyDialog?.close()}
-                        class="rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-100
-                               hover:bg-stone-100 dark:hover:bg-stone-800">Close</button
-                    >
+                    <Button onclick={() => verifyDialog?.close()} color="alternative">Close</Button>
                 </div>
             </div>
         </dialog>
@@ -2502,24 +2484,29 @@
             -->
             {#if finished}
                 <div class="ml-auto flex flex-wrap items-center gap-2">
-                    <button
+                    <Button
                         onclick={() => rerun('continue')}
                         disabled={rerunning !== ''}
+                        color="alternative"
+                        size="sm"
                         title="Keep every name and verdict here, and look for as many again."
-                        class="{RERUN} disabled:opacity-40"
-                        >{rerunning === 'continue' ? 'Asking…' : 'Find more'}</button
+                        >{rerunning === 'continue' ? 'Asking…' : 'Find more'}</Button
                     >
-                    <button
+                    <Button
                         onclick={() => rerun('fresh')}
                         disabled={rerunning !== ''}
+                        color="alternative"
+                        size="sm"
                         title="A new run beside this one: same settings, no names carried over."
-                        class="{RERUN} disabled:opacity-40"
-                        >{rerunning === 'fresh' ? 'Starting…' : 'Run again'}</button
+                        >{rerunning === 'fresh' ? 'Starting…' : 'Run again'}</Button
                     >
-                    <a
+                    <!-- Still an <a>: it navigates, so it must behave like a link. -->
+                    <Button
                         href="{resolve('/')}?from={run.id}"
+                        color="alternative"
+                        size="sm"
                         title="The compose form, with these settings already in it."
-                        class={RERUN}>Edit and run</a
+                        >Edit and run</Button
                     >
                 </div>
             {/if}
@@ -2571,20 +2558,10 @@
                 This stops this run only. The worker stays running and takes the next queued run.
             </p>
             <div class="mt-5 flex items-center justify-end gap-2">
-                <button
-                    onclick={() => stopDialog?.close()}
-                    class="rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-100
-                           hover:bg-stone-100 dark:hover:bg-stone-800">Keep going</button
-                >
-                <button
-                    onclick={stopRun}
-                    disabled={stopping}
-                    class="rounded-lg bg-rose-700 px-3 py-2 text-sm font-medium text-white
-                           transition-opacity duration-150 enabled:hover:opacity-90
-                           disabled:opacity-60 dark:bg-rose-600"
-                >
+                <Button onclick={() => stopDialog?.close()} color="alternative">Keep going</Button>
+                <Button onclick={stopRun} disabled={stopping} color="red">
                     {stopping ? 'Stopping…' : 'Stop run'}
-                </button>
+                </Button>
             </div>
         </dialog>
     {/if}
@@ -2681,21 +2658,10 @@
     -->
     <section class="mt-4 min-w-0">
         <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <label class="flex cursor-pointer items-center gap-2 text-sm">
-                <input
-                    type="checkbox"
-                    bind:checked={onlyPassed}
-                    class="accent-stone-900 dark:accent-stone-100"
-                />
-                Only names that passed
-            </label>
-            <button
-                onclick={copyCsv}
-                class="rounded-lg border border-stone-500 px-3 py-1.5 text-sm transition-colors
-                 duration-150 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
-            >
+            <Checkbox bind:checked={onlyPassed} class="text-sm">Only names that passed</Checkbox>
+            <Button onclick={copyCsv} color="alternative" size="sm">
                 {copied ? 'Copied' : `Copy ${shown.length} ${shown.length === 1 ? 'row' : 'rows'}`}
-            </button>
+            </Button>
         </div>
 
         {#if byStrategy.length > 0}

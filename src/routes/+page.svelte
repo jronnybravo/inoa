@@ -103,6 +103,14 @@
         languages = languages.filter((l) => l !== id);
     };
 
+    /**
+     * Chosen languages in the list's own order, not the order they were picked.
+     *
+     * Otherwise the pills read as a pick history rather than a selection, and
+     * adding one later drops it at the end regardless of how common it is.
+     */
+    const chosenLanguages = $derived(LANGUAGES.filter((l) => languages.includes(l.id)));
+
     /** The same keys as the other two searches, because it is the same control. */
     function onLanguageKeydown(event: KeyboardEvent) {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -156,6 +164,9 @@
     let handleQuery = $state('');
     let handleOpen = $state(false);
     let handleIndex = $state(0);
+
+    /** Chosen platforms in the list's own order, which is most used first. */
+    const chosenHandles = $derived(PLATFORMS.filter((p) => handles.includes(p.id)));
 
     const handleMatches = $derived.by(() => {
         const q = handleQuery.trim().toLowerCase().replace(/^@/, '');
@@ -570,6 +581,8 @@
          * it had. Not the asterisk either: nothing here can be required.
          */
         search: ['M11 4.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13z', 'M15.7 15.7L20 20'],
+        // A speech mark, for the row that chooses which tongues to draw on.
+        language: ['M4 5.5h16v11H12l-4.5 3.5V16.5H4z', 'M8.5 9.5h7', 'M8.5 12.5h4'],
         report: [
             'M2.5 12s3.6-6.2 9.5-6.2 9.5 6.2 9.5 6.2-3.6 6.2-9.5 6.2S2.5 12 2.5 12z',
             'M14.4 12a2.4 2.4 0 10-4.8 0 2.4 2.4 0 004.8 0z'
@@ -1514,141 +1527,155 @@
                             {problemFor('strategy')}
                         </p>
                     {/if}
+                </div>
+            </div>
 
-                    <!--
-                        Only when the approach it belongs to is chosen.
+            <!--
+                A row of its own, appearing only when the approach it narrows
+                is chosen.
 
-                        A narrowing control for an approach nobody picked is a
-                        question about nothing, and this row already has six
-                        cards in it. The same search-and-pills as the domains
-                        and the handles, because it is the same shape of
-                        question: many options, a few taken.
-                    -->
-                    {#if strategies.includes('foreign')}
-                        <div class="mt-3 border-t border-stone-200 pt-3 dark:border-stone-800">
-                            <span id="languages-label" class="text-xs text-stone-500">
-                                Languages for <b class="font-medium">Other languages</b> — leave empty
-                                for any. Pick a family or a single language.
-                            </span>
-                            <div class="relative mt-2 max-w-sm">
-                                <input
-                                    id="languages"
-                                    bind:value={languageQuery}
-                                    onfocus={() => (languageOpen = true)}
-                                    onblur={() => setTimeout(() => (languageOpen = false), 120)}
-                                    oninput={() => {
-                                        languageOpen = true;
-                                        languageIndex = 0;
-                                    }}
-                                    onkeydown={onLanguageKeydown}
-                                    role="combobox"
-                                    aria-expanded={languageOpen}
-                                    aria-controls="language-list"
-                                    aria-labelledby="languages-label"
-                                    autocomplete="off"
-                                    placeholder="Search languages — Nordic, Japanese, Bantu…"
-                                    class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm
-                                           placeholder:text-stone-400 focus:border-stone-500
-                                           focus:outline-none focus:ring-2 focus:ring-stone-900/10
-                                           dark:border-stone-700 dark:bg-stone-950
-                                           dark:placeholder:text-stone-600 dark:focus:ring-white/10"
-                                />
-                                {#if languageOpen}
-                                    <div
-                                        class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg
-                                               border border-stone-200 bg-white shadow-lg
-                                               dark:border-stone-700 dark:bg-stone-900"
+                It was tucked inside the strategy row under a rule of its own,
+                with its explanation in the control column rather than the
+                rail — which made it the one thing on the form that did not
+                look like the rest of the form. It is the same question the
+                three rows below ask: many options, a few taken.
+            -->
+            {#if strategies.includes('foreign')}
+                <div class={ROW}>
+                    <div>
+                        <span
+                            id="languages-label"
+                            class="flex items-center gap-2 text-sm font-medium"
+                        >
+                            <FieldIcon paths={ICONS.language} />Languages
+                        </span>
+                        <p class="mt-1 text-xs text-stone-500">
+                            Which languages <b class="font-medium">Other languages</b> may draw on. Pick
+                            a family or a single language; leave it empty for any.
+                        </p>
+                    </div>
+                    <div>
+                        <div class="relative max-w-sm">
+                            <input
+                                id="languages"
+                                bind:value={languageQuery}
+                                onfocus={() => (languageOpen = true)}
+                                onblur={() => setTimeout(() => (languageOpen = false), 120)}
+                                oninput={() => {
+                                    languageOpen = true;
+                                    languageIndex = 0;
+                                }}
+                                onkeydown={onLanguageKeydown}
+                                role="combobox"
+                                aria-expanded={languageOpen}
+                                aria-controls="language-list"
+                                aria-labelledby="languages-label"
+                                autocomplete="off"
+                                placeholder="Search languages — Nordic, Japanese, Bantu…"
+                                class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm
+                                       placeholder:text-stone-400 focus:border-stone-500
+                                       focus:outline-none focus:ring-2 focus:ring-stone-900/10
+                                       dark:border-stone-700 dark:bg-stone-950
+                                       dark:placeholder:text-stone-600 dark:focus:ring-white/10"
+                            />
+                            {#if languageOpen}
+                                <div
+                                    class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg
+                                           border border-stone-200 bg-white shadow-lg
+                                           dark:border-stone-700 dark:bg-stone-900"
+                                >
+                                    <ul
+                                        id="language-list"
+                                        role="listbox"
+                                        class="max-h-64 overflow-y-auto py-1"
                                     >
-                                        <ul
-                                            id="language-list"
-                                            role="listbox"
-                                            class="max-h-64 overflow-y-auto py-1"
-                                        >
-                                            {#each languageMatches as l, i (l.id)}
-                                                <li>
-                                                    <button
-                                                        type="button"
-                                                        role="option"
-                                                        aria-selected={i === languageIndex}
-                                                        onmousedown={(e) => {
-                                                            e.preventDefault();
-                                                            addLanguage(l.id);
-                                                        }}
-                                                        onmouseenter={() => (languageIndex = i)}
-                                                        class="flex w-full items-baseline gap-2 px-3 py-1.5
-                                                               text-left text-sm
-                                                               {i === languageIndex
-                                                            ? 'bg-stone-100 dark:bg-stone-800'
-                                                            : ''}"
-                                                    >
-                                                        <span>{l.label}</span>
-                                                        {#if l.group}
-                                                            <!--
-                                                                A family says what it covers, or
-                                                                'Nordic' is a guess about which
-                                                                five languages are in it.
-                                                            -->
-                                                            <span
-                                                                class="truncate text-xs text-stone-500"
-                                                                >{l.covers
-                                                                    .slice(0, 4)
-                                                                    .join(', ')}</span
-                                                            >
-                                                        {/if}
-                                                    </button>
-                                                </li>
-                                            {/each}
-                                            {#if languageMatches.length === 0}
-                                                <li class="px-3 py-2 text-sm text-stone-500">
-                                                    No language matches “{languageQuery.trim()}”.
-                                                </li>
-                                            {/if}
-                                        </ul>
-                                        {#if languageMatches.length > 0}
-                                            <p
-                                                class="border-t border-stone-200 px-3 py-1.5 text-xs
-                                                       text-stone-500 dark:border-stone-800
-                                                       dark:text-stone-400"
-                                            >
-                                                ↑↓ to move · ↵ to add · ⌫ removes the last
-                                            </p>
+                                        {#each languageMatches as l, i (l.id)}
+                                            <li>
+                                                <button
+                                                    type="button"
+                                                    role="option"
+                                                    aria-selected={i === languageIndex}
+                                                    onmousedown={(e) => {
+                                                        e.preventDefault();
+                                                        addLanguage(l.id);
+                                                    }}
+                                                    onmouseenter={() => (languageIndex = i)}
+                                                    class="flex w-full items-baseline gap-2 px-3 py-1.5
+                                                           text-left text-sm
+                                                           {i === languageIndex
+                                                        ? 'bg-stone-100 dark:bg-stone-800'
+                                                        : ''}"
+                                                >
+                                                    <span>{l.label}</span>
+                                                    {#if l.group}
+                                                        <!--
+                                                            A family says what it covers, or
+                                                            'Nordic' is a guess about which
+                                                            languages are in it.
+                                                        -->
+                                                        <span
+                                                            class="truncate text-xs text-stone-500"
+                                                            >{l.covers.slice(0, 4).join(', ')}</span
+                                                        >
+                                                    {/if}
+                                                </button>
+                                            </li>
+                                        {/each}
+                                        {#if languageMatches.length === 0}
+                                            <li class="px-3 py-2 text-sm text-stone-500">
+                                                No language matches “{languageQuery.trim()}”.
+                                            </li>
                                         {/if}
-                                    </div>
-                                {/if}
-                            </div>
+                                    </ul>
+                                    {#if languageMatches.length > 0}
+                                        <p
+                                            class="border-t border-stone-200 px-3 py-1.5 text-xs
+                                                   text-stone-500 dark:border-stone-800
+                                                   dark:text-stone-400"
+                                        >
+                                            ↑↓ to move · ↵ to add · ⌫ removes the last
+                                        </p>
+                                    {/if}
+                                </div>
+                            {/if}
+                        </div>
 
+                        {#if chosenLanguages.length > 0}
                             <div class="mt-2 flex flex-wrap items-start gap-2">
-                                {#each languages as id (id)}
-                                    {@const l = LANGUAGES.find((x) => x.id === id)}
+                                {#each chosenLanguages as l (l.id)}
                                     <span
                                         class="flex items-center rounded-lg border border-stone-200
                                                text-sm dark:border-stone-800"
                                     >
-                                        <span class="py-2 pl-3 pr-1.5">{l?.label ?? id}</span>
+                                        <span class="py-2 pl-3 pr-1.5">{l.label}</span>
                                         <button
                                             type="button"
                                             onclick={() => {
-                                                removeLanguage(id);
+                                                removeLanguage(l.id);
                                             }}
-                                            aria-label="Stop using {l?.label ?? id}"
+                                            aria-label="Stop using {l.label}"
                                             class="px-2 py-2 text-stone-400 transition-colors
                                                    duration-100 hover:text-rose-700
                                                    dark:hover:text-rose-400">×</button
                                         >
                                     </span>
                                 {/each}
+                                <!-- Counted the way the three rows below count. -->
                                 <span
                                     class="self-center text-xs text-stone-500 dark:text-stone-400"
                                 >
-                                    {languages.length === 0
-                                        ? 'any language'
-                                        : `${languages.length} chosen`}
+                                    {languages.length}
+                                    {languages.length === 1 ? 'language' : 'languages'}
                                 </span>
                             </div>
-                        </div>
-                    {/if}
+                        {:else}
+                            <p class="mt-2 text-xs text-stone-500 dark:text-stone-400">
+                                any language
+                            </p>
+                        {/if}
+                    </div>
                 </div>
-            </div>
+            {/if}
 
             <div class={ROW}>
                 <div>
@@ -1964,8 +1991,8 @@
 
                     {#if handles.length > 0}
                         <div class="mt-2 flex flex-wrap items-start gap-2">
-                            {#each handles as id (id)}
-                                {@const site = PLATFORMS.find((p) => p.id === id)}
+                            {#each chosenHandles as site (site.id)}
+                                {@const id = site.id}
                                 {@const must = requiredHandles.includes(id)}
                                 <span
                                     class="flex items-center rounded-lg border text-sm transition-colors
@@ -1981,14 +2008,14 @@
                                         }}
                                         aria-pressed={must}
                                         aria-label={must
-                                            ? `@${site?.label ?? id} is required`
-                                            : `@${site?.label ?? id} is reported but not required`}
+                                            ? `@${site.label} is required`
+                                            : `@${site.label} is reported but not required`}
                                         title={must
-                                            ? `A name taken on ${site?.label ?? id} is dropped. Click to only report it.`
-                                            : `${site?.label ?? id} is reported but never drops a name. Click to require it.`}
+                                            ? `A name taken on ${site.label} is dropped. Click to only report it.`
+                                            : `${site.label} is reported but never drops a name. Click to require it.`}
                                         class="flex items-center gap-1.5 py-2 pl-3 pr-1.5"
                                     >
-                                        @{site?.label ?? id}
+                                        @{site.label}
                                         <FieldIcon
                                             paths={must ? ICONS.required : ICONS.report}
                                             class="size-3.5 text-stone-500 dark:text-stone-400"
@@ -1999,7 +2026,7 @@
                                         onclick={() => {
                                             removeHandle(id);
                                         }}
-                                        aria-label="Stop checking {site?.label ?? id}"
+                                        aria-label="Stop checking {site.label}"
                                         class="px-2 py-2 text-stone-400 transition-colors duration-100
                                                hover:text-rose-700 dark:hover:text-rose-400"
                                         >×</button

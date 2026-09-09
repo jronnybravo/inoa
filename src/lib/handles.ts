@@ -102,7 +102,15 @@ export const PLATFORMS: readonly Platform[] = [...KNOWN].sort(
  * The three a brand is asked about first. They are also three of the four that
  * took the most work to check at all — see worker/checks/handle.ts.
  */
-export const DEFAULT_PLATFORMS = ['instagram', 'facebook', 'tiktok'];
+const DEFAULTS = new Set(['instagram', 'facebook', 'tiktok']);
+
+/**
+ * Derived from the sorted list rather than written in an order of its own, so
+ * the default pills come out most-used-first like everything else. Written by
+ * hand it read Instagram, Facebook, TikTok — which is not the order of
+ * anything.
+ */
+export const DEFAULT_PLATFORMS = PLATFORMS.filter((p) => DEFAULTS.has(p.id)).map((p) => p.id);
 
 const BY_ID = new Map(PLATFORMS.map((p) => [p.id, p]));
 

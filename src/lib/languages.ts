@@ -23,103 +23,148 @@ export interface LanguageChoice {
     group?: boolean;
     /** The languages this stands for. A single language covers itself. */
     covers: string[];
+    /**
+     * Approximate speakers, in millions, first and second combined.
+     *
+     * Rounded hard and used only to order the list — the gap between Mandarin
+     * and Icelandic is the information here, the gap between Italian and
+     * Turkish is not. A family carries roughly the sum of its members.
+     *
+     * Speakers rather than 'how often a brand reaches for it', which would be
+     * a guess dressed as data. It does put Latin and Greek low despite their
+     * long history in brand names, which is why they are also reachable by
+     * name in one keystroke.
+     */
+    speakers: number;
 }
 
-export const LANGUAGES: readonly LanguageChoice[] = [
+const KNOWN_LANGUAGES: LanguageChoice[] = [
     // Families first: the broad strokes somebody reaches for before a specific
     // language occurs to them.
     {
         id: 'romance',
         label: 'Romance',
         group: true,
-        covers: ['Latin', 'Spanish', 'French', 'Italian', 'Portuguese', 'Romanian', 'Catalan']
+        covers: ['Latin', 'Spanish', 'French', 'Italian', 'Portuguese', 'Romanian', 'Catalan'],
+        speakers: 1100
     },
     {
         id: 'germanic',
         label: 'Germanic',
         group: true,
-        covers: ['German', 'Dutch', 'Old English', 'Afrikaans']
+        covers: ['German', 'Dutch', 'Old English', 'Afrikaans'],
+        speakers: 750
     },
     {
         id: 'nordic',
         label: 'Nordic',
         group: true,
-        covers: ['Old Norse', 'Swedish', 'Danish', 'Norwegian', 'Icelandic', 'Finnish']
+        covers: ['Old Norse', 'Swedish', 'Danish', 'Norwegian', 'Icelandic', 'Finnish'],
+        speakers: 25
     },
     {
         id: 'slavic',
         label: 'Slavic',
         group: true,
-        covers: ['Russian', 'Polish', 'Czech', 'Ukrainian', 'Croatian']
+        covers: ['Russian', 'Polish', 'Czech', 'Ukrainian', 'Croatian'],
+        speakers: 315
     },
     {
         id: 'classical',
         label: 'Latin & Greek',
         group: true,
-        covers: ['Latin', 'Greek', 'Ancient Greek']
+        covers: ['Latin', 'Greek', 'Ancient Greek'],
+        speakers: 15
     },
-    { id: 'celtic', label: 'Celtic', group: true, covers: ['Irish', 'Welsh', 'Scottish Gaelic'] },
-    { id: 'semitic', label: 'Semitic', group: true, covers: ['Arabic', 'Hebrew', 'Amharic'] },
+    {
+        id: 'celtic',
+        label: 'Celtic',
+        group: true,
+        covers: ['Irish', 'Welsh', 'Scottish Gaelic'],
+        speakers: 3
+    },
+    {
+        id: 'semitic',
+        label: 'Semitic',
+        group: true,
+        covers: ['Arabic', 'Hebrew', 'Amharic'],
+        speakers: 400
+    },
     {
         id: 'bantu',
         label: 'Bantu',
         group: true,
-        covers: ['Swahili', 'Zulu', 'Xhosa', 'Shona']
+        covers: ['Swahili', 'Zulu', 'Xhosa', 'Shona'],
+        speakers: 350
     },
     {
         id: 'austronesian',
         label: 'Austronesian',
         group: true,
-        covers: ['Tagalog', 'Indonesian', 'Malay', 'Hawaiian', 'Māori', 'Cebuano']
+        covers: ['Tagalog', 'Indonesian', 'Malay', 'Hawaiian', 'Māori', 'Cebuano'],
+        speakers: 380
     },
     {
         id: 'indic',
         label: 'Indic',
         group: true,
-        covers: ['Sanskrit', 'Hindi', 'Bengali', 'Tamil', 'Urdu']
+        covers: ['Sanskrit', 'Hindi', 'Bengali', 'Tamil', 'Urdu'],
+        speakers: 1300
     },
     {
         id: 'east-asian',
         label: 'East Asian',
         group: true,
-        covers: ['Japanese', 'Korean', 'Mandarin', 'Cantonese']
+        covers: ['Japanese', 'Korean', 'Mandarin', 'Cantonese'],
+        speakers: 1600
     },
 
     // Then the individual languages, for somebody who knows exactly what they
     // want. Ordered by how often a brand actually reaches for them.
-    { id: 'japanese', label: 'Japanese', covers: ['Japanese'] },
-    { id: 'latin', label: 'Latin', covers: ['Latin'] },
-    { id: 'greek', label: 'Greek', covers: ['Greek', 'Ancient Greek'] },
-    { id: 'spanish', label: 'Spanish', covers: ['Spanish'] },
-    { id: 'italian', label: 'Italian', covers: ['Italian'] },
-    { id: 'french', label: 'French', covers: ['French'] },
-    { id: 'portuguese', label: 'Portuguese', covers: ['Portuguese'] },
-    { id: 'old-norse', label: 'Old Norse', covers: ['Old Norse'] },
-    { id: 'swedish', label: 'Swedish', covers: ['Swedish'] },
-    { id: 'danish', label: 'Danish', covers: ['Danish'] },
-    { id: 'norwegian', label: 'Norwegian', covers: ['Norwegian'] },
-    { id: 'icelandic', label: 'Icelandic', covers: ['Icelandic'] },
-    { id: 'finnish', label: 'Finnish', covers: ['Finnish'] },
-    { id: 'german', label: 'German', covers: ['German'] },
-    { id: 'dutch', label: 'Dutch', covers: ['Dutch'] },
-    { id: 'welsh', label: 'Welsh', covers: ['Welsh'] },
-    { id: 'irish', label: 'Irish', covers: ['Irish'] },
-    { id: 'arabic', label: 'Arabic', covers: ['Arabic'] },
-    { id: 'hebrew', label: 'Hebrew', covers: ['Hebrew'] },
-    { id: 'swahili', label: 'Swahili', covers: ['Swahili'] },
-    { id: 'zulu', label: 'Zulu', covers: ['Zulu'] },
-    { id: 'sanskrit', label: 'Sanskrit', covers: ['Sanskrit'] },
-    { id: 'hindi', label: 'Hindi', covers: ['Hindi'] },
-    { id: 'tagalog', label: 'Tagalog', covers: ['Tagalog'] },
-    { id: 'indonesian', label: 'Indonesian', covers: ['Indonesian'] },
-    { id: 'hawaiian', label: 'Hawaiian', covers: ['Hawaiian'] },
-    { id: 'maori', label: 'Māori', covers: ['Māori'] },
-    { id: 'korean', label: 'Korean', covers: ['Korean'] },
-    { id: 'mandarin', label: 'Mandarin', covers: ['Mandarin'] },
-    { id: 'turkish', label: 'Turkish', covers: ['Turkish'] },
-    { id: 'russian', label: 'Russian', covers: ['Russian'] },
-    { id: 'polish', label: 'Polish', covers: ['Polish'] }
+    { id: 'japanese', label: 'Japanese', covers: ['Japanese'], speakers: 125 },
+    { id: 'latin', label: 'Latin', covers: ['Latin'], speakers: 1 },
+    { id: 'greek', label: 'Greek', covers: ['Greek', 'Ancient Greek'], speakers: 13 },
+    { id: 'spanish', label: 'Spanish', covers: ['Spanish'], speakers: 560 },
+    { id: 'italian', label: 'Italian', covers: ['Italian'], speakers: 65 },
+    { id: 'french', label: 'French', covers: ['French'], speakers: 310 },
+    { id: 'portuguese', label: 'Portuguese', covers: ['Portuguese'], speakers: 265 },
+    { id: 'old-norse', label: 'Old Norse', covers: ['Old Norse'], speakers: 1 },
+    { id: 'swedish', label: 'Swedish', covers: ['Swedish'], speakers: 13 },
+    { id: 'danish', label: 'Danish', covers: ['Danish'], speakers: 6 },
+    { id: 'norwegian', label: 'Norwegian', covers: ['Norwegian'], speakers: 5 },
+    { id: 'icelandic', label: 'Icelandic', covers: ['Icelandic'], speakers: 1 },
+    { id: 'finnish', label: 'Finnish', covers: ['Finnish'], speakers: 5 },
+    { id: 'german', label: 'German', covers: ['German'], speakers: 135 },
+    { id: 'dutch', label: 'Dutch', covers: ['Dutch'], speakers: 25 },
+    { id: 'welsh', label: 'Welsh', covers: ['Welsh'], speakers: 1 },
+    { id: 'irish', label: 'Irish', covers: ['Irish'], speakers: 2 },
+    { id: 'arabic', label: 'Arabic', covers: ['Arabic'], speakers: 400 },
+    { id: 'hebrew', label: 'Hebrew', covers: ['Hebrew'], speakers: 9 },
+    { id: 'swahili', label: 'Swahili', covers: ['Swahili'], speakers: 200 },
+    { id: 'zulu', label: 'Zulu', covers: ['Zulu'], speakers: 28 },
+    { id: 'sanskrit', label: 'Sanskrit', covers: ['Sanskrit'], speakers: 1 },
+    { id: 'hindi', label: 'Hindi', covers: ['Hindi'], speakers: 610 },
+    { id: 'tagalog', label: 'Tagalog', covers: ['Tagalog'], speakers: 85 },
+    { id: 'indonesian', label: 'Indonesian', covers: ['Indonesian'], speakers: 200 },
+    { id: 'hawaiian', label: 'Hawaiian', covers: ['Hawaiian'], speakers: 1 },
+    { id: 'maori', label: 'Māori', covers: ['Māori'], speakers: 1 },
+    { id: 'korean', label: 'Korean', covers: ['Korean'], speakers: 82 },
+    { id: 'mandarin', label: 'Mandarin', covers: ['Mandarin'], speakers: 1100 },
+    { id: 'turkish', label: 'Turkish', covers: ['Turkish'], speakers: 90 },
+    { id: 'russian', label: 'Russian', covers: ['Russian'], speakers: 255 },
+    { id: 'polish', label: 'Polish', covers: ['Polish'], speakers: 40 }
 ];
+
+/**
+ * Most spoken first, families and single languages interleaved.
+ *
+ * Sorted rather than hand-ordered, so a new entry lands where its size puts it
+ * instead of wherever it was typed — the same treatment the domains and the
+ * platforms get.
+ */
+export const LANGUAGES: readonly LanguageChoice[] = [...KNOWN_LANGUAGES].sort(
+    (a, b) => b.speakers - a.speakers || a.label.localeCompare(b.label)
+);
 
 const BY_ID = new Map(LANGUAGES.map((l) => [l.id, l]));
 

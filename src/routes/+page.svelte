@@ -662,7 +662,6 @@
         approachFilter = '';
         checkFilter = {};
     }
-    const selected = $state<Record<string, boolean>>({});
     // Open while there is something to watch, closed once there is not: a
     // finished run spent 23rem of the results area on historical chatter.
     /**
@@ -1394,32 +1393,19 @@
         }
     });
 
-    function visibleRows() {
-        return shown.filter((c) => selected[c.id] ?? true);
-    }
-
     /**
-     * How many rows Copy would take, and whether that is all of them.
+     * Copy takes what the table is showing.
      *
-     * The checkbox column is only meaningful next to a button that says what
-     * it will copy — otherwise it is a filled square on every row answering a
-     * question nobody asked.
+     * There was a checkbox on every row on top of this, which is a second
+     * selection mechanism over a table that already has five — the name
+     * filter, the approach, a status per check, and 'only names that passed'.
+     * Those say what a row is; ticking says only that somebody ticked it, and
+     * the pair of them together meant a filtered table could still copy rows
+     * that were not on screen.
      */
-    const chosenCount = $derived(visibleRows().length);
-    const shownCount = $derived(shown.length);
-    const allChosen = $derived(shownCount > 0 && chosenCount === shownCount);
-    const someChosen = $derived(chosenCount > 0);
-
-    /** Every visible row on or off together. Hidden rows keep whatever they had. */
-    function chooseAll(on: boolean) {
-        for (const c of shown) {
-            selected[c.id] = on;
-        }
-    }
-
     async function copyCsv() {
         const header = ['Name', 'Approach', ...columns.map(checkLabel)].join(',');
-        const rows = visibleRows().map((c) =>
+        const rows = shown.map((c) =>
             [
                 c.name,
                 strategyLabel(c.strategy),
@@ -2691,7 +2677,7 @@
                 class="rounded-lg border border-stone-500 px-3 py-1.5 text-sm transition-colors
                  duration-150 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
             >
-                {copied ? 'Copied' : `Copy ${chosenCount} ${chosenCount === 1 ? 'row' : 'rows'}`}
+                {copied ? 'Copied' : `Copy ${shown.length} ${shown.length === 1 ? 'row' : 'rows'}`}
             </button>
         </div>
 
@@ -2781,7 +2767,6 @@
             checks there are is the run's own business.
           -->
                 <colgroup>
-                    <col style="width: 2.75rem" />
                     <!--
                         Widest of the fixed columns, because it is the one
                         being read.
@@ -2827,27 +2812,6 @@
                 -->
                 <thead class="sticky top-0 z-10 bg-white text-left dark:bg-stone-950">
                     <tr>
-                        <!--
-                                The column had no header at all, so a filled
-                                black checkbox on every row was the heaviest
-                                thing in the table and explained by nothing.
-                                This says what it is for and turns the lot on
-                                and off.
-                            -->
-                        <th scope="col" class="px-3 py-2.5 align-bottom {HEADER_EDGE}">
-                            <input
-                                type="checkbox"
-                                checked={allChosen}
-                                indeterminate={someChosen && !allChosen}
-                                onchange={(e) => {
-                                    chooseAll(e.currentTarget.checked);
-                                }}
-                                aria-label="Choose every row for the CSV"
-                                title="Rows to copy"
-                                class="accent-stone-500 dark:accent-stone-400"
-                            />
-                        </th>
-
                         <th
                             scope="col"
                             class="sticky left-0 z-20 bg-white px-3 py-2.5 align-bottom
@@ -3040,23 +3004,6 @@
                          dark:bg-stone-950 dark:hover:bg-stone-900"
                         >
                             <!--
-                                Quieter than the rest of the form.
-
-                                accent-stone-900 puts a near-black square in
-                                every one of a thousand rows — a solid column
-                                down the left of the table, and the heaviest
-                                thing on the page for the least important thing
-                                on it.
-                            -->
-                            <td class="px-3 py-2">
-                                <input
-                                    type="checkbox"
-                                    class="accent-stone-500 dark:accent-stone-400"
-                                    checked={selected[c.id] ?? true}
-                                    onchange={(e) => (selected[c.id] = e.currentTarget.checked)}
-                                />
-                            </td>
-                            <!--
                     Pinned, because the results are read on a phone.
                     The table is 819px of content in a 340px panel, so
                     scrolling to the verdicts used to take the names with it
@@ -3219,8 +3166,17 @@
                         </tr>
                     {:else}
                         <tr
-                            ><td
-                                colspan="8"
+                            ><!--
+                                Counted, not guessed.
+
+                                It was colspan="8", which stopped being the
+                                number of columns the moment which checks a run
+                                makes became the run's own business — and the
+                                selection column going has moved it again. Name
+                                and approach, a column per check, the link
+                                column when there is one, and the actions.
+                            --><td
+                                colspan={2 + columns.length + (linkColumn ? 1 : 0) + 1}
                                 class="px-4 py-12 text-center text-sm text-stone-500 dark:text-stone-400"
                             >
                                 {#if run.status === 'stopped'}

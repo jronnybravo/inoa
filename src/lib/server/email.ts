@@ -30,6 +30,19 @@ export interface SendResult {
     reason?: string;
 }
 
+/**
+ * Whether this deployment can send mail at all.
+ *
+ * The answer decides more than whether a results email arrives. Without a key
+ * there is no way to send a verification code, so there is no way to prove an
+ * address belongs to whoever typed it — and asking for one anyway would be
+ * collecting a detail nothing can use. A run without mail is verified by
+ * nobody and starts immediately, which is the only honest arrangement.
+ */
+export function mailConfigured(): boolean {
+    return Boolean(process.env.RESEND_API_KEY);
+}
+
 export async function sendVerificationCode(to: string, code: string): Promise<SendResult> {
     const resend = client();
     if (!resend) {
@@ -80,7 +93,7 @@ export function toCsv(rows: ResultRow[], kinds: CheckKind[]): string {
 }
 
 export async function sendResults(
-    to: string,
+    to: string | null,
     runId: string,
     brief: string,
     rows: ResultRow[],
@@ -90,6 +103,9 @@ export async function sendResults(
     const resend = client();
     if (!resend) {
         return { sent: false, reason: 'No RESEND_API_KEY configured' };
+    }
+    if (!to) {
+        return { sent: false, reason: 'The run was started without an address' };
     }
 
     const table = rows

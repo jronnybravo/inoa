@@ -1,4 +1,6 @@
+import { searchConfigured } from '$lib/search';
 import { db } from '$lib/server/db';
+import { mailConfigured } from '$lib/server/email';
 import { Candidate } from '$lib/server/entities/candidate';
 import { Run } from '$lib/server/entities/run';
 import { candidateView, runView } from '$lib/server/views';
@@ -10,16 +12,25 @@ import type { PageServerLoad } from './$types';
  * they arrive.
  */
 export const load: PageServerLoad = async ({ url }) => {
+    /*
+     * Whether this deployment can send mail decides whether the form asks for
+     * an address at all. Read here rather than guessed at in the browser: it
+     * is an environment variable, and the page has no other way to know.
+     */
+    const mail = mailConfigured();
+    // Whether the web check can run at all, which decides what the form offers.
+    const search = searchConfigured();
+
     const id = url.searchParams.get('requestid');
     if (!id) {
-        return { run: null };
+        return { run: null, mail, search };
     }
 
     try {
         await db();
         const run = await Run.findOneBy({ id });
         if (!run) {
-            return { run: null, notFound: true };
+            return { run: null, mail, search, notFound: true };
         }
         /*
          * The rows travel with the run.
@@ -36,9 +47,9 @@ export const load: PageServerLoad = async ({ url }) => {
             take: 2000
         });
 
-        return { run: runView(run), candidates: candidates.map(candidateView) };
+        return { run: runView(run), mail, search, candidates: candidates.map(candidateView) };
     } catch {
         // A missing DATABASE_URL should show the form, not a 500.
-        return { run: null };
+        return { run: null, mail, search };
     }
 };

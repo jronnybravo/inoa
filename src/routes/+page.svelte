@@ -930,8 +930,15 @@
         'absolute inset-y-0 right-0 flex w-5 items-center justify-center text-sm ' +
         'leading-none text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100';
 
+    /**
+     * The rule under the header, as a shadow rather than a border.
+     *
+     * A border on a sticky <thead> scrolls away from it — the cells stay put
+     * and the line does not. It is heavier than it was, because the rows below
+     * are striped now and a hairline was getting lost among them.
+     */
     const HEADER_EDGE =
-        'shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)] dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]';
+        'shadow-[inset_0_-2px_0_rgb(0_0_0/0.18)] dark:shadow-[inset_0_-2px_0_rgb(255_255_255/0.18)]';
 
     const LEVEL: Record<string, string> = {
         info: 'text-stone-600 dark:text-stone-400',
@@ -2814,7 +2821,7 @@
                     <tr>
                         <th
                             scope="col"
-                            class="sticky left-0 z-20 bg-white px-3 py-2.5 align-bottom
+                            class="sticky left-0 z-20 bg-white px-4 py-3 align-bottom
                                 after:absolute after:inset-y-0 after:-right-px after:w-px
                                 after:bg-stone-200 dark:bg-stone-950 dark:after:bg-stone-800
                                 {HEADER_EDGE}"
@@ -2834,9 +2841,10 @@
                             <button
                                 onclick={() => (nameSort = NEXT_SORT[nameSort])}
                                 title={SORT_HINT[nameSort]}
-                                class="group flex items-center gap-1 pb-1 text-xs font-medium
-                                           text-stone-600 dark:text-stone-400 transition-colors duration-100
-                                           hover:text-stone-900 dark:hover:text-stone-100"
+                                class="group flex items-center gap-1 pb-1.5 text-[0.6875rem]
+                                       font-semibold tracking-wide uppercase text-stone-600
+                                       transition-colors duration-100 hover:text-stone-900
+                                       dark:text-stone-400 dark:hover:text-stone-100"
                             >
                                 Name
                                 <span
@@ -2868,10 +2876,10 @@
 
                         <th
                             scope="col"
-                            class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}"
+                            class="px-4 py-3 align-bottom whitespace-nowrap {HEADER_EDGE}"
                         >
                             <span
-                                class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
+                                class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
                             >
                                 Approach
                             </span>
@@ -2910,11 +2918,11 @@
                         {#each columns as k (k)}
                             <th
                                 scope="col"
-                                class="px-3 py-2.5 text-center align-bottom whitespace-nowrap
+                                class="px-3 py-3 text-center align-bottom whitespace-nowrap
                                        {HEADER_EDGE}"
                             >
                                 <span
-                                    class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
+                                    class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
                                 >
                                     {checkLabel(k)}
                                 </span>
@@ -2959,11 +2967,11 @@
                                 -->
                             <th
                                 scope="col"
-                                class="px-3 py-2.5 text-center align-bottom whitespace-nowrap
+                                class="px-3 py-3 text-center align-bottom whitespace-nowrap
                                        {HEADER_EDGE}"
                             >
                                 <span
-                                    class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
+                                    class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
                                 >
                                     {checkLabel(linkColumn)}
                                 </span>
@@ -2975,10 +2983,10 @@
 
                         <th
                             scope="col"
-                            class="px-3 py-2.5 text-right align-bottom whitespace-nowrap {HEADER_EDGE}"
+                            class="px-4 py-3 text-right align-bottom whitespace-nowrap {HEADER_EDGE}"
                         >
                             <span
-                                class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
+                                class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
                             >
                                 Action
                             </span>
@@ -2999,9 +3007,9 @@
                 <tbody>
                     {#each shown as c (c.id)}
                         <tr
-                            class="border-t border-stone-100 bg-white transition-colors
-                         duration-100 hover:bg-stone-50 dark:border-stone-800/70
-                         dark:bg-stone-950 dark:hover:bg-stone-900"
+                            class="odd:bg-white even:bg-stone-50 dark:odd:bg-stone-950
+                                   dark:even:bg-stone-900/60 transition-colors duration-100
+                                   hover:bg-stone-100 dark:hover:bg-stone-800/70"
                         >
                             <!--
                     Pinned, because the results are read on a phone.

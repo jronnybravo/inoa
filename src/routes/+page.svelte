@@ -896,8 +896,13 @@
         metaphor: 'Metaphor',
         portmanteau: 'Blend',
         foreign: 'Language',
-        short: 'Abstract'
+        short: 'Abstract',
+        respell: 'Respelled'
     };
+
+    /** One look for the recap's chips, so the two groups differ by label and not by style. */
+    const RECAP_CHIP =
+        'rounded bg-stone-100 px-1.5 py-0.5 text-stone-600 dark:bg-stone-800 dark:text-stone-400';
 
     /** One look for the three rerun controls, two of which are buttons and one a link. */
     const RERUN =
@@ -1380,6 +1385,25 @@
 
     function visibleRows() {
         return shown.filter((c) => selected[c.id] ?? true);
+    }
+
+    /**
+     * How many rows Copy would take, and whether that is all of them.
+     *
+     * The checkbox column is only meaningful next to a button that says what
+     * it will copy — otherwise it is a filled square on every row answering a
+     * question nobody asked.
+     */
+    const chosenCount = $derived(visibleRows().length);
+    const shownCount = $derived(shown.length);
+    const allChosen = $derived(shownCount > 0 && chosenCount === shownCount);
+    const someChosen = $derived(chosenCount > 0);
+
+    /** Every visible row on or off together. Hidden rows keep whatever they had. */
+    function chooseAll(on: boolean) {
+        for (const c of shown) {
+            selected[c.id] = on;
+        }
     }
 
     async function copyCsv() {
@@ -2347,134 +2371,146 @@
                   dark:border-stone-800 dark:bg-stone-900"
     >
         <p class="text-sm leading-relaxed text-stone-800 dark:text-stone-200">{run.brief}</p>
+
         <!--
-            The row lightens its own text in dark mode. stone-500 on stone-800
-            measures 3.2:1 at 12px; the same token passes comfortably on the
-            light ground, which is how it survived unnoticed.
+            A labelled list, because the chips were ambiguous without one.
+
+            The approaches and the requirements were two runs of identically
+            styled chips with the bare word 'requires' floating between them —
+            so which group a chip belonged to depended on noticing a preposition
+            mid-row. Naming both groups costs one column and settles it.
+        -->
+        <dl class="mt-3 grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-[auto_minmax(0,1fr)]">
+            <dt class="text-stone-500 dark:text-stone-400">Approaches</dt>
+            <dd class="flex flex-wrap items-center gap-1.5">
+                {#each run.strategies ?? [] as approach (approach)}
+                    <span class={RECAP_CHIP}
+                        >{STRATEGIES.find((x) => x.id === approach)?.label ?? approach}</span
+                    >
+                {/each}
+            </dd>
+
+            <dt class="text-stone-500 dark:text-stone-400">Requires</dt>
+            <dd class="flex flex-wrap items-center gap-1.5">
+                {#each watched.checks.required as kind (kind)}
+                    <span class={RECAP_CHIP}>{checkLabel(kind)}</span>
+                {:else}
+                    <span class="text-stone-500 italic dark:text-stone-400"
+                        >nothing — every name is reported</span
+                    >
+                {/each}
+            </dd>
+
+            {#if run.email}
+                <dt class="text-stone-500 dark:text-stone-400">Results to</dt>
+                <dd class="text-stone-600 dark:text-stone-400">{run.email}</dd>
+            {/if}
+        </dl>
+
+        <!--
+            How it is going, and what to do next — inside the same card.
+
+            These were a second panel below this one, which put 640px of
+            chrome between the header and the first control. They describe the
+            same run; a rule is enough to separate them.
         -->
         <div
-            class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-stone-500 dark:text-stone-400
-                   dark:text-stone-300"
+            class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-stone-200 pt-3.5
+                   dark:border-stone-800"
         >
-            {#each run.strategies ?? [] as s (s)}
-                <span
-                    class="rounded bg-stone-100 px-1.5 py-0.5 text-stone-600 dark:bg-stone-800 dark:text-stone-400"
-                >
-                    {STRATEGIES.find((x) => x.id === s)?.label ?? s}
-                </span>
-            {/each}
-            <span aria-hidden="true" class="hidden text-stone-500 dark:text-stone-400 sm:inline"
-                >·</span
-            >
-            <span>requires</span>
-            {#each watched.checks.required as kind (kind)}
-                <span
-                    class="rounded bg-stone-100 px-1.5 py-0.5 text-stone-600 dark:bg-stone-800 dark:text-stone-400"
-                    >{checkLabel(kind)}</span
-                >
-            {:else}
-                <span class="italic">nothing - every name is reported</span>
-            {/each}
-            <span aria-hidden="true" class="hidden text-stone-500 dark:text-stone-400 sm:inline"
-                >·</span
-            >
-            <span>{run.email}</span>
-        </div>
-    </section>
-
-    <!-- Progress reads left to right in the order the funnel actually runs. -->
-    <section
-        class="mt-4 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-xl border
-                  border-stone-200 bg-white px-5 py-4 dark:border-stone-800 dark:bg-stone-900"
-    >
-        <div class="flex items-center gap-2.5">
-            <span class="relative flex h-2 w-2">
-                {#if !finished}
+            <div class="flex items-center gap-2.5">
+                <span class="relative flex h-2 w-2">
+                    {#if !finished}
+                        <span
+                            class="absolute inline-flex h-full w-full animate-ping rounded-full
+                                   bg-emerald-500 opacity-60"
+                        ></span>
+                    {/if}
                     <span
-                        class="absolute inline-flex h-full w-full animate-ping rounded-full
-                       bg-emerald-500 opacity-60"
+                        class="relative inline-flex h-2 w-2 rounded-full
+                               {run.status === 'failed'
+                            ? 'bg-rose-500'
+                            : run.status === 'stopped'
+                              ? 'bg-amber-500'
+                              : finished
+                                ? 'bg-stone-400'
+                                : 'bg-emerald-500'}"
                     ></span>
-                {/if}
-                <span
-                    class="relative inline-flex h-2 w-2 rounded-full
-                     {run.status === 'failed'
-                        ? 'bg-rose-500'
-                        : run.status === 'stopped'
-                          ? 'bg-amber-500'
-                          : finished
-                            ? 'bg-stone-400'
-                            : 'bg-emerald-500'}"
-                ></span>
-            </span>
-            <span class="text-sm font-medium">{STATUS_LABEL[run.status] ?? run.status}</span>
+                </span>
+                <span class="text-sm font-medium">{STATUS_LABEL[run.status] ?? run.status}</span>
 
-            {#if stoppable}
-                <button
-                    onclick={() => stopDialog?.showModal()}
-                    class="ml-2 rounded border border-stone-500 px-2 py-0.5 text-xs
-                           transition-colors duration-100 hover:bg-stone-200
-                           dark:border-stone-700 dark:hover:bg-stone-800">Stop</button
-                >
+                {#if stoppable}
+                    <button
+                        onclick={() => stopDialog?.showModal()}
+                        class="ml-2 rounded border border-stone-500 px-2 py-0.5 text-xs
+                               transition-colors duration-100 hover:bg-stone-200
+                               dark:hover:bg-stone-800">Stop</button
+                    >
+                {/if}
+            </div>
+
+            {#each progress as stat (stat.label)}
+                <div class="flex items-baseline gap-1.5">
+                    <!--
+                        A null value is 'not established yet', and prints as a dash.
+                        Zero is a finding, and this strip must not claim one it has
+                        not made.
+                    -->
+                    <span
+                        class="text-lg font-semibold tabular-nums
+                               {stat.label === 'unverified'
+                            ? 'text-amber-700 dark:text-amber-400'
+                            : ''}">{stat.value ?? '—'}</span
+                    >
+                    {#if stat.of}<span
+                            class="text-sm text-stone-500 tabular-nums dark:text-stone-400"
+                            >/ {stat.of}</span
+                        >{/if}
+                    <span
+                        class="text-sm {stat.label === 'unverified'
+                            ? 'text-amber-700/80 dark:text-amber-400/80'
+                            : 'text-stone-500 dark:text-stone-400'}">{stat.label}</span
+                    >
+                </div>
+            {/each}
+
+            <!--
+                Three ways to run this again, where the run's own numbers are.
+
+                'Again' means two different things and the difference is the
+                whole decision: a brief that produced nothing usable wants a
+                clean sheet, one that produced four good names wants a fifth —
+                and starting over would throw those four away along with every
+                check paid for.
+
+                Changing something first is the third, and it is a link rather
+                than a button: it goes to the compose form with these settings
+                in it, which is the screen for editing settings.
+            -->
+            {#if finished}
+                <div class="ml-auto flex flex-wrap items-center gap-2">
+                    <button
+                        onclick={() => rerun('continue')}
+                        disabled={rerunning !== ''}
+                        title="Keep every name and verdict here, and look for as many again."
+                        class="{RERUN} disabled:opacity-40"
+                        >{rerunning === 'continue' ? 'Asking…' : 'Find more'}</button
+                    >
+                    <button
+                        onclick={() => rerun('fresh')}
+                        disabled={rerunning !== ''}
+                        title="A new run beside this one: same settings, no names carried over."
+                        class="{RERUN} disabled:opacity-40"
+                        >{rerunning === 'fresh' ? 'Starting…' : 'Run again'}</button
+                    >
+                    <a
+                        href="{resolve('/')}?from={run.id}"
+                        title="The compose form, with these settings already in it."
+                        class={RERUN}>Edit and run</a
+                    >
+                </div>
             {/if}
         </div>
-        {#each progress as stat (stat.label)}
-            <div class="flex items-baseline gap-1.5">
-                <!--
-                    A null value is 'not established yet', and prints as a dash.
-                    Zero is a finding, and this strip must not claim one it has
-                    not made.
-                -->
-                <span
-                    class="text-lg font-semibold tabular-nums
-                    {stat.label === 'unverified' ? 'text-amber-700 dark:text-amber-400' : ''}"
-                    >{stat.value ?? '—'}</span
-                >
-                {#if stat.of}<span class="text-sm text-stone-500 dark:text-stone-400 tabular-nums"
-                        >/ {stat.of}</span
-                    >{/if}
-                <span
-                    class="text-sm {stat.label === 'unverified'
-                        ? 'text-amber-700/80 dark:text-amber-400/80'
-                        : 'text-stone-500 dark:text-stone-400'}">{stat.label}</span
-                >
-            </div>
-        {/each}
-
-        <!--
-            Three ways to run this again, where the run's own numbers are.
-
-            'Again' means two different things and the difference is the whole
-            decision: a brief that produced nothing usable wants a clean sheet,
-            one that produced four good names wants a fifth — and starting over
-            would throw those four away along with every check paid for.
-
-            Changing something first is the third, and it is a link rather than
-            a button: it goes to the compose form with these settings in it,
-            which is the screen for editing settings.
-        -->
-        {#if finished}
-            <div class="ml-auto flex flex-wrap items-center gap-2">
-                <button
-                    onclick={() => rerun('continue')}
-                    disabled={rerunning !== ''}
-                    title="Keep every name and verdict here, and look for as many again."
-                    class="{RERUN} disabled:opacity-40"
-                    >{rerunning === 'continue' ? 'Asking…' : 'Find more'}</button
-                >
-                <button
-                    onclick={() => rerun('fresh')}
-                    disabled={rerunning !== ''}
-                    title="A new run beside this one: same settings, no names carried over."
-                    class="{RERUN} disabled:opacity-40"
-                    >{rerunning === 'fresh' ? 'Starting…' : 'Run again'}</button
-                >
-                <a
-                    href="{resolve('/')}?from={run.id}"
-                    title="The compose form, with these settings already in it."
-                    class={RERUN}>Edit and run</a
-                >
-            </div>
-        {/if}
     </section>
 
     <!--
@@ -2566,15 +2602,29 @@
                     class="rounded-lg border border-stone-500 px-3 py-1.5 text-sm transition-colors
                  duration-150 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
                 >
-                    {copied ? 'Copied' : 'Copy CSV'}
+                    {copied
+                        ? 'Copied'
+                        : `Copy ${chosenCount} ${chosenCount === 1 ? 'row' : 'rows'}`}
                 </button>
             </div>
 
             {#if byStrategy.length > 0}
+                <!--
+                    Passing out of generated, and nothing else.
+
+                    Every entry carried a third number — 'Combination 0/2 of 6'
+                    — the checked count, in amber, on six approaches at once.
+                    Three unlabelled numbers per approach across three wrapped
+                    lines is not a tally anybody reads, and the run's own
+                    'checked' figure is in the card above, once, where it means
+                    the same thing.
+                -->
                 <div
                     class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500 dark:text-stone-400"
                 >
-                    <span>{totalNames} names</span>
+                    <span class="text-stone-600 dark:text-stone-300"
+                        >{totalNames} names, passing by approach</span
+                    >
                     {#each byStrategy as s (s.id)}
                         <!--
                             Short form, matching the cells directly below. The
@@ -2583,16 +2633,10 @@
                             within 100px made the tally unreadable against the
                             column it describes.
                         -->
-                        <span title={s.label}>
+                        <span title="{s.label} — {s.passed} passing of {s.total} generated">
                             {strategyLabel(s.id)}
-                            <b class="font-medium">{s.passed}</b>/{s.checked}
-                            {#if s.checked !== s.total}
-                                <!-- Only when they differ: on a completed run the
-                                     third number is the second one again. -->
-                                <span class="text-amber-700/80 dark:text-amber-500/70"
-                                    >of {s.total}</span
-                                >
-                            {/if}
+                            <b class="font-medium text-stone-700 dark:text-stone-300">{s.passed}</b
+                            >/{s.total}
                         </span>
                     {/each}
                     {#if unattributed > 0}
@@ -2600,29 +2644,6 @@
                     {/if}
                 </div>
             {/if}
-
-            <!--
-                A definition list, because that is what it is.
-
-                It was five term/definition pairs read out as one run-on line of
-                spans — the densest text on the page, and the key to every cell
-                below it. dt/dd pairs them for a screen reader, and the wider
-                column gap separates the pairs by more than the term separates
-                from its own definition.
-            -->
-            <dl
-                class="mb-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-stone-500 dark:text-stone-400"
-            >
-                {#each LEGEND as l (l.status)}
-                    <div class="flex items-center gap-1.5 whitespace-nowrap">
-                        <dt class="font-medium {CELL[l.status].class}">
-                            {CELL[l.status].icon}
-                            {CELL[l.status].text}
-                        </dt>
-                        <dd>{l.note}</dd>
-                    </div>
-                {/each}
-            </dl>
 
             <!--
         The table scrolls inside its own panel rather than lengthening the page.
@@ -2695,7 +2716,26 @@
                     -->
                     <thead class="sticky top-0 z-10 text-left">
                         <tr class="bg-stone-100 dark:bg-stone-900">
-                            <th scope="col" class="px-3 py-2.5 align-bottom {HEADER_EDGE}"></th>
+                            <!--
+                                The column had no header at all, so a filled
+                                black checkbox on every row was the heaviest
+                                thing in the table and explained by nothing.
+                                This says what it is for and turns the lot on
+                                and off.
+                            -->
+                            <th scope="col" class="px-3 py-2.5 align-bottom {HEADER_EDGE}">
+                                <input
+                                    type="checkbox"
+                                    checked={allChosen}
+                                    indeterminate={someChosen && !allChosen}
+                                    onchange={(e) => {
+                                        chooseAll(e.currentTarget.checked);
+                                    }}
+                                    aria-label="Choose every row for the CSV"
+                                    title="Rows to copy"
+                                    class="accent-stone-900 dark:accent-stone-100"
+                                />
+                            </th>
 
                             <th
                                 scope="col"
@@ -3068,6 +3108,29 @@
                     </tbody>
                 </table>
             </div>
+            <!--
+                Under the table, not above it.
+
+                It is a reference — consulted the first time a mark is
+                unfamiliar — and it was four lines of the densest text on the
+                page standing between the filters and the first result. dt/dd
+                pairs each mark with its meaning for a screen reader, and the
+                wider column gap separates the pairs by more than the term
+                separates from its own definition.
+            -->
+            <dl
+                class="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-stone-500 dark:text-stone-400"
+            >
+                {#each LEGEND as l (l.status)}
+                    <div class="flex items-center gap-1.5 whitespace-nowrap">
+                        <dt class="font-medium {CELL[l.status].class}">
+                            {CELL[l.status].icon}
+                            {CELL[l.status].text}
+                        </dt>
+                        <dd>{l.note}</dd>
+                    </div>
+                {/each}
+            </dl>
         </section>
 
         <!-- The worker runs on another machine, so its console is piped here. -->

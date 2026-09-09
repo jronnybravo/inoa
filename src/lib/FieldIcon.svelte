@@ -20,7 +20,7 @@
      */
     const {
         paths,
-        class: tone = 'size-4 text-stone-400 dark:text-stone-500'
+        class: tone = 'size-4 text-stone-500 dark:text-stone-400'
     }: {
         paths: string[];
         class?: string;

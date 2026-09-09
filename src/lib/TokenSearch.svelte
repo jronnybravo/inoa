@@ -127,10 +127,7 @@
         aria-controls="{id}-list"
         aria-labelledby={labelledBy}
         autocomplete="off"
-        class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm
-               placeholder:text-stone-400 focus:border-stone-500 focus:outline-none
-               focus:ring-2 focus:ring-stone-900/10 dark:border-stone-700 dark:bg-stone-950
-               dark:placeholder:text-stone-600 dark:focus:ring-white/10"
+        class="w-full rounded-lg border border-stone-500 bg-white px-3 py-2 text-sm placeholder:text-stone-500 dark:placeholder:text-stone-400 focus:ring-2 focus:ring-stone-900/10 dark:bg-stone-950 dark:focus:ring-white/10"
     />
     {#if open}
         <div
@@ -177,12 +174,14 @@
                         >
                             <span>{option.label}</span>
                             {#if option.note}
-                                <span class="truncate text-xs text-stone-500">{option.note}</span>
+                                <span class="truncate text-xs text-stone-500 dark:text-stone-400"
+                                    >{option.note}</span
+                                >
                             {/if}
                             {#if option.meta}
                                 <span
-                                    class="ml-auto text-xs tabular-nums text-stone-500
-                                           dark:text-stone-400">{option.meta}</span
+                                    class="ml-auto text-xs tabular-nums text-stone-500 dark:text-stone-400"
+                                    >{option.meta}</span
                                 >
                             {/if}
                         </button>
@@ -190,15 +189,14 @@
                 {/each}
 
                 {#if matches.length === 0 && already.length === 0}
-                    <li class="px-3 py-2 text-sm text-stone-500">
+                    <li class="px-3 py-2 text-sm text-stone-500 dark:text-stone-400">
                         Nothing matches “{query.trim()}”.
                     </li>
                 {/if}
             </ul>
             {#if matches.length > 0}
                 <p
-                    class="border-t border-stone-200 px-3 py-1.5 text-xs text-stone-500
-                           dark:border-stone-800 dark:text-stone-400"
+                    class="border-t border-stone-200 px-3 py-1.5 text-xs text-stone-500 dark:text-stone-400 dark:border-stone-800"
                 >
                     ↑↓ to move · ↵ to add{onremovelast ? ' · ⌫ removes the last' : ''}
                 </p>

@@ -842,8 +842,8 @@
         clear: { text: 'free', icon: '✓', class: 'text-emerald-700 dark:text-emerald-400' },
         taken: { text: 'taken', icon: '✕', class: 'text-rose-700/90 dark:text-rose-400/90' },
         unknown: { text: 'unverified', icon: '?', class: 'text-amber-700 dark:text-amber-400' },
-        skipped: { text: 'skipped', icon: '⊘', class: 'text-stone-400 dark:text-stone-600' },
-        pending: { text: 'waiting', icon: '…', class: 'text-stone-400 dark:text-stone-500' }
+        skipped: { text: 'skipped', icon: '⊘', class: 'text-stone-500 dark:text-stone-400' },
+        pending: { text: 'waiting', icon: '…', class: 'text-stone-500 dark:text-stone-400' }
     };
 
     /**
@@ -891,13 +891,13 @@
     /** The hairline under a sticky header, which a border would scroll away from. */
     const FILTER_INPUT =
         'w-full rounded border bg-white px-1.5 py-1 text-xs font-normal ' +
-        'placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-900/10 ' +
-        'dark:bg-stone-950 dark:placeholder:text-stone-600 dark:focus:ring-white/10';
-    const FILTER_IDLE = 'border-stone-300 dark:border-stone-700';
+        'placeholder:text-stone-500 dark:placeholder:text-stone-400 focus:ring-2 focus:ring-stone-900/10 ' +
+        'dark:bg-stone-950 dark:placeholder:text-stone-400 dark:focus:ring-white/10';
+    const FILTER_IDLE = 'border-stone-500';
     const FILTER_ACTIVE = 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/60';
     const CLEAR_BUTTON =
         'absolute inset-y-0 right-0 flex w-5 items-center justify-center text-sm ' +
-        'leading-none text-stone-400 hover:text-stone-900 dark:hover:text-stone-100';
+        'leading-none text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100';
 
     const HEADER_EDGE =
         'shadow-[inset_0_-1px_0_rgb(0_0_0/0.08)] dark:shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]';
@@ -1318,6 +1318,21 @@
     const time = (at: string) => new Date(at).toLocaleTimeString('en-GB', { hour12: false });
 </script>
 
+<!--
+    Which run this tab is, not which app.
+
+    Every run page said 'Inoa', so several open at once were indistinguishable
+    in the tab strip and in history — while /runs, one click away, has said
+    'Runs · Inoa' all along. The brief is the only thing that tells them apart.
+-->
+<svelte:head>
+    <title
+        >{run
+            ? `${run.brief.slice(0, 60)}${run.brief.length > 60 ? '…' : ''} · Inoa`
+            : 'Inoa'}</title
+    >
+</svelte:head>
+
 <svelte:window onkeydown={onKeydown} />
 
 <AppHeader>
@@ -1401,7 +1416,7 @@
                     <label for="brief" class="flex items-center gap-2 text-sm font-medium">
                         <FieldIcon paths={ICONS.brief} />Brief
                     </label>
-                    <p id="brief-help" class="mt-1 text-xs text-stone-500">
+                    <p id="brief-help" class="mt-1 text-xs text-stone-500 dark:text-stone-400">
                         A sentence about the business. The names are generated from this, so what it
                         does matters more than how it is phrased.
                     </p>
@@ -1422,12 +1437,11 @@
                         aria-describedby={problemFor('brief')
                             ? 'brief-help brief-error'
                             : 'brief-help'}
-                        class="w-full flex-1 rounded-lg border bg-white px-3 py-2 text-sm
-                               placeholder:text-stone-400 focus:outline-none focus:ring-2
-                               dark:bg-stone-950 dark:placeholder:text-stone-600
-                               {problemFor('brief')
+                        class="w-full flex-1 rounded-lg border bg-white px-3 py-2 text-sm placeholder:text-stone-500 dark:placeholder:text-stone-400 focus:ring-2 dark:bg-stone-950 {problemFor(
+                            'brief'
+                        )
                             ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 dark:border-rose-800'
-                            : 'border-stone-300 focus:border-stone-500 focus:ring-stone-900/10 dark:border-stone-700 dark:focus:ring-white/10'}"
+                            : 'border-stone-500 focus:ring-stone-900/10 dark:focus:ring-white/10'}"
                     ></textarea>
                     {#if problemFor('brief')}
                         <p id="brief-error" class="mt-1 text-xs text-rose-700 dark:text-rose-400">
@@ -1439,10 +1453,10 @@
 
             <div class={ROW}>
                 <div>
-                    <span id="strategy-label" class="flex items-center gap-2 text-sm font-medium">
+                    <h2 id="strategy-label" class="flex items-center gap-2 text-sm font-medium">
                         <FieldIcon paths={ICONS.strategy} />Naming strategy
-                    </span>
-                    <p id="strategy-help" class="mt-1 text-xs text-stone-500">
+                    </h2>
+                    <p id="strategy-help" class="mt-1 text-xs text-stone-500 dark:text-stone-400">
                         Pick one or more. Each batch uses a single approach, so choosing two splits
                         the run evenly between them.
                     </p>
@@ -1465,6 +1479,13 @@
                         announced through aria-describedby instead, which is
                         the half that says what to do about it.
                     -->
+                    <!--
+                        Focused by name when the form is submitted with no strategy
+                        chosen, and it used to suppress its own outline — so the page
+                        scrolled somewhere and gave no sign of where. `focus:` rather
+                        than `focus-visible:`, because this focus is only ever
+                        programmatic and the heuristic reads that as not worth showing.
+                    -->
                     <div
                         id="strategy"
                         tabindex="-1"
@@ -1473,7 +1494,8 @@
                         aria-describedby={problemFor('strategy')
                             ? 'strategy-help strategy-error'
                             : 'strategy-help'}
-                        class="focus:outline-none"
+                        class="rounded-lg focus:outline-2 focus:outline-offset-4
+                               focus:outline-stone-900 dark:focus:outline-stone-100"
                     >
                         <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                             {#each STRATEGIES.filter((s) => s.id !== 'foreign') as s (s.id)}
@@ -1482,7 +1504,7 @@
                                        transition-colors duration-150
                                        {strategies.includes(s.id)
                                         ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
-                                        : 'border-stone-200 hover:border-stone-400 dark:border-stone-800 dark:hover:border-stone-600'}"
+                                        : 'border-stone-500 hover:border-stone-900 dark:hover:border-stone-100'}"
                                 >
                                     <input
                                         type="checkbox"
@@ -1498,7 +1520,7 @@
                                     <span>
                                         <span class="font-medium">{s.label}</span>
                                         <span
-                                            class="block text-xs text-stone-500 dark:text-stone-500"
+                                            class="block text-xs text-stone-500 dark:text-stone-400"
                                             >{s.hint}</span
                                         >
                                     </span>
@@ -1523,7 +1545,7 @@
                             class="mt-2 rounded-lg border transition-colors duration-150
                                    {onForeign
                                 ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
-                                : 'border-stone-200 hover:border-stone-400 dark:border-stone-800 dark:hover:border-stone-600'}"
+                                : 'border-stone-500 hover:border-stone-900 dark:hover:border-stone-100'}"
                         >
                             <label class="flex cursor-pointer items-start gap-2.5 p-3 text-sm">
                                 <input
@@ -1539,7 +1561,7 @@
                                 />
                                 <span>
                                     <span class="font-medium">{FOREIGN_STRATEGY.label}</span>
-                                    <span class="block text-xs text-stone-500 dark:text-stone-500"
+                                    <span class="block text-xs text-stone-500 dark:text-stone-400"
                                         >{FOREIGN_STRATEGY.hint}</span
                                     >
                                 </span>
@@ -1556,7 +1578,10 @@
                                     class="mb-3 ml-8 mr-3 border-l border-stone-300 pl-3
                                            dark:border-stone-700"
                                 >
-                                    <span id="languages-label" class="text-xs text-stone-500">
+                                    <span
+                                        id="languages-label"
+                                        class="text-xs text-stone-500 dark:text-stone-400"
+                                    >
                                         Which languages to draw on. Twelve families, each covering
                                         several — search a language and you get the family it
                                         belongs to. Leave it empty for any.
@@ -1594,8 +1619,8 @@
                                             {#each chosenLanguages as l (l.id)}
                                                 <span
                                                     class="flex items-center rounded-lg border
-                                                           border-stone-300 bg-white text-sm
-                                                           dark:border-stone-700 dark:bg-stone-950"
+                                                           border-stone-500 bg-white text-sm
+                                                           dark:bg-stone-950"
                                                 >
                                                     <span class="py-2 pl-3 pr-1.5">{l.label}</span>
                                                     <button
@@ -1604,7 +1629,7 @@
                                                             removeLanguage(l.id);
                                                         }}
                                                         aria-label="Stop using {l.label}"
-                                                        class="px-2 py-2 text-stone-400
+                                                        class="px-2 py-2 text-stone-500 dark:text-stone-400
                                                                transition-colors duration-100
                                                                hover:text-rose-700
                                                                dark:hover:text-rose-400">×</button
@@ -1640,15 +1665,15 @@
 
             <div class={ROW}>
                 <div>
-                    <span id="tlds-label" class="flex items-center gap-2 text-sm font-medium">
+                    <h2 id="tlds-label" class="flex items-center gap-2 text-sm font-medium">
                         <FieldIcon paths={ICONS.domain} />Domains to check
-                    </span>
-                    <p id="tlds-help" class="mt-1 text-xs text-stone-500">
+                    </h2>
+                    <p id="tlds-help" class="mt-1 text-xs text-stone-500 dark:text-stone-400">
                         Each one gets a column of its own. Click a domain to make it a requirement:
                         a required domain drops the name the moment it is taken, the rest are
                         checked and reported either way.
                     </p>
-                    <p class="mt-1 text-xs text-stone-500">
+                    <p class="mt-1 text-xs text-stone-500 dark:text-stone-400">
                         Every domain is one request per name — {requestCount.toLocaleString()} for this
                         run as it stands. There is no limit but your patience; nobody's quota is spent
                         on these. Prices are indicative first-year registration.
@@ -1697,7 +1722,7 @@
                                            duration-150
                                            {isRequired
                                         ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
-                                        : 'border-stone-200 dark:border-stone-800'}"
+                                        : 'border-stone-500'}"
                                 >
                                     <button
                                         type="button"
@@ -1725,7 +1750,7 @@
                                             removeTld(tld);
                                         }}
                                         aria-label="Stop checking .{tld}"
-                                        class="px-2 py-2 text-stone-400 transition-colors duration-100
+                                        class="px-2 py-2 text-stone-500 dark:text-stone-400 transition-colors duration-100
                                                hover:text-rose-700 dark:hover:text-rose-400"
                                         >×</button
                                     >
@@ -1747,15 +1772,15 @@
 
             <div class={ROW}>
                 <div>
-                    <span id="handles-label" class="flex items-center gap-2 text-sm font-medium">
+                    <h2 id="handles-label" class="flex items-center gap-2 text-sm font-medium">
                         <FieldIcon paths={ICONS.handle} />Social handles
-                    </span>
-                    <p class="mt-1 text-xs text-stone-500">
+                    </h2>
+                    <p class="mt-1 text-xs text-stone-500 dark:text-stone-400">
                         Each one gets a column of its own. Click a platform to make it a
                         requirement: a required platform drops the name the moment the handle is
                         taken, the rest are checked and reported either way.
                     </p>
-                    <p class="mt-1 text-xs text-stone-500">
+                    <p class="mt-1 text-xs text-stone-500 dark:text-stone-400">
                         Only platforms that answer definitively are listed. Reddit, Medium and
                         LinkedIn refuse the question outright, and a check that could only guess is
                         worse than no check at all.
@@ -1793,7 +1818,7 @@
                                            duration-150
                                            {must
                                         ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
-                                        : 'border-stone-200 dark:border-stone-800'}"
+                                        : 'border-stone-500'}"
                                 >
                                     <button
                                         type="button"
@@ -1821,7 +1846,7 @@
                                             removeHandle(id);
                                         }}
                                         aria-label="Stop checking {site.label}"
-                                        class="px-2 py-2 text-stone-400 transition-colors duration-100
+                                        class="px-2 py-2 text-stone-500 dark:text-stone-400 transition-colors duration-100
                                                hover:text-rose-700 dark:hover:text-rose-400"
                                         >×</button
                                     >
@@ -1845,10 +1870,10 @@
                         names the things rather than the rule — like the two
                         rows above it.
                     -->
-                    <span class="flex items-center gap-2 text-sm font-medium">
+                    <h2 class="flex items-center gap-2 text-sm font-medium">
                         <FieldIcon paths={ICONS.stores} />Stores and the web
-                    </span>
-                    <p class="mt-1 text-xs text-stone-500">
+                    </h2>
+                    <p class="mt-1 text-xs text-stone-500 dark:text-stone-400">
                         Click to check one, click again to require it, once more to leave it out
                         altogether. The App Store is the slowest thing in a run, so leaving it out
                         is worth having.
@@ -1919,13 +1944,11 @@
                                           ? `A name taken on ${r.label} is dropped. Click to leave it out.`
                                           : `${r.label} is reported but never drops a name. Click to require it.`
                                       : `${r.label} is not checked at all. Click to check it.`}
-                                class="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm
-                                   transition-colors duration-150
-                                   {must
+                                class="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors duration-150 {must
                                     ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
                                     : on
-                                      ? 'border-stone-400 dark:border-stone-600'
-                                      : 'border-stone-200 text-stone-400 hover:border-stone-400 dark:border-stone-800 dark:text-stone-500 dark:hover:border-stone-600'}"
+                                      ? 'border-stone-500'
+                                      : 'border-stone-500 text-stone-500 dark:text-stone-400 hover:border-stone-900 dark:hover:border-stone-100'}"
                             >
                                 {r.label}
                                 {#if on}
@@ -1960,7 +1983,7 @@
                         behaves differently before then.
                     -->
                     {#if webIsLinkOnly && webLinks}
-                        <p class="mt-3 max-w-3xl text-xs text-stone-500">
+                        <p class="mt-3 max-w-3xl text-xs text-stone-500 dark:text-stone-400">
                             No search provider is configured, so the web cannot be checked. Web adds
                             a column of links to search yourself — never a verdict. Set any one of
                             {#each SEARCH_KEYS as key, i (key)}<code
@@ -1990,10 +2013,10 @@
             -->
             <div class={ROW}>
                 <div>
-                    <span id="dispatch-label" class="flex items-center gap-2 text-sm font-medium">
+                    <h2 id="dispatch-label" class="flex items-center gap-2 text-sm font-medium">
                         <FieldIcon paths={ICONS.count} />Run it
-                    </span>
-                    <p class="mt-1 text-xs text-stone-500">
+                    </h2>
+                    <p class="mt-1 text-xs text-stone-500 dark:text-stone-400">
                         {#if data.mail}
                             How many names to generate, and where to send them. Results are emailed
                             when the run finishes — it takes a while, so you can close this.
@@ -2016,10 +2039,10 @@
                             aria-invalid={problemFor('count') ? 'true' : undefined}
                             aria-describedby={problemFor('count') ? 'count-error' : undefined}
                             class="w-24 rounded-lg border bg-white px-3 py-2 text-sm tabular-nums
-                                   focus:outline-none focus:ring-2 dark:bg-stone-950
+                                   focus:ring-2 dark:bg-stone-950
                                    {problemFor('count')
                                 ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 dark:border-rose-800'
-                                : 'border-stone-300 focus:border-stone-500 focus:ring-stone-900/10 dark:border-stone-700 dark:focus:ring-white/10'}"
+                                : 'border-stone-500 focus:ring-stone-900/10 dark:focus:ring-white/10'}"
                         />
                         <span class="text-sm text-stone-600 dark:text-stone-400"
                             >{data.mail ? 'names, emailed to' : 'names'}</span
@@ -2045,12 +2068,11 @@
                             placeholder="you@example.com"
                             aria-invalid={problemFor('email') ? 'true' : undefined}
                             aria-describedby={problemFor('email') ? 'email-error' : undefined}
-                            class="w-56 rounded-lg border bg-white px-3 py-2 text-sm
-                               placeholder:text-stone-400 focus:outline-none focus:ring-2
-                               dark:bg-stone-950 dark:placeholder:text-stone-600
-                               {problemFor('email')
+                            class="w-56 rounded-lg border bg-white px-3 py-2 text-sm placeholder:text-stone-500 dark:placeholder:text-stone-400 focus:ring-2 dark:bg-stone-950 {problemFor(
+                                'email'
+                            )
                                 ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/20 dark:border-rose-800'
-                                : 'border-stone-300 focus:border-stone-500 focus:ring-stone-900/10 dark:border-stone-700 dark:focus:ring-white/10'}"
+                                : 'border-stone-500 focus:ring-stone-900/10 dark:focus:ring-white/10'}"
                         />
                     {/if}
 
@@ -2107,7 +2129,9 @@
                 Both marks, not just the asterisk. A legend that explains one
                 of two symbols leaves the other looking like decoration.
             -->
-            <div class="flex flex-wrap items-center gap-x-6 gap-y-1 pt-4 text-xs text-stone-500">
+            <div
+                class="flex flex-wrap items-center gap-x-6 gap-y-1 pt-4 text-xs text-stone-500 dark:text-stone-400"
+            >
                 <span class="flex items-center gap-1.5">
                     <FieldIcon
                         paths={ICONS.required}
@@ -2173,8 +2197,8 @@
                     maxlength="6"
                     autocomplete="one-time-code"
                     placeholder="000000"
-                    class="w-32 rounded-lg border border-stone-300 px-3 py-2 text-sm tracking-[0.3em]
-                           focus:border-stone-500 focus:outline-none focus:ring-2
+                    class="w-32 rounded-lg border border-stone-500 px-3 py-2 text-sm tracking-[0.3em]
+                           focus:border-stone-500 focus:ring-2
                            focus:ring-stone-900/10 dark:border-stone-700 dark:bg-stone-950
                            dark:focus:ring-white/10"
                 />
@@ -2206,7 +2230,7 @@
                 dialog back, rather than starting a second run beside the first.
             -->
             <div class="mt-5 flex items-center justify-between gap-4">
-                <p class="text-xs text-stone-500">
+                <p class="text-xs text-stone-500 dark:text-stone-400">
                     Close this and the run waits. Reopen it from Enter code.
                 </p>
                 <div class="flex items-center gap-1">
@@ -2246,26 +2270,29 @@
             light ground, which is how it survived unnoticed.
         -->
         <div
-            class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-stone-500
+            class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-stone-500 dark:text-stone-400
                    dark:text-stone-300"
         >
             {#each run.strategies ?? [] as s (s)}
-                <span class="rounded bg-stone-100 px-1.5 py-0.5 dark:bg-stone-800">
+                <span
+                    class="rounded bg-stone-100 px-1.5 py-0.5 text-stone-600 dark:bg-stone-800 dark:text-stone-400"
+                >
                     {STRATEGIES.find((x) => x.id === s)?.label ?? s}
                 </span>
             {/each}
-            <span aria-hidden="true" class="hidden text-stone-400 sm:inline dark:text-stone-600"
+            <span aria-hidden="true" class="hidden text-stone-500 dark:text-stone-400 sm:inline"
                 >·</span
             >
             <span>requires</span>
             {#each watched.checks.required as kind (kind)}
-                <span class="rounded bg-stone-100 px-1.5 py-0.5 dark:bg-stone-800"
+                <span
+                    class="rounded bg-stone-100 px-1.5 py-0.5 text-stone-600 dark:bg-stone-800 dark:text-stone-400"
                     >{checkLabel(kind)}</span
                 >
             {:else}
                 <span class="italic">nothing - every name is reported</span>
             {/each}
-            <span aria-hidden="true" class="hidden text-stone-400 sm:inline dark:text-stone-600"
+            <span aria-hidden="true" class="hidden text-stone-500 dark:text-stone-400 sm:inline"
                 >·</span
             >
             <span>{run.email}</span>
@@ -2301,7 +2328,7 @@
             {#if stoppable}
                 <button
                     onclick={() => stopDialog?.showModal()}
-                    class="ml-2 rounded border border-stone-300 px-2 py-0.5 text-xs
+                    class="ml-2 rounded border border-stone-500 px-2 py-0.5 text-xs
                            transition-colors duration-100 hover:bg-stone-200
                            dark:border-stone-700 dark:hover:bg-stone-800">Stop</button
                 >
@@ -2319,12 +2346,13 @@
                     {stat.label === 'unverified' ? 'text-amber-700 dark:text-amber-400' : ''}"
                     >{stat.value ?? '—'}</span
                 >
-                {#if stat.of}<span class="text-sm text-stone-400 tabular-nums">/ {stat.of}</span
+                {#if stat.of}<span class="text-sm text-stone-500 dark:text-stone-400 tabular-nums"
+                        >/ {stat.of}</span
                     >{/if}
                 <span
                     class="text-sm {stat.label === 'unverified'
                         ? 'text-amber-700/80 dark:text-amber-400/80'
-                        : 'text-stone-500'}">{stat.label}</span
+                        : 'text-stone-500 dark:text-stone-400'}">{stat.label}</span
                 >
             </div>
         {/each}
@@ -2435,7 +2463,7 @@
                 {/if}
                 <button
                     onclick={copyCsv}
-                    class="rounded-lg border border-stone-300 px-3 py-1.5 text-sm transition-colors
+                    class="rounded-lg border border-stone-500 px-3 py-1.5 text-sm transition-colors
                  duration-150 hover:bg-stone-100 dark:border-stone-700 dark:hover:bg-stone-800"
                 >
                     {copied ? 'Copied' : 'Copy CSV'}
@@ -2444,7 +2472,7 @@
 
             {#if byStrategy.length > 0}
                 <div
-                    class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500"
+                    class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500 dark:text-stone-400"
                 >
                     <span>{totalNames} names</span>
                     {#each byStrategy as s (s.id)}
@@ -2473,25 +2501,49 @@
                 </div>
             {/if}
 
-            <div class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
+            <!--
+                A definition list, because that is what it is.
+
+                It was five term/definition pairs read out as one run-on line of
+                spans — the densest text on the page, and the key to every cell
+                below it. dt/dd pairs them for a screen reader, and the wider
+                column gap separates the pairs by more than the term separates
+                from its own definition.
+            -->
+            <dl
+                class="mb-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-stone-500 dark:text-stone-400"
+            >
                 {#each LEGEND as l (l.status)}
-                    <span class="whitespace-nowrap">
-                        <span class="font-medium {CELL[l.status].class}"
-                            >{CELL[l.status].icon} {CELL[l.status].text}</span
-                        >
-                        <span class="ml-1">{l.note}</span>
-                    </span>
+                    <div class="flex items-center gap-1.5 whitespace-nowrap">
+                        <dt class="font-medium {CELL[l.status].class}">
+                            {CELL[l.status].icon}
+                            {CELL[l.status].text}
+                        </dt>
+                        <dd>{l.note}</dd>
+                    </div>
                 {/each}
-            </div>
+            </dl>
 
             <!--
         The table scrolls inside its own panel rather than lengthening the page.
         A thousand rows on a page scroll takes the header away with it, and
         leaves the console stranded beside an endless column.
       -->
+            <!--
+                max-h below lg, a fixed height at and above it.
+
+                At lg this pane and the console beside it are one two-pane
+                layout and share a height, so a short table shrinking would
+                leave the columns ragged — that emptiness is the price of the
+                panes not jumping as rows and log lines arrive.
+
+                Stacked, there is no column to match. It was `h-[32rem]`
+                there too, so a run that found one name sat in 414px of
+                bordered nothing for no reason at all.
+            -->
             <div
-                class="h-[32rem] overflow-auto rounded-xl border border-stone-200
-                  lg:h-[calc(100vh-19rem)] dark:border-stone-800"
+                class="max-h-[32rem] overflow-auto rounded-xl border border-stone-200
+                  lg:h-[calc(100vh-19rem)] lg:max-h-none dark:border-stone-800"
             >
                 <!--
           Fixed layout, and every column given a width.
@@ -2543,9 +2595,10 @@
                     -->
                     <thead class="sticky top-0 z-10 text-left">
                         <tr class="bg-stone-100 dark:bg-stone-900">
-                            <th class="px-3 py-2.5 align-bottom {HEADER_EDGE}"></th>
+                            <th scope="col" class="px-3 py-2.5 align-bottom {HEADER_EDGE}"></th>
 
                             <th
+                                scope="col"
                                 class="sticky left-0 z-20 bg-stone-100 px-3 py-2.5 align-bottom
                                 after:absolute after:inset-y-0 after:-right-px after:w-px
                                 after:bg-stone-200 dark:bg-stone-900 dark:after:bg-stone-800
@@ -2567,7 +2620,7 @@
                                     onclick={() => (nameSort = NEXT_SORT[nameSort])}
                                     title={SORT_HINT[nameSort]}
                                     class="group flex items-center gap-1 pb-1 text-xs font-medium
-                                           text-stone-500 transition-colors duration-100
+                                           text-stone-600 dark:text-stone-400 transition-colors duration-100
                                            hover:text-stone-900 dark:hover:text-stone-100"
                                 >
                                     Name
@@ -2598,8 +2651,13 @@
                                 </div>
                             </th>
 
-                            <th class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}">
-                                <span class="block pb-1 text-xs font-medium text-stone-500">
+                            <th
+                                scope="col"
+                                class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}"
+                            >
+                                <span
+                                    class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
+                                >
                                     Approach
                                 </span>
                                 <div class="relative">
@@ -2627,9 +2685,12 @@
 
                             {#each columns as k (k)}
                                 <th
+                                    scope="col"
                                     class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}"
                                 >
-                                    <span class="block pb-1 text-xs font-medium text-stone-500">
+                                    <span
+                                        class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
+                                    >
                                         {checkLabel(k)}
                                     </span>
                                     <div class="relative">
@@ -2667,27 +2728,33 @@
                                     the exact confusion this column avoids.
                                 -->
                                 <th
+                                    scope="col"
                                     class="px-3 py-2.5 align-bottom whitespace-nowrap {HEADER_EDGE}"
                                 >
-                                    <span class="block pb-1 text-xs font-medium text-stone-500">
+                                    <span
+                                        class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
+                                    >
                                         {checkLabel(linkColumn)}
                                     </span>
-                                    <span class="block text-xs text-stone-400 dark:text-stone-500"
+                                    <span class="block text-xs text-stone-500 dark:text-stone-400"
                                         >look yourself</span
                                     >
                                 </th>
                             {/if}
 
                             <th
+                                scope="col"
                                 class="px-3 py-2.5 text-right align-bottom whitespace-nowrap {HEADER_EDGE}"
                             >
-                                <span class="block pb-1 text-xs font-medium text-stone-500">
+                                <span
+                                    class="block pb-1 text-xs font-medium text-stone-600 dark:text-stone-400"
+                                >
                                     Action
                                 </span>
                                 <button
                                     onclick={clearFilters}
                                     disabled={!anyFilter}
-                                    class="w-full rounded border border-stone-300 px-2 py-1 text-xs
+                                    class="w-full rounded border border-stone-500 px-2 py-1 text-xs
                                            transition-colors duration-100 enabled:hover:bg-stone-200
                                            disabled:opacity-0 dark:border-stone-700
                                            dark:enabled:hover:bg-stone-800"
@@ -2808,10 +2875,8 @@
                                             target="_blank"
                                             rel="external noopener noreferrer"
                                             aria-label="Search the web for {c.name}"
-                                            class="text-stone-500 underline decoration-dotted
-                                                   underline-offset-2 hover:text-stone-900
-                                                   hover:decoration-solid dark:text-stone-400
-                                                   dark:hover:text-stone-100">search ↗</a
+                                            class="text-stone-500 dark:text-stone-400 underline decoration-dotted underline-offset-2 hover:text-stone-900 hover:decoration-solid dark:hover:text-stone-100"
+                                            >search ↗</a
                                         >
                                     </td>
                                 {/if}
@@ -2821,7 +2886,7 @@
                 -->
                                 <td class="px-3 py-1.5 text-right whitespace-nowrap">
                                     <span
-                                        class="inline-flex overflow-hidden rounded border border-stone-300
+                                        class="inline-flex overflow-hidden rounded border border-stone-500
                                dark:border-stone-700"
                                     >
                                         <!--
@@ -2880,7 +2945,7 @@
                             <tr
                                 ><td
                                     colspan="8"
-                                    class="px-4 py-12 text-center text-sm text-stone-500"
+                                    class="px-4 py-12 text-center text-sm text-stone-500 dark:text-stone-400"
                                 >
                                     {#if run.status === 'stopped'}
                                         Stopped before any name was generated.
@@ -2911,8 +2976,8 @@
                 onclick={() => (consoleOpen = !consoleOpen)}
                 class="mb-2 flex w-full items-center justify-between text-sm"
             >
-                <span class="font-medium">Console</span>
-                <span class="text-xs text-stone-500"
+                <h2 class="font-medium">Console</h2>
+                <span class="text-xs text-stone-500 dark:text-stone-400"
                     >{consoleOpen ? 'Hide' : `Show (${events.length})`}</span
                 >
             </button>
@@ -2925,7 +2990,7 @@
                 >
                     {#each events as e (e.id)}
                         <div class="flex gap-2 py-px">
-                            <span class="shrink-0 text-stone-400 tabular-nums dark:text-stone-600"
+                            <span class="shrink-0 text-stone-500 dark:text-stone-400 tabular-nums"
                                 >{time(e.at)}</span
                             >
                             <span class="{LEVEL[e.level] ?? LEVEL.info} break-words"
@@ -2933,7 +2998,7 @@
                             >
                         </div>
                     {:else}
-                        <p class="text-stone-500">
+                        <p class="text-stone-500 dark:text-stone-400">
                             {#if run.status === 'queued'}
                                 Waiting for a worker to pick this run up.
                             {:else if finished}
@@ -2977,7 +3042,7 @@
                 bg-white py-1 shadow-lg shadow-stone-900/10 dark:border-stone-700
                 dark:bg-stone-900 dark:shadow-black/40"
         >
-            <p class="px-3 py-1 text-xs text-stone-500">Check one thing</p>
+            <p class="px-3 py-1 text-xs text-stone-500 dark:text-stone-400">Check one thing</p>
             {#each columns as k (k)}
                 <button
                     onclick={() => row && recheck(row, k)}
@@ -2995,7 +3060,9 @@
             {/each}
             {#if row}
                 <div class="my-1 border-t border-stone-200 dark:border-stone-800"></div>
-                <p class="px-3 py-1 text-xs text-stone-500">Look for yourself</p>
+                <p class="px-3 py-1 text-xs text-stone-500 dark:text-stone-400">
+                    Look for yourself
+                </p>
                 {#each columns as k (k)}
                     <a
                         href={checkSearch(k, row.name)}

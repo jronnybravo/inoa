@@ -63,7 +63,7 @@
 {#if data.runs.length === 0}
     <p
         class="mt-8 rounded-xl border border-stone-200 bg-white px-6 py-10 text-center text-sm
-               text-stone-500 dark:border-stone-800 dark:bg-stone-900"
+               text-stone-500 dark:text-stone-400 dark:border-stone-800 dark:bg-stone-900"
     >
         Nothing here yet. Start a run and it will be listed here afterwards — this page is the
         reason you no longer have to keep the link.

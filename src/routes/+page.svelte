@@ -1,4 +1,14 @@
 <script lang="ts">
+    import {
+        Input,
+        Select,
+        Table,
+        TableBody,
+        TableBodyCell,
+        TableBodyRow,
+        TableHead,
+        TableHeadCell
+    } from 'flowbite-svelte';
     import AppHeader from '$lib/AppHeader.svelte';
     import FieldIcon from '$lib/FieldIcon.svelte';
     import { DEFAULT_PLATFORMS, PLATFORMS, isPlatform } from '$lib/handles';
@@ -2739,9 +2749,13 @@
             It grows with its rows now, and scrolls once there are more than
             fit.
         -->
-        <div
-            class="max-h-[40rem] overflow-auto rounded-xl border border-stone-200
-                   dark:border-stone-800"
+        <Table
+            striped
+            hoverable
+            classes={{
+                div: 'max-h-[40rem] overflow-auto rounded-xl border border-stone-200 dark:border-stone-800'
+            }}
+            class="w-max min-w-full table-fixed text-sm text-stone-900 dark:text-stone-100"
         >
             <!--
           Fixed layout, and every column given a width.
@@ -2766,15 +2780,15 @@
                     keeps a short run filling the panel rather than trailing
                     off halfway.
                 -->
-            <table class="w-max min-w-full table-fixed text-sm">
-                <!--
+
+            <!--
             Only the action column flexes, so every other width is fixed.
             They previously summed to more than the panel and left the name
             fourteen pixels wide. One column per check, generated: which
             checks there are is the run's own business.
           -->
-                <colgroup>
-                    <!--
+            <colgroup>
+                <!--
                         Widest of the fixed columns, because it is the one
                         being read.
 
@@ -2785,15 +2799,15 @@
                         out by min-w-full and nothing overflows until the
                         checks genuinely need more room than there is.
                     -->
-                    <col style="width: 12rem" />
-                    <col style="width: 7rem" />
-                    {#each columns as k (k)}
-                        <col style="width: 5.75rem" />
-                    {/each}
-                    {#if linkColumn}
-                        <col style="width: 5.75rem" />
-                    {/if}
-                    <!--
+                <col style="width: 12rem" />
+                <col style="width: 7rem" />
+                {#each columns as k (k)}
+                    <col style="width: 5.75rem" />
+                {/each}
+                {#if linkColumn}
+                    <col style="width: 5.75rem" />
+                {/if}
+                <!--
                         Wide enough for what is in it.
 
                         6.5rem was a guess the browser overrode: w-max sizes to
@@ -2801,15 +2815,15 @@
                         whatever this said, and the nine pixels of difference
                         hung a scrollbar under a table that otherwise fitted.
                     -->
-                    <col style="width: 7.75rem" />
-                </colgroup>
-                <!--
+                <col style="width: 7.75rem" />
+            </colgroup>
+            <!--
                         The heading is the label and its filter together. A
                         filtered column shows it: the control takes the accent
                         border and a clear button appears, so the reason a
                         table looks short is visible from the table.
                     -->
-                <!--
+            <!--
                     The header sits on the table's own ground.
 
                     It was bg-stone-100 against white rows — a grey band across
@@ -2817,96 +2831,102 @@
                     results. The hairline under it is what separates a header
                     from its rows; the fill was doing the job twice, and louder.
                 -->
-                <thead class="sticky top-0 z-10 bg-white text-left dark:bg-stone-950">
-                    <tr>
-                        <th
-                            scope="col"
-                            class="sticky left-0 z-20 bg-white px-4 py-3 align-bottom
+            <TableHead class="sticky top-0 z-10 bg-white text-left normal-case dark:bg-stone-950">
+                <TableHeadCell
+                    scope="col"
+                    class="sticky left-0 z-20 bg-white px-4 py-3 align-bottom
                                 after:absolute after:inset-y-0 after:-right-px after:w-px
                                 after:bg-stone-200 dark:bg-stone-950 dark:after:bg-stone-800
                                 {HEADER_EDGE}"
-                            aria-sort={nameSort === 'asc'
-                                ? 'ascending'
-                                : nameSort === 'desc'
-                                  ? 'descending'
-                                  : 'none'}
-                        >
-                            <!--
+                    aria-sort={nameSort === 'asc'
+                        ? 'ascending'
+                        : nameSort === 'desc'
+                          ? 'descending'
+                          : 'none'}
+                >
+                    <!--
                                     The button is named for the column, not for
                                     what clicking does: it is the header's
                                     accessible name, and aria-sort above already
                                     carries the state. The hint goes in a title,
                                     where it helps without renaming the column.
                                 -->
-                            <button
-                                onclick={() => (nameSort = NEXT_SORT[nameSort])}
-                                title={SORT_HINT[nameSort]}
-                                class="group flex items-center gap-1 pb-1.5 text-[0.6875rem]
+                    <button
+                        onclick={() => (nameSort = NEXT_SORT[nameSort])}
+                        title={SORT_HINT[nameSort]}
+                        class="group flex items-center gap-1 pb-1.5 text-[0.6875rem]
                                        font-semibold tracking-wide uppercase text-stone-600
                                        transition-colors duration-100 hover:text-stone-900
                                        dark:text-stone-400 dark:hover:text-stone-100"
-                            >
-                                Name
-                                <span
-                                    aria-hidden="true"
-                                    class={nameSort === 'none'
-                                        ? 'opacity-0 transition-opacity group-hover:opacity-60'
-                                        : ''}>{nameSort === 'desc' ? '↓' : '↑'}</span
-                                >
-                            </button>
-                            <div class="relative">
-                                <input
-                                    bind:value={nameFilter}
-                                    type="text"
-                                    placeholder="contains…"
-                                    aria-label="Filter names"
-                                    class="{FILTER_INPUT} {nameFilter
-                                        ? FILTER_ACTIVE
-                                        : FILTER_IDLE} pr-6"
-                                />
-                                {#if nameFilter}
-                                    <button
-                                        onclick={() => (nameFilter = '')}
-                                        aria-label="Clear the name filter"
-                                        class={CLEAR_BUTTON}>×</button
-                                    >
-                                {/if}
-                            </div>
-                        </th>
-
-                        <th
-                            scope="col"
-                            class="px-4 py-3 align-bottom whitespace-nowrap {HEADER_EDGE}"
+                    >
+                        Name
+                        <span
+                            aria-hidden="true"
+                            class={nameSort === 'none'
+                                ? 'opacity-0 transition-opacity group-hover:opacity-60'
+                                : ''}>{nameSort === 'desc' ? '↓' : '↑'}</span
                         >
-                            <span
-                                class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
+                    </button>
+                    <div class="relative">
+                        <Input
+                            bind:value={nameFilter}
+                            type="text"
+                            size="sm"
+                            placeholder="contains…"
+                            aria-label="Filter names"
+                            class="{FILTER_INPUT} {nameFilter ? FILTER_ACTIVE : FILTER_IDLE} pr-6"
+                        />
+                        {#if nameFilter}
+                            <button
+                                onclick={() => (nameFilter = '')}
+                                aria-label="Clear the name filter"
+                                class={CLEAR_BUTTON}>×</button
                             >
-                                Approach
-                            </span>
-                            <div class="relative">
-                                <select
-                                    bind:value={approachFilter}
-                                    aria-label="Filter by approach"
-                                    class="{FILTER_INPUT} {approachFilter
-                                        ? FILTER_ACTIVE
-                                        : FILTER_IDLE} pr-6"
-                                >
-                                    <option value="">Any</option>
-                                    {#each byStrategy as s (s.id)}
-                                        <option value={s.id}>{strategyLabel(s.id)}</option>
-                                    {/each}
-                                </select>
-                                {#if approachFilter}
-                                    <button
-                                        onclick={() => (approachFilter = '')}
-                                        aria-label="Clear the approach filter"
-                                        class={CLEAR_BUTTON}>×</button
-                                    >
-                                {/if}
-                            </div>
-                        </th>
+                        {/if}
+                    </div>
+                </TableHeadCell>
 
+                <TableHeadCell
+                    scope="col"
+                    class="px-4 py-3 align-bottom whitespace-nowrap {HEADER_EDGE}"
+                >
+                    <span
+                        class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
+                    >
+                        Approach
+                    </span>
+                    <div class="relative">
                         <!--
+                            placeholder="" on purpose: Flowbite prepends a
+                            disabled placeholder option when it has one, and
+                            'Any' here is a real choice — it is how a filter is
+                            cleared, so it has to stay selectable.
+                        -->
+                        <Select
+                            bind:value={approachFilter}
+                            size="sm"
+                            placeholder=""
+                            aria-label="Filter by approach"
+                            class="{FILTER_INPUT} {approachFilter
+                                ? FILTER_ACTIVE
+                                : FILTER_IDLE} pr-6"
+                        >
+                            <option value="">Any</option>
+                            {#each byStrategy as s (s.id)}
+                                <option value={s.id}>{strategyLabel(s.id)}</option>
+                            {/each}
+                        </Select>
+                        {#if approachFilter}
+                            <button
+                                onclick={() => (approachFilter = '')}
+                                aria-label="Clear the approach filter"
+                                class={CLEAR_BUTTON}>×</button
+                            >
+                        {/if}
+                    </div>
+                </TableHeadCell>
+
+                <!--
                             Centred, header and cell alike.
 
                             Every one of these holds a single glyph in a
@@ -2915,168 +2935,169 @@
                             pixels of nothing after it — five columns of ragged
                             marks that read as a mistake rather than a matrix.
                         -->
-                        {#each columns as k (k)}
-                            <th
-                                scope="col"
-                                class="px-3 py-3 text-center align-bottom whitespace-nowrap
+                {#each columns as k (k)}
+                    <TableHeadCell
+                        scope="col"
+                        class="px-3 py-3 text-center align-bottom whitespace-nowrap
                                        {HEADER_EDGE}"
-                            >
-                                <span
-                                    class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
-                                >
-                                    {checkLabel(k)}
-                                </span>
-                                <div class="relative">
-                                    <!--
+                    >
+                        <span
+                            class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
+                        >
+                            {checkLabel(k)}
+                        </span>
+                        <div class="relative">
+                            <!--
                                         pr-6 only when there is a × to make
                                         room for. Reserved unconditionally in a
                                         five-and-a-half-rem column it left
                                         about thirty pixels for the word, so
                                         every idle filter read 'Ar'.
                                     -->
-                                    <select
-                                        bind:value={checkFilter[k]}
-                                        aria-label="Filter by {checkLabel(k)}"
-                                        class="{FILTER_INPUT} {checkFilter[k]
-                                            ? `${FILTER_ACTIVE} pr-6`
-                                            : FILTER_IDLE}"
-                                    >
-                                        <option value="">Any</option>
-                                        {#each LEGEND as l (l.status)}
-                                            <option value={l.status}>{CELL[l.status].text}</option>
-                                        {/each}
-                                    </select>
-                                    {#if checkFilter[k]}
-                                        <button
-                                            onclick={() => (checkFilter[k] = '')}
-                                            aria-label="Clear the {checkLabel(k)} filter"
-                                            class={CLEAR_BUTTON}>×</button
-                                        >
-                                    {/if}
-                                </div>
-                            </th>
-                        {/each}
+                            <Select
+                                bind:value={checkFilter[k]}
+                                size="sm"
+                                placeholder=""
+                                aria-label="Filter by {checkLabel(k)}"
+                                class="{FILTER_INPUT} {checkFilter[k]
+                                    ? `${FILTER_ACTIVE} pr-6`
+                                    : FILTER_IDLE}"
+                            >
+                                <option value="">Any</option>
+                                {#each LEGEND as l (l.status)}
+                                    <option value={l.status}>{CELL[l.status].text}</option>
+                                {/each}
+                            </Select>
+                            {#if checkFilter[k]}
+                                <button
+                                    onclick={() => (checkFilter[k] = '')}
+                                    aria-label="Clear the {checkLabel(k)} filter"
+                                    class={CLEAR_BUTTON}>×</button
+                                >
+                            {/if}
+                        </div>
+                    </TableHeadCell>
+                {/each}
 
-                        {#if linkColumn}
-                            <!--
+                {#if linkColumn}
+                    <!--
                                     No filter on this one. There is nothing to
                                     filter by: every cell is the same link, and
                                     a dropdown offering 'free' and 'taken' over
                                     a column that establishes neither would be
                                     the exact confusion this column avoids.
                                 -->
-                            <th
-                                scope="col"
-                                class="px-3 py-3 text-center align-bottom whitespace-nowrap
+                    <TableHeadCell
+                        scope="col"
+                        class="px-3 py-3 text-center align-bottom whitespace-nowrap
                                        {HEADER_EDGE}"
-                            >
-                                <span
-                                    class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
-                                >
-                                    {checkLabel(linkColumn)}
-                                </span>
-                                <span class="block text-xs text-stone-500 dark:text-stone-400"
-                                    >look yourself</span
-                                >
-                            </th>
-                        {/if}
-
-                        <th
-                            scope="col"
-                            class="px-4 py-3 text-right align-bottom whitespace-nowrap {HEADER_EDGE}"
+                    >
+                        <span
+                            class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
                         >
-                            <span
-                                class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
-                            >
-                                Action
-                            </span>
-                            <button
-                                onclick={clearFilters}
-                                disabled={!anyFilter}
-                                class="w-full rounded border border-stone-500 px-2 py-1 text-xs
+                            {checkLabel(linkColumn)}
+                        </span>
+                        <span class="block text-xs text-stone-500 dark:text-stone-400"
+                            >look yourself</span
+                        >
+                    </TableHeadCell>
+                {/if}
+
+                <TableHeadCell
+                    scope="col"
+                    class="px-4 py-3 text-right align-bottom whitespace-nowrap {HEADER_EDGE}"
+                >
+                    <span
+                        class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
+                    >
+                        Action
+                    </span>
+                    <button
+                        onclick={clearFilters}
+                        disabled={!anyFilter}
+                        class="w-full rounded border border-stone-500 px-2 py-1 text-xs
                                            transition-colors duration-100 enabled:hover:bg-stone-200
                                            disabled:opacity-0 dark:border-stone-700
                                            dark:enabled:hover:bg-stone-800"
-                            >
-                                Clear all
-                                <kbd class="ml-0.5 opacity-60">esc</kbd>
-                            </button>
-                        </th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {#each shown as c (c.id)}
-                        <tr
-                            class="odd:bg-white even:bg-stone-50 dark:odd:bg-stone-950
+                    >
+                        Clear all
+                        <kbd class="ml-0.5 opacity-60">esc</kbd>
+                    </button>
+                </TableHeadCell>
+            </TableHead>
+            <TableBody>
+                {#each shown as c (c.id)}
+                    <TableBodyRow
+                        class="odd:bg-white even:bg-stone-50 dark:odd:bg-stone-950
                                    dark:even:bg-stone-900/60 transition-colors duration-100
                                    hover:bg-stone-100 dark:hover:bg-stone-800/70"
-                        >
-                            <!--
+                    >
+                        <!--
                     Pinned, because the results are read on a phone.
                     The table is 819px of content in a 340px panel, so
                     scrolling to the verdicts used to take the names with it
                     and leave anonymous rows of ticks. bg-inherit keeps the
                     row's hover tint on the pinned cell.
                   -->
-                            <td
-                                class="sticky left-0 z-10 bg-inherit px-3 py-2 font-medium
+                        <TableBodyCell
+                            class="sticky left-0 z-10 bg-inherit px-3 py-2 font-medium
                                     after:absolute after:inset-y-0 after:-right-px after:w-px
                                     after:bg-stone-200 dark:after:bg-stone-800 {c.passed
-                                    ? ''
-                                    : 'text-stone-500 dark:text-stone-400'}"
-                            >
-                                <!--
+                                ? ''
+                                : 'text-stone-500 dark:text-stone-400'}"
+                        >
+                            <!--
                     A button, because it is reachable by keyboard and a span
                     with a tabindex is not something a screen reader can
                     describe. The reason also stays in the title attribute, so
                     it survives without JavaScript and on touch.
                   -->
-                                <button
-                                    type="button"
-                                    title={c.rationale ?? ''}
-                                    class="cursor-help text-left decoration-stone-300 decoration-dotted
+                            <button
+                                type="button"
+                                title={c.rationale ?? ''}
+                                class="cursor-help text-left decoration-stone-300 decoration-dotted
                                  underline-offset-4 hover:underline dark:decoration-stone-600"
-                                    onmouseenter={(e) => {
-                                        showHint(e, c.rationale);
-                                    }}
-                                    onmouseleave={() => (hint = null)}
-                                    onfocus={(e) => {
-                                        showHint(e as unknown as MouseEvent, c.rationale);
-                                    }}
-                                    onblur={() => (hint = null)}>{c.name}</button
-                                >
-                            </td>
-                            <td
-                                class="px-3 py-2 whitespace-nowrap text-stone-500 dark:text-stone-400"
+                                onmouseenter={(e) => {
+                                    showHint(e, c.rationale);
+                                }}
+                                onmouseleave={() => (hint = null)}
+                                onfocus={(e) => {
+                                    showHint(e as unknown as MouseEvent, c.rationale);
+                                }}
+                                onblur={() => (hint = null)}>{c.name}</button
                             >
-                                {strategyLabel(c.strategy)}
-                            </td>
-                            {#each columns as k (k)}
-                                <td
-                                    class="relative px-3 py-2 text-center whitespace-nowrap {CELL[
-                                        statusOf(c.statuses, k)
-                                    ].class}"
-                                    title={c.detail?.[k] || CELL[statusOf(c.statuses, k)].text}
-                                >
-                                    {#if c.detail?.[k]}
-                                        <!-- A verdict that found something links to what it found. -->
-                                        <a
-                                            href={checkSearch(k, c.name)}
-                                            target="_blank"
-                                            rel="external noopener noreferrer"
-                                            aria-label="{c.name} — {checkLabel(k)}: {CELL[
-                                                statusOf(c.statuses, k)
-                                            ].text}"
-                                            class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                                            ><span aria-hidden="true"
-                                                >{CELL[statusOf(c.statuses, k)].icon}</span
-                                            ></a
-                                        >
-                                    {:else}
-                                        <span aria-hidden="true"
+                        </TableBodyCell>
+                        <TableBodyCell
+                            class="px-3 py-2 whitespace-nowrap text-stone-500 dark:text-stone-400"
+                        >
+                            {strategyLabel(c.strategy)}
+                        </TableBodyCell>
+                        {#each columns as k (k)}
+                            <TableBodyCell
+                                class="relative px-3 py-2 text-center whitespace-nowrap {CELL[
+                                    statusOf(c.statuses, k)
+                                ].class}"
+                                title={c.detail?.[k] || CELL[statusOf(c.statuses, k)].text}
+                            >
+                                {#if c.detail?.[k]}
+                                    <!-- A verdict that found something links to what it found. -->
+                                    <a
+                                        href={checkSearch(k, c.name)}
+                                        target="_blank"
+                                        rel="external noopener noreferrer"
+                                        aria-label="{c.name} — {checkLabel(k)}: {CELL[
+                                            statusOf(c.statuses, k)
+                                        ].text}"
+                                        class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                                        ><span aria-hidden="true"
                                             >{CELL[statusOf(c.statuses, k)].icon}</span
-                                        >
-                                        <!--
+                                        ></a
+                                    >
+                                {:else}
+                                    <span aria-hidden="true"
+                                        >{CELL[statusOf(c.statuses, k)].icon}</span
+                                    >
+                                    <!--
                                                 The cell is positioned so this cannot escape it.
                                                 sr-only is position:absolute, and an absolutely
                                                 positioned box is only clipped by an ancestor that
@@ -3085,42 +3106,41 @@
                                                 table's full unscrolled height and leaving a
                                                 thousand pixels of empty scroll below the layout.
                                             -->
-                                        <span class="sr-only"
-                                            >{c.name} — {checkLabel(k)}: {CELL[
-                                                statusOf(c.statuses, k)
-                                            ].text}</span
-                                        >
-                                    {/if}
-                                </td>
-                            {/each}
-                            {#if linkColumn}
-                                <!--
+                                    <span class="sr-only"
+                                        >{c.name} — {checkLabel(k)}: {CELL[statusOf(c.statuses, k)]
+                                            .text}</span
+                                    >
+                                {/if}
+                            </TableBodyCell>
+                        {/each}
+                        {#if linkColumn}
+                            <!--
                                         A link, not a verdict. No glyph, because
                                         every glyph in this table is a finding
                                         and this cell has none — it is the
                                         search somebody would have run.
                                     -->
-                                <td class="px-3 py-2 text-center whitespace-nowrap">
-                                    <a
-                                        href={checkSearch(linkColumn, c.name)}
-                                        target="_blank"
-                                        rel="external noopener noreferrer"
-                                        aria-label="Search the web for {c.name}"
-                                        class="text-stone-500 dark:text-stone-400 underline decoration-dotted underline-offset-2 hover:text-stone-900 hover:decoration-solid dark:hover:text-stone-100"
-                                        >search ↗</a
-                                    >
-                                </td>
-                            {/if}
-                            <!--
+                            <TableBodyCell class="px-3 py-2 text-center whitespace-nowrap">
+                                <a
+                                    href={checkSearch(linkColumn, c.name)}
+                                    target="_blank"
+                                    rel="external noopener noreferrer"
+                                    aria-label="Search the web for {c.name}"
+                                    class="text-stone-500 dark:text-stone-400 underline decoration-dotted underline-offset-2 hover:text-stone-900 hover:decoration-solid dark:hover:text-stone-100"
+                                    >search ↗</a
+                                >
+                            </TableBodyCell>
+                        {/if}
+                        <!--
                   One button for the ordinary case - run whatever this run
                   requires - and a menu for the one check you actually doubt.
                 -->
-                            <td class="px-3 py-2 text-right whitespace-nowrap">
-                                <span
-                                    class="inline-flex overflow-hidden rounded border border-stone-500
+                        <TableBodyCell class="px-3 py-2 text-right whitespace-nowrap">
+                            <span
+                                class="inline-flex overflow-hidden rounded border border-stone-500
                                dark:border-stone-700"
-                                >
-                                    <!--
+                            >
+                                <!--
                                             Both labels occupy one grid cell, so
                                             the button is as wide as the longer
                                             of them and does not resize when the
@@ -3128,53 +3148,53 @@
                                             width mid-click makes the whole
                                             column look unstable.
                                         -->
-                                    <button
-                                        onclick={() => recheck(c)}
-                                        disabled={rechecking[c.id]}
-                                        title="Re-run the checks this run requires"
-                                        class="grid px-2 py-0.5 text-xs transition-colors
+                                <button
+                                    onclick={() => recheck(c)}
+                                    disabled={rechecking[c.id]}
+                                    title="Re-run the checks this run requires"
+                                    class="grid px-2 py-0.5 text-xs transition-colors
                                                    duration-100 hover:bg-stone-100
                                                    disabled:opacity-50 dark:hover:bg-stone-800"
+                                >
+                                    <span
+                                        class="col-start-1 row-start-1"
+                                        class:invisible={rechecking[c.id]}>Check</span
                                     >
-                                        <span
-                                            class="col-start-1 row-start-1"
-                                            class:invisible={rechecking[c.id]}>Check</span
-                                        >
-                                        <span
-                                            class="col-start-1 row-start-1"
-                                            class:invisible={!rechecking[c.id]}>Checking…</span
-                                        >
-                                    </button>
-                                    <button
-                                        onclick={(e) => {
-                                            const r = (
-                                                e.currentTarget as HTMLElement
-                                            ).getBoundingClientRect();
-                                            menu =
-                                                menu?.id === c.id
-                                                    ? null
-                                                    : {
-                                                          id: c.id,
-                                                          x: r.right,
-                                                          y: r.bottom + 4,
-                                                          anchorTop: r.top
-                                                      };
-                                        }}
-                                        disabled={rechecking[c.id]}
-                                        id="row-menu-{c.id}"
-                                        aria-haspopup="menu"
-                                        aria-expanded={menu?.id === c.id}
-                                        aria-label="Check one thing for {c.name}"
-                                        class="border-l border-stone-300 px-1.5 py-0.5 text-xs transition-colors
+                                    <span
+                                        class="col-start-1 row-start-1"
+                                        class:invisible={!rechecking[c.id]}>Checking…</span
+                                    >
+                                </button>
+                                <button
+                                    onclick={(e) => {
+                                        const r = (
+                                            e.currentTarget as HTMLElement
+                                        ).getBoundingClientRect();
+                                        menu =
+                                            menu?.id === c.id
+                                                ? null
+                                                : {
+                                                      id: c.id,
+                                                      x: r.right,
+                                                      y: r.bottom + 4,
+                                                      anchorTop: r.top
+                                                  };
+                                    }}
+                                    disabled={rechecking[c.id]}
+                                    id="row-menu-{c.id}"
+                                    aria-haspopup="menu"
+                                    aria-expanded={menu?.id === c.id}
+                                    aria-label="Check one thing for {c.name}"
+                                    class="border-l border-stone-300 px-1.5 py-0.5 text-xs transition-colors
                              duration-100 hover:bg-stone-100 disabled:opacity-50
                              dark:border-stone-700 dark:hover:bg-stone-800">▾</button
-                                    >
-                                </span>
-                            </td>
-                        </tr>
-                    {:else}
-                        <tr
-                            ><!--
+                                >
+                            </span>
+                        </TableBodyCell>
+                    </TableBodyRow>
+                {:else}
+                    <TableBodyRow
+                        ><!--
                                 Counted, not guessed.
 
                                 It was colspan="8", which stopped being the
@@ -3183,31 +3203,30 @@
                                 selection column going has moved it again. Name
                                 and approach, a column per check, the link
                                 column when there is one, and the actions.
-                            --><td
-                                colspan={2 + columns.length + (linkColumn ? 1 : 0) + 1}
-                                class="px-4 py-12 text-center text-sm text-stone-500 dark:text-stone-400"
-                            >
-                                {#if run.status === 'stopped'}
-                                    Stopped before any name was generated.
-                                {:else if run.status === 'queued'}
-                                    Queued. Waiting for the worker to pick this up.
-                                {:else if run.status === 'generating'}
-                                    Generating {run.targetCount} names. They appear here in batches as
-                                    they are written - the first arrives in a few minutes.
-                                {:else if anyFilter}
-                                    No name matches these filters.
-                                {:else if onlyPassed}
-                                    Nothing has cleared every requirement yet. Untick “only names
-                                    that passed” to watch the checks land.
-                                {:else}
-                                    Nothing yet.
-                                {/if}
-                            </td></tr
+                            --><TableBodyCell
+                            colspan={2 + columns.length + (linkColumn ? 1 : 0) + 1}
+                            class="px-4 py-12 text-center text-sm font-normal whitespace-normal text-stone-500 dark:text-stone-400"
                         >
-                    {/each}
-                </tbody>
-            </table>
-        </div>
+                            {#if run.status === 'stopped'}
+                                Stopped before any name was generated.
+                            {:else if run.status === 'queued'}
+                                Queued. Waiting for the worker to pick this up.
+                            {:else if run.status === 'generating'}
+                                Generating {run.targetCount} names. They appear here in batches as they
+                                are written - the first arrives in a few minutes.
+                            {:else if anyFilter}
+                                No name matches these filters.
+                            {:else if onlyPassed}
+                                Nothing has cleared every requirement yet. Untick “only names that
+                                passed” to watch the checks land.
+                            {:else}
+                                Nothing yet.
+                            {/if}
+                        </TableBodyCell></TableBodyRow
+                    >
+                {/each}
+            </TableBody>
+        </Table>
         <!--
                 Under the table, not above it.
 

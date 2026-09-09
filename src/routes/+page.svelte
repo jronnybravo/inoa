@@ -4,6 +4,7 @@
     import { DEFAULT_PLATFORMS, PLATFORMS, isPlatform } from '$lib/handles';
     import { LANGUAGES, isLanguage } from '$lib/languages';
     import { ALL_TLDS, isTld, type TldEntry } from '$lib/tlds';
+    import TokenSearch from '$lib/TokenSearch.svelte';
     import {
         checkLabel,
         checkSearch,
@@ -48,8 +49,6 @@
      */
     let languages = $state<string[]>([]);
     let languageQuery = $state('');
-    let languageOpen = $state(false);
-    let languageIndex = $state(0);
 
     /**
      * Matches, best first.
@@ -96,12 +95,29 @@
         }
         languages = [...languages, id];
         languageQuery = '';
-        languageIndex = 0;
     }
 
     const removeLanguage = (id: string): void => {
         languages = languages.filter((l) => l !== id);
     };
+
+    /**
+     * Chosen languages the query matches, named rather than silently hidden.
+     *
+     * Chosen entries are kept out of the results, so searching for one you
+     * already have looks exactly like searching for one that does not exist.
+     * The domain search learned this; the other two only inherited it when
+     * they started sharing a control.
+     */
+    const languageAlready = $derived(
+        languageQuery.trim()
+            ? LANGUAGES.filter(
+                  (l) =>
+                      languages.includes(l.id) &&
+                      l.label.toLowerCase().startsWith(languageQuery.trim().toLowerCase())
+              )
+            : []
+    );
 
     /**
      * Chosen languages in the list's own order, not the order they were picked.
@@ -121,34 +137,6 @@
     const FOREIGN_STRATEGY = STRATEGIES.find((s) => s.id === 'foreign') ?? STRATEGIES[0];
     const onForeign = $derived(strategies.includes('foreign'));
 
-    /** The same keys as the other two searches, because it is the same control. */
-    function onLanguageKeydown(event: KeyboardEvent) {
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            languageOpen = true;
-            const step = event.key === 'ArrowDown' ? 1 : -1;
-            const count = languageMatches.length;
-            languageIndex = count === 0 ? 0 : (languageIndex + step + count) % count;
-            return;
-        }
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            const picked = languageMatches[languageIndex]?.id;
-            if (picked) {
-                addLanguage(picked);
-            }
-            return;
-        }
-        if (event.key === 'Backspace' && languageQuery === '' && languages.length > 0) {
-            event.preventDefault();
-            removeLanguage(languages[languages.length - 1] as string);
-            return;
-        }
-        if (event.key === 'Escape' && languageOpen) {
-            event.stopPropagation();
-            languageOpen = false;
-        }
-    }
     /**
      * The domains to look for, and which of them a name must actually be free on.
      *
@@ -172,8 +160,6 @@
     let requiredHandles = $state<string[]>([]);
 
     let handleQuery = $state('');
-    let handleOpen = $state(false);
-    let handleIndex = $state(0);
 
     /** Chosen platforms in the list's own order, which is most used first. */
     const chosenHandles = $derived(PLATFORMS.filter((p) => handles.includes(p.id)));
@@ -203,7 +189,6 @@
         }
         handles = [...handles, id];
         handleQuery = '';
-        handleIndex = 0;
     }
 
     function removeHandle(id: string) {
@@ -216,35 +201,6 @@
             ? requiredHandles.filter((h) => h !== id)
             : [...requiredHandles, id];
     };
-
-    /** The same keys as the domain search, because it is the same control. */
-    function onHandleKeydown(event: KeyboardEvent) {
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            handleOpen = true;
-            const step = event.key === 'ArrowDown' ? 1 : -1;
-            const count = handleMatches.length;
-            handleIndex = count === 0 ? 0 : (handleIndex + step + count) % count;
-            return;
-        }
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            const picked = handleMatches[handleIndex]?.id;
-            if (picked) {
-                addHandle(picked);
-            }
-            return;
-        }
-        if (event.key === 'Backspace' && handleQuery === '' && handles.length > 0) {
-            event.preventDefault();
-            removeHandle(handles[handles.length - 1] as string);
-            return;
-        }
-        if (event.key === 'Escape' && handleOpen) {
-            event.stopPropagation();
-            handleOpen = false;
-        }
-    }
 
     /**
      * What the run must clear, for the checks that are not domains.
@@ -302,8 +258,6 @@
      * for a list this size — type to narrow, arrows to move, Enter to take.
      */
     let tldQuery = $state('');
-    let tldOpen = $state(false);
-    let tldIndex = $state(0);
 
     /** Enough to scroll, few enough to render on every keystroke. */
     const TLD_SHOWN = 40;
@@ -360,7 +314,6 @@
         }
         tlds = [...tlds, tld];
         tldQuery = '';
-        tldIndex = 0;
     }
 
     function removeTld(tld: string) {
@@ -375,61 +328,6 @@
             ? requiredTlds.filter((t) => t !== tld)
             : [...requiredTlds, tld];
     };
-
-    /**
-     * Keep the highlighted option in view.
-     *
-     * Forty options in a sixteen-rem box means arrowing down walks the
-     * highlight straight out of the visible area, and the list sits still
-     * while an invisible row is selected. 'nearest' scrolls only when it has
-     * to, so moving within view does not jump the list about.
-     */
-    function revealHighlighted() {
-        queueMicrotask(() =>
-            document
-                .querySelector('#tld-list [aria-selected="true"]')
-                ?.scrollIntoView({ block: 'nearest' })
-        );
-    }
-
-    /** Arrow keys move the highlight, Enter takes it, Escape closes the list. */
-    function onTldKeydown(event: KeyboardEvent) {
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            tldOpen = true;
-            const step = event.key === 'ArrowDown' ? 1 : -1;
-            const count = tldMatches.length;
-            tldIndex = count === 0 ? 0 : (tldIndex + step + count) % count;
-            revealHighlighted();
-            return;
-        }
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            const picked = tldMatches[tldIndex]?.tld;
-            if (picked) {
-                addTld(picked);
-            }
-            return;
-        }
-        /*
-         * Backspace on an empty query takes back the last domain.
-         *
-         * The convention for every control shaped like this one, and the only
-         * way to undo a mistyped pick without reaching for its cross — which
-         * is a 20px target at the far end of the row you just added to.
-         */
-        if (event.key === 'Backspace' && tldQuery === '' && tlds.length > 0) {
-            event.preventDefault();
-            removeTld(tlds[tlds.length - 1] as string);
-            return;
-        }
-        if (event.key === 'Escape' && tldOpen) {
-            // Handled here so the page's own Escape ladder does not also fire
-            // and wipe the table filters underneath an open dropdown.
-            event.stopPropagation();
-            tldOpen = false;
-        }
-    }
 
     let email = $state(data.run?.email ?? '');
     let targetCount = $state(data.run?.targetCount ?? 1000);
@@ -1010,20 +908,33 @@
     };
 
     const shown = $derived.by(() => {
+        /*
+         * Everything that does not depend on the row, hoisted out of the loop.
+         *
+         * This runs over as many as two thousand rows on every keystroke and
+         * again on every poll. It was lowercasing the query once per row —
+         * two thousand allocations to answer one question — and walking all
+         * thirteen columns per row to find the one filter that was usually
+         * set, or the none that usually were.
+         */
+        const needle = nameFilter.toLowerCase();
+        const active = columns
+            .filter((k) => checkFilter[k])
+            .map((k) => [k, checkFilter[k]] as const);
+        const lens = onlyNearMisses ? new Set(nearMisses.map((n) => n.id)) : null;
+
         const matching = candidates.filter((c) => {
-            if (nameFilter && !c.name.toLowerCase().includes(nameFilter.toLowerCase())) {
+            if (needle && !c.name.toLowerCase().includes(needle)) {
                 return false;
             }
             if (approachFilter && c.strategy !== approachFilter) {
                 return false;
             }
-            return columns.every(
-                (k) => !checkFilter[k] || statusOf(c.statuses, k) === checkFilter[k]
-            );
+            return active.every(([k, want]) => statusOf(c.statuses, k) === want);
         });
-        const lensed = onlyNearMisses
-            ? matching.filter((c) => nearMisses.some((n) => n.id === c.id))
-            : matching;
+        // A Set rather than a scan: the lens used to be a find() over the near
+        // misses for every row that reached it, which is a list inside a list.
+        const lensed = lens ? matching.filter((c) => lens.has(c.id)) : matching;
         if (nameSort === 'none') {
             return lensed;
         }
@@ -1584,95 +1495,29 @@
                                         Which languages to draw on. Pick a family or a single
                                         language; leave it empty for any.
                                     </span>
-                                    <div class="relative mt-2 max-w-sm">
-                                        <input
-                                            id="languages"
-                                            bind:value={languageQuery}
-                                            onfocus={() => (languageOpen = true)}
-                                            onblur={() =>
-                                                setTimeout(() => (languageOpen = false), 120)}
-                                            oninput={() => {
-                                                languageOpen = true;
-                                                languageIndex = 0;
-                                            }}
-                                            onkeydown={onLanguageKeydown}
-                                            role="combobox"
-                                            aria-expanded={languageOpen}
-                                            aria-controls="language-list"
-                                            aria-labelledby="languages-label"
-                                            autocomplete="off"
-                                            placeholder="Search languages — Nordic, Japanese, Bantu…"
-                                            class="w-full rounded-lg border border-stone-300 bg-white px-3
-                                                   py-2 text-sm placeholder:text-stone-400
-                                                   focus:border-stone-500 focus:outline-none
-                                                   focus:ring-2 focus:ring-stone-900/10
-                                                   dark:border-stone-700 dark:bg-stone-950
-                                                   dark:placeholder:text-stone-600
-                                                   dark:focus:ring-white/10"
-                                        />
-                                        {#if languageOpen}
-                                            <div
-                                                class="absolute z-20 mt-1 w-full overflow-hidden
-                                                       rounded-lg border border-stone-200 bg-white
-                                                       shadow-lg dark:border-stone-700
-                                                       dark:bg-stone-900"
-                                            >
-                                                <ul
-                                                    id="language-list"
-                                                    role="listbox"
-                                                    class="max-h-64 overflow-y-auto py-1"
-                                                >
-                                                    {#each languageMatches as l, i (l.id)}
-                                                        <li>
-                                                            <button
-                                                                type="button"
-                                                                role="option"
-                                                                aria-selected={i === languageIndex}
-                                                                onmousedown={(e) => {
-                                                                    e.preventDefault();
-                                                                    addLanguage(l.id);
-                                                                }}
-                                                                onmouseenter={() =>
-                                                                    (languageIndex = i)}
-                                                                class="flex w-full items-baseline gap-2 px-3
-                                                                       py-1.5 text-left text-sm
-                                                                       {i === languageIndex
-                                                                    ? 'bg-stone-100 dark:bg-stone-800'
-                                                                    : ''}"
-                                                            >
-                                                                <span>{l.label}</span>
-                                                                {#if l.group}
-                                                                    <span
-                                                                        class="truncate text-xs text-stone-500"
-                                                                        >{l.covers
-                                                                            .slice(0, 4)
-                                                                            .join(', ')}</span
-                                                                    >
-                                                                {/if}
-                                                            </button>
-                                                        </li>
-                                                    {/each}
-                                                    {#if languageMatches.length === 0}
-                                                        <li
-                                                            class="px-3 py-2 text-sm text-stone-500"
-                                                        >
-                                                            No language matches “{languageQuery.trim()}”.
-                                                        </li>
-                                                    {/if}
-                                                </ul>
-                                                {#if languageMatches.length > 0}
-                                                    <p
-                                                        class="border-t border-stone-200 px-3 py-1.5
-                                                               text-xs text-stone-500
-                                                               dark:border-stone-800
-                                                               dark:text-stone-400"
-                                                    >
-                                                        ↑↓ to move · ↵ to add · ⌫ removes the last
-                                                    </p>
-                                                {/if}
-                                            </div>
-                                        {/if}
-                                    </div>
+                                    <TokenSearch
+                                        id="languages"
+                                        labelledBy="languages-label"
+                                        placeholder="Search languages — Nordic, Japanese, Bantu…"
+                                        matches={languageMatches.map((l) => ({
+                                            id: l.id,
+                                            label: l.label,
+                                            note: l.group
+                                                ? l.covers.slice(0, 4).join(', ')
+                                                : undefined
+                                        }))}
+                                        already={languageAlready.map((l) => ({
+                                            id: l.id,
+                                            label: l.label
+                                        }))}
+                                        bind:query={languageQuery}
+                                        onpick={addLanguage}
+                                        onremovelast={() => {
+                                            removeLanguage(
+                                                languages[languages.length - 1] as string
+                                            );
+                                        }}
+                                    />
 
                                     {#if chosenLanguages.length > 0}
                                         <div class="mt-2 flex flex-wrap items-start gap-2">
@@ -1749,124 +1594,23 @@
                         under the cursor. Fixed at the top, the input stays
                         where it was and the pills grow downward from it.
                     -->
-                    <div class="relative max-w-sm">
-                        <input
-                            id="tlds"
-                            bind:value={tldQuery}
-                            onfocus={() => (tldOpen = true)}
-                            onblur={() => setTimeout(() => (tldOpen = false), 120)}
-                            oninput={() => {
-                                tldOpen = true;
-                                tldIndex = 0;
-                            }}
-                            onkeydown={onTldKeydown}
-                            role="combobox"
-                            aria-expanded={tldOpen}
-                            aria-controls="tld-list"
-                            aria-labelledby="tlds-label"
-                            aria-describedby="tlds-help"
-                            autocomplete="off"
-                            placeholder="Search top-level domains — .com, .io, .ai…"
-                            class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm
-                                   placeholder:text-stone-400 focus:border-stone-500
-                                   focus:outline-none focus:ring-2 focus:ring-stone-900/10
-                                   dark:border-stone-700 dark:bg-stone-950
-                                   dark:placeholder:text-stone-600 dark:focus:ring-white/10"
-                        />
-                        {#if tldOpen}
-                            <!--
-                                onmousedown rather than onclick: the input's blur
-                                fires first on a click and would close the list
-                                out from under the pointer.
-                            -->
-                            <div
-                                class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border
-                                       border-stone-200 bg-white shadow-lg dark:border-stone-700
-                                       dark:bg-stone-900"
-                            >
-                                <ul
-                                    id="tld-list"
-                                    role="listbox"
-                                    class="max-h-64 overflow-y-auto py-1"
-                                >
-                                    <!--
-                                        First, not last.
-                                        
-                                        A domain already picked is kept out of
-                                        the results, so searching for one you
-                                        have looks exactly like searching for
-                                        one that does not exist. Below forty
-                                        matches it may as well not be there:
-                                        searching 'com' scrolled past .company
-                                        and .community to say so.
-                                    -->
-                                    {#each tldAlready as tld (tld)}
-                                        <li
-                                            class="flex items-baseline justify-between gap-2 px-3 py-1.5
-                                                   text-sm text-stone-500 dark:text-stone-400"
-                                        >
-                                            <span>.{tld}</span>
-                                            <span class="text-xs">already added</span>
-                                        </li>
-                                    {/each}
-
-                                    {#each tldMatches as entry, i (entry.tld)}
-                                        <li>
-                                            <button
-                                                type="button"
-                                                role="option"
-                                                aria-selected={i === tldIndex}
-                                                onmousedown={(e) => {
-                                                    e.preventDefault();
-                                                    addTld(entry.tld);
-                                                }}
-                                                onmouseenter={() => (tldIndex = i)}
-                                                class="flex w-full items-baseline gap-2 px-3 py-1.5 text-left text-sm
-                                                       {i === tldIndex
-                                                    ? 'bg-stone-100 dark:bg-stone-800'
-                                                    : ''}"
-                                            >
-                                                <span>.{entry.tld}</span>
-                                                {#if entry.label}
-                                                    <span class="text-xs text-stone-500"
-                                                        >.{entry.label}</span
-                                                    >
-                                                {/if}
-                                                <!--
-                                                    The price is the evidence.
-                                                    Every entry in this list is
-                                                    one a registrar will sell,
-                                                    and what it costs is also
-                                                    the difference between a
-                                                    .com and a .ai worth
-                                                    knowing before you pick.
-                                                -->
-                                                <span
-                                                    class="ml-auto text-xs tabular-nums text-stone-500
-                                                           dark:text-stone-400"
-                                                    >${entry.usd.toFixed(2)}</span
-                                                >
-                                            </button>
-                                        </li>
-                                    {/each}
-
-                                    {#if tldMatches.length === 0 && tldAlready.length === 0}
-                                        <li class="px-3 py-2 text-sm text-stone-500">
-                                            No top-level domain matches “{tldQuery.trim()}”.
-                                        </li>
-                                    {/if}
-                                </ul>
-                                {#if tldMatches.length > 0}
-                                    <p
-                                        class="border-t border-stone-200 px-3 py-1.5 text-xs text-stone-500
-                                               dark:border-stone-800 dark:text-stone-400"
-                                    >
-                                        ↑↓ to move · ↵ to add · ⌫ removes the last
-                                    </p>
-                                {/if}
-                            </div>
-                        {/if}
-                    </div>
+                    <TokenSearch
+                        id="tlds"
+                        labelledBy="tlds-label"
+                        placeholder="Search top-level domains — .com, .io, .ai…"
+                        matches={tldMatches.map((t) => ({
+                            id: t.tld,
+                            label: `.${t.tld}`,
+                            note: t.label ? `.${t.label}` : undefined,
+                            meta: `$${t.usd.toFixed(2)}`
+                        }))}
+                        already={tldAlready.map((tld) => ({ id: tld, label: `.${tld}` }))}
+                        bind:query={tldQuery}
+                        onpick={addTld}
+                        onremovelast={() => {
+                            removeTld(tlds[tlds.length - 1] as string);
+                        }}
+                    />
 
                     <!--
                         Each pill is two controls: the label toggles whether
@@ -1956,84 +1700,18 @@
                     domains do. One control learned once.
                 -->
                 <div>
-                    <div class="relative max-w-sm">
-                        <input
-                            id="handles"
-                            bind:value={handleQuery}
-                            onfocus={() => (handleOpen = true)}
-                            onblur={() => setTimeout(() => (handleOpen = false), 120)}
-                            oninput={() => {
-                                handleOpen = true;
-                                handleIndex = 0;
-                            }}
-                            onkeydown={onHandleKeydown}
-                            role="combobox"
-                            aria-expanded={handleOpen}
-                            aria-controls="handle-list"
-                            aria-labelledby="handles-label"
-                            autocomplete="off"
-                            placeholder="Search platforms — Instagram, TikTok, X…"
-                            class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm
-                                   placeholder:text-stone-400 focus:border-stone-500
-                                   focus:outline-none focus:ring-2 focus:ring-stone-900/10
-                                   dark:border-stone-700 dark:bg-stone-950
-                                   dark:placeholder:text-stone-600 dark:focus:ring-white/10"
-                        />
-                        {#if handleOpen}
-                            <div
-                                class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border
-                                       border-stone-200 bg-white shadow-lg dark:border-stone-700
-                                       dark:bg-stone-900"
-                            >
-                                <ul
-                                    id="handle-list"
-                                    role="listbox"
-                                    class="max-h-64 overflow-y-auto py-1"
-                                >
-                                    {#each handleAlready as p (p.id)}
-                                        <li
-                                            class="flex items-baseline justify-between gap-2 px-3 py-1.5
-                                                   text-sm text-stone-500 dark:text-stone-400"
-                                        >
-                                            <span>@{p.label}</span>
-                                            <span class="text-xs">already added</span>
-                                        </li>
-                                    {/each}
-                                    {#each handleMatches as p, i (p.id)}
-                                        <li>
-                                            <button
-                                                type="button"
-                                                role="option"
-                                                aria-selected={i === handleIndex}
-                                                onmousedown={(e) => {
-                                                    e.preventDefault();
-                                                    addHandle(p.id);
-                                                }}
-                                                onmouseenter={() => (handleIndex = i)}
-                                                class="w-full px-3 py-1.5 text-left text-sm
-                                                       {i === handleIndex
-                                                    ? 'bg-stone-100 dark:bg-stone-800'
-                                                    : ''}">@{p.label}</button
-                                            >
-                                        </li>
-                                    {/each}
-                                    {#if handleMatches.length === 0 && handleAlready.length === 0}
-                                        <li class="px-3 py-2 text-sm text-stone-500">
-                                            No platform matches “{handleQuery.trim()}”.
-                                        </li>
-                                    {/if}
-                                </ul>
-                                {#if handleMatches.length > 0}
-                                    <p
-                                        class="border-t border-stone-200 px-3 py-1.5 text-xs text-stone-500
-                                               dark:border-stone-800 dark:text-stone-400"
-                                    >
-                                        ↑↓ to move · ↵ to add · ⌫ removes the last
-                                    </p>
-                                {/if}
-                            </div>
-                        {/if}
-                    </div>
+                    <TokenSearch
+                        id="handles"
+                        labelledBy="handles-label"
+                        placeholder="Search platforms — Instagram, TikTok, X…"
+                        matches={handleMatches.map((p) => ({ id: p.id, label: `@${p.label}` }))}
+                        already={handleAlready.map((p) => ({ id: p.id, label: `@${p.label}` }))}
+                        bind:query={handleQuery}
+                        onpick={addHandle}
+                        onremovelast={() => {
+                            removeHandle(handles[handles.length - 1] as string);
+                        }}
+                    />
 
                     {#if handles.length > 0}
                         <div class="mt-2 flex flex-wrap items-start gap-2">

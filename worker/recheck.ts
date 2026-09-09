@@ -133,6 +133,21 @@ const paceFor = (kind: CheckKind): number => {
  * recomputing `passed` from its stale verdict. The plan below is a forecast;
  * the work itself needs current rows.
  */
+/**
+ * The run's rows, read once.
+ *
+ * rowsFor() is called twice for every kind — once to price the work and once
+ * to do it — so a thirteen-check run was reading the whole table twenty-six
+ * times to answer questions about the same two thousand rows. The pass writes
+ * as it goes, so the cache is refreshed between kinds rather than held for the
+ * whole run.
+ */
+let cached: Candidate[] | null = null;
+const allRows = async (): Promise<Candidate[]> => {
+    cached ??= await Candidate.find({ where: { runId }, order: { position: 'ASC' } });
+    return cached;
+};
+
 const rowsFor = async (kind: CheckKind): Promise<Candidate[]> => {
     /*
      * Filtered here rather than in SQL.
@@ -143,7 +158,7 @@ const rowsFor = async (kind: CheckKind): Promise<Candidate[]> => {
      * most a couple of thousand rows, so reading them and asking in JavaScript
      * costs a fraction of a second and works everywhere.
      */
-    const rows = await Candidate.find({ where: { runId }, order: { position: 'ASC' } });
+    const rows = await allRows();
     return rows.filter((row) => revisit.includes(statusOf(candidateStatuses(row), kind)));
 };
 
@@ -181,6 +196,9 @@ if (total > LONG_PASS_MS && !confirmed) {
 }
 
 for (const { kind, interval } of jobs) {
+    // The previous kind wrote to these rows, so read them again rather than
+    // recomputing `passed` from a snapshot taken before it ran.
+    cached = null;
     const rows = await rowsFor(kind);
     if (rows.length === 0) {
         continue;

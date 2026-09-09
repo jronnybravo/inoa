@@ -170,7 +170,79 @@ export const FOREIGN: readonly { word: string; gloss: string; from: string }[] =
     { word: 'chemin', gloss: 'path', from: 'French' },
     { word: 'clairon', gloss: 'clarion', from: 'French' },
     { word: 'ponte', gloss: 'bridge', from: 'Italian' },
-    { word: 'raiz', gloss: 'root', from: 'Portuguese' }
+    { word: 'raiz', gloss: 'root', from: 'Portuguese' },
+
+    /*
+     * The families the first draft could not reach.
+     *
+     * Eleven families are offered and only four had a root here, so choosing
+     * Bantu or Semitic with no model configured returned nothing at all — a
+     * short batch and no error anywhere. catalogs.test.ts now fails if a
+     * family is ever offered without something to build from.
+     */
+    { word: 'wald', gloss: 'forest', from: 'German' },
+    { word: 'quelle', gloss: 'source', from: 'German' },
+    { word: 'hafen', gloss: 'harbour', from: 'German' },
+    { word: 'licht', gloss: 'light', from: 'Dutch' },
+    { word: 'haven', gloss: 'harbour', from: 'Dutch' },
+    { word: 'brug', gloss: 'bridge', from: 'Dutch' },
+    { word: 'holt', gloss: 'a wood', from: 'Old English' },
+    { word: 'stede', gloss: 'place', from: 'Old English' },
+
+    { word: 'mir', gloss: 'peace, and the world', from: 'Russian' },
+    { word: 'reka', gloss: 'river', from: 'Russian' },
+    { word: 'iskra', gloss: 'spark', from: 'Polish' },
+
+    { word: 'dara', gloss: 'oak', from: 'Irish' },
+    { word: 'sona', gloss: 'happy', from: 'Irish' },
+    { word: 'afon', gloss: 'river', from: 'Welsh' },
+    { word: 'glan', gloss: 'shore', from: 'Welsh' },
+    { word: 'loch', gloss: 'lake', from: 'Scottish Gaelic' },
+
+    { word: 'nur', gloss: 'light', from: 'Arabic' },
+    { word: 'amal', gloss: 'hope', from: 'Arabic' },
+    { word: 'bahr', gloss: 'sea', from: 'Arabic' },
+    { word: 'aviv', gloss: 'spring', from: 'Hebrew' },
+    { word: 'gal', gloss: 'wave', from: 'Hebrew' },
+
+    { word: 'safari', gloss: 'journey', from: 'Swahili' },
+    { word: 'nuru', gloss: 'light', from: 'Swahili' },
+    { word: 'imara', gloss: 'steady', from: 'Swahili' },
+    { word: 'langa', gloss: 'sun', from: 'Zulu' },
+    { word: 'amanzi', gloss: 'water', from: 'Zulu' },
+
+    { word: 'tala', gloss: 'star', from: 'Tagalog' },
+    { word: 'alon', gloss: 'wave', from: 'Tagalog' },
+    { word: 'bukid', gloss: 'field', from: 'Tagalog' },
+    { word: 'laut', gloss: 'sea', from: 'Indonesian' },
+    { word: 'cahaya', gloss: 'light', from: 'Indonesian' },
+    { word: 'kai', gloss: 'sea', from: 'Hawaiian' },
+    { word: 'lani', gloss: 'sky', from: 'Hawaiian' },
+    { word: 'awa', gloss: 'river', from: 'Māori' },
+    { word: 'moana', gloss: 'ocean', from: 'Māori' },
+
+    { word: 'veda', gloss: 'knowledge', from: 'Sanskrit' },
+    { word: 'agni', gloss: 'fire', from: 'Sanskrit' },
+    { word: 'nadi', gloss: 'river', from: 'Sanskrit' },
+    { word: 'asha', gloss: 'hope', from: 'Hindi' },
+    { word: 'surya', gloss: 'sun', from: 'Hindi' },
+
+    { word: 'bada', gloss: 'sea', from: 'Korean' },
+    { word: 'saem', gloss: 'a spring', from: 'Korean' },
+    { word: 'lin', gloss: 'forest', from: 'Mandarin' },
+    { word: 'feng', gloss: 'wind', from: 'Mandarin' },
+    { word: 'shan', gloss: 'mountain', from: 'Mandarin' },
+
+    { word: 'deniz', gloss: 'sea', from: 'Turkish' },
+    { word: 'ada', gloss: 'island', from: 'Turkish' },
+
+    { word: 'metsa', gloss: 'forest', from: 'Finnish' },
+    { word: 'aalto', gloss: 'wave', from: 'Finnish' },
+    { word: 'valo', gloss: 'light', from: 'Finnish' },
+    { word: 'lind', gloss: 'a spring', from: 'Icelandic' },
+    { word: 'birta', gloss: 'brightness', from: 'Icelandic' },
+    { word: 'fjell', gloss: 'mountain', from: 'Norwegian' },
+    { word: 'elv', gloss: 'river', from: 'Norwegian' }
 ];
 
 /**

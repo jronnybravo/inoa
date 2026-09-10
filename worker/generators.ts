@@ -19,6 +19,7 @@
 
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -31,7 +32,18 @@ const run = promisify(execFile);
  */
 const CLI_OPTIONS = {
     maxBuffer: 32 * 1024 * 1024,
-    timeout: 900_000,
+    /*
+     * Three minutes, not fifteen.
+     *
+     * A batch of twenty-five names takes seconds. Fifteen minutes was not a
+     * budget, it was the length of time a wedged CLI could hold a run hostage
+     * before anything noticed — and it did: one batch sat for eight minutes
+     * with the run stalled behind it and nothing on screen saying why.
+     *
+     * Generous against the work and short against a hang, which is what a
+     * timeout is for. INOA_CLI_TIMEOUT_MS raises it for a slow machine.
+     */
+    timeout: Number(process.env.INOA_CLI_TIMEOUT_MS ?? 180_000),
     stdio: ['ignore', 'pipe', 'pipe'] as const
 };
 
@@ -151,19 +163,41 @@ const openaiApi: Generator = {
 };
 
 /**
- * The OpenAI CLI, driven non-interactively.
+ * The OpenAI CLI, driven non-interactively — and kept away from the repository.
  *
  * `codex exec` is the one-shot form; without it the binary opens a session and
  * waits for a terminal that is not there. Like the Claude CLI it spends a
  * subscription rather than metering tokens, which is why both sit in the same
  * tier.
+ *
+ * The flags are the difference between an answer and an afternoon. `claude -p`
+ * is print mode: it answers the question and exits. `codex exec` has no such
+ * mode — it is a coding agent, and run from a git repository it treats that
+ * repository as the job. Asked for twenty-five brand names it went off reading
+ * the codebase; measured here, the same prompt took over eight minutes that way
+ * and sixteen seconds with these.
+ *
+ * -C into a scratch directory is the one that matters: with no workspace there
+ * is nothing to explore. read-only and --ignore-user-config remove the other
+ * two ways in — running commands, and instructions from somebody's own config.
  */
 const codexCli: Generator = {
     label: 'codex-cli',
     tier: 'cli',
     available: () => onPath('codex'),
     complete: async (prompt) => {
-        const { stdout } = await run('codex', ['exec', prompt], CLI_OPTIONS);
+        const args = [
+            'exec',
+            '--skip-git-repo-check',
+            '--ephemeral',
+            '--ignore-user-config',
+            '--sandbox',
+            'read-only',
+            '--cd',
+            tmpdir(),
+            prompt
+        ];
+        const { stdout } = await run('codex', args, CLI_OPTIONS);
         return stdout;
     }
 };

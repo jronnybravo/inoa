@@ -26,6 +26,7 @@ import { checkLabel } from '../src/lib/types.ts';
 import { priorVerdict } from './checks/reuse.ts';
 import { sleep } from './checks/shared.ts';
 import { closeBrowser } from './checks/web.ts';
+import { claimable } from './claim.ts';
 import { generateNames } from './generate.ts';
 import { makeLogger } from './log.ts';
 import { checkCandidate, defersWeb, fastChecks } from './pipeline.ts';
@@ -73,12 +74,7 @@ async function claimNext(): Promise<Run | null> {
     const cutoff = new Date(Date.now() - LEASE_SECONDS * 1000);
 
     const waiting = await Run.find({
-        where: [
-            { emailVerified: true, status: 'queued' },
-            // Or a worker took it and stopped renewing the lease.
-            { emailVerified: true, status: 'generating', claimedAt: LessThan(cutoff) },
-            { emailVerified: true, status: 'checking', claimedAt: LessThan(cutoff) }
-        ],
+        where: claimable(cutoff) as never,
         order: { createdAt: 'ASC' },
         take: 5
     });

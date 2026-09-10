@@ -1,6 +1,7 @@
 <script lang="ts">
     import {
         Button,
+        ButtonGroup,
         Checkbox,
         Input,
         Select,
@@ -2046,8 +2047,20 @@
                             {@const linkOnly = r.key === 'google' && webIsLinkOnly}
                             {@const on = linkOnly ? webLinks : stores.includes(r.key)}
                             {@const must = !linkOnly && requiredStores.includes(r.key)}
-                            <button
+                            <!--
+                                A Button, but still a tri-state control.
+
+                                Off, checked, required — three states, and the
+                                library has two. `outline` carries off-versus-on
+                                and the class carries required, which is the
+                                only part it cannot express; everything else
+                                about the chip is now the same button the rest
+                                of the app uses.
+                            -->
+                            <Button
                                 type="button"
+                                size="sm"
+                                color="alternative"
                                 onclick={() => {
                                     if (linkOnly) {
                                         webLinks = !webLinks;
@@ -2072,11 +2085,11 @@
                                           ? `A name taken on ${r.label} is dropped. Click to leave it out.`
                                           : `${r.label} is reported but never drops a name. Click to require it.`
                                       : `${r.label} is not checked at all. Click to check it.`}
-                                class="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors duration-150 {must
+                                class="flex items-center gap-1.5 {must
                                     ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
                                     : on
-                                      ? 'border-stone-500'
-                                      : 'border-stone-500 text-stone-500 dark:text-stone-400 hover:border-stone-900 dark:hover:border-stone-100'}"
+                                      ? ''
+                                      : 'text-stone-500 dark:text-stone-400'}"
                             >
                                 {r.label}
                                 {#if on}
@@ -2089,7 +2102,7 @@
                                         class="size-3.5 text-stone-500 dark:text-stone-400"
                                     />
                                 {/if}
-                            </button>
+                            </Button>
                         {/each}
                         <!-- The same count the other two rows carry. -->
                         <span class="self-center text-xs text-stone-500 dark:text-stone-400">
@@ -3102,10 +3115,13 @@
                   requires - and a menu for the one check you actually doubt.
                 -->
                         <TableBodyCell class="px-3 py-2 text-right whitespace-nowrap">
-                            <span
-                                class="inline-flex overflow-hidden rounded border border-stone-500
-                               dark:border-stone-700"
-                            >
+                            <!--
+                                A ButtonGroup, which is what this always was:
+                                two buttons sharing one border with a divider
+                                between them, previously assembled by hand out
+                                of overflow-hidden and a border-l.
+                            -->
+                            <ButtonGroup size="sm">
                                 <!--
                                             Both labels occupy one grid cell, so
                                             the button is as wide as the longer
@@ -3155,7 +3171,7 @@
                              duration-100 hover:bg-stone-100 disabled:opacity-50
                              dark:border-stone-700 dark:hover:bg-stone-800">▾</button
                                 >
-                            </span>
+                            </ButtonGroup>
                         </TableBodyCell>
                     </TableBodyRow>
                 {:else}

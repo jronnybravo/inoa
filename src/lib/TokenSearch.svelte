@@ -12,7 +12,7 @@
     keyboard, and what a row looks like.
 -->
 <script lang="ts">
-    import { Input } from 'flowbite-svelte';
+    import { DropdownItem, Input } from 'flowbite-svelte';
 
     /** One row of the list. `note` sits beside the label, `meta` at the end. */
     export interface Option {
@@ -153,41 +153,53 @@
                     </li>
                 {/each}
 
+                <!--
+                    DropdownItem renders the row and its own <li>; the
+                    highlight stays ours.
+
+                    Flowbite's own dropdown highlights whatever the pointer is
+                    over, and this list is driven by the arrow keys as much as
+                    by the mouse — `index` is what ↑↓ moves and what ↵ picks, so
+                    the selected row has to be told, not hovered.
+
+                    onmousedown rather than onclick: the input's blur fires
+                    first on a click and would close the list out from under
+                    the pointer.
+                -->
                 {#each matches as option, i (option.id)}
-                    <li>
+                    <DropdownItem
+                        role="option"
+                        aria-selected={i === index}
+                        onmousedown={(e: MouseEvent) => {
+                            e.preventDefault();
+                            onpick(option.id);
+                            query = '';
+                            index = 0;
+                        }}
+                        onmouseenter={() => (index = i)}
+                        class="flex w-full items-baseline gap-2 px-3 py-1.5 text-left text-sm
+                               {i === index ? 'bg-stone-100 dark:bg-stone-800' : ''}"
+                    >
+                        <span>{option.label}</span>
                         <!--
-                            onmousedown rather than onclick: the input's blur
-                            fires first on a click and would close the list out
-                            from under the pointer.
+                            stone-600, not stone-500.
+
+                            The highlighted row sits on stone-100, where
+                            stone-500 measures 4.39:1 — under AA by a hair, and
+                            only on the one row somebody is actually looking at.
                         -->
-                        <button
-                            type="button"
-                            role="option"
-                            aria-selected={i === index}
-                            onmousedown={(e) => {
-                                e.preventDefault();
-                                onpick(option.id);
-                                query = '';
-                                index = 0;
-                            }}
-                            onmouseenter={() => (index = i)}
-                            class="flex w-full items-baseline gap-2 px-3 py-1.5 text-left text-sm
-                                   {i === index ? 'bg-stone-100 dark:bg-stone-800' : ''}"
-                        >
-                            <span>{option.label}</span>
-                            {#if option.note}
-                                <span class="truncate text-xs text-stone-500 dark:text-stone-400"
-                                    >{option.note}</span
-                                >
-                            {/if}
-                            {#if option.meta}
-                                <span
-                                    class="ml-auto text-xs tabular-nums text-stone-500 dark:text-stone-400"
-                                    >{option.meta}</span
-                                >
-                            {/if}
-                        </button>
-                    </li>
+                        {#if option.note}
+                            <span class="truncate text-xs text-stone-600 dark:text-stone-400"
+                                >{option.note}</span
+                            >
+                        {/if}
+                        {#if option.meta}
+                            <span
+                                class="ml-auto text-xs tabular-nums text-stone-600 dark:text-stone-400"
+                                >{option.meta}</span
+                            >
+                        {/if}
+                    </DropdownItem>
                 {/each}
 
                 {#if matches.length === 0 && already.length === 0}

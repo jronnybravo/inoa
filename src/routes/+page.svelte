@@ -1297,6 +1297,14 @@
     function askForCode() {
         verifyProblem = '';
         resendNote = '';
+        /*
+         * The box starts empty, because the digits in it are known to be wrong.
+         *
+         * Reopening kept whatever was rejected last time — so the caret landed
+         * at the end of six wrong digits and the first thing to do was clear
+         * them.
+         */
+        code = '';
         verifyDialog?.showModal();
     }
 

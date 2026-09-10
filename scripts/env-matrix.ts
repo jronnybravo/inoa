@@ -189,6 +189,36 @@ for (const [i, testCase] of CASES.entries()) {
                 );
             }
 
+            /*
+             * The web check is accepted exactly where it can be answered.
+             *
+             * Both halves matter. Refusing it without a provider is what stops
+             * a thousand names queueing against a browser; accepting it with
+             * one is the whole point of configuring a provider — and a guard
+             * that refused both would be indistinguishable from a broken form.
+             */
+            const web = await fetch(at('/api/runs'), {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                    ...RUN,
+                    brief: `${MARK} web`,
+                    stores: ['appStore', 'google'],
+                    requiredStores: ['appStore'],
+                    requireGoogle: false,
+                    email: mail ? 'env-matrix@example.com' : ''
+                })
+            });
+            const webBody = await reply(web);
+            check(
+                testCase.name,
+                search ? 'accepts a run that checks the web' : 'refuses a web check it cannot run',
+                search
+                    ? web.ok
+                    : web.status === 400 && /search provider/i.test(webBody.message ?? ''),
+                `HTTP ${web.status} ${JSON.stringify(webBody).slice(0, 70)}`
+            );
+
             // A malformed run is refused in the app's own words, not zod's.
             const bad = await fetch(at('/api/runs'), {
                 method: 'POST',

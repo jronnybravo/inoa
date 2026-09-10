@@ -37,6 +37,24 @@ async function settingsOf(id: string): Promise<RunSettings | null> {
         const stores = (from: readonly string[]): string[] =>
             STORE_ORDER.filter((kind) => from.includes(kind));
 
+        /*
+         * The web check only travels where something can answer it.
+         *
+         * A run made before this deployment lost its search provider — or one
+         * with no stores column at all, which runChecks reads as all three —
+         * carries `google`. The form cannot show that: without a provider the
+         * Web chip is a link toggle rather than a check, so the value sat in
+         * the state invisible and unremovable, and Execute came back with 'The
+         * web check needs a search provider' about a check nobody could see.
+         *
+         * The intent survives as the thing this deployment can offer: a run
+         * that wanted the web looked at arrives with the link column on.
+         */
+        const canSearch = searchConfigured();
+        const runnable = (from: readonly string[]): string[] =>
+            canSearch ? stores(from) : stores(from).filter((kind) => kind !== 'google');
+        const wantedWeb = stores(kinds).includes('google');
+
         return {
             brief: run.brief,
             strategies: run.strategies ?? [],
@@ -45,9 +63,9 @@ async function settingsOf(id: string): Promise<RunSettings | null> {
             requiredTlds: named('tld:', required),
             handles: named('at:', kinds),
             requiredHandles: named('at:', required),
-            stores: stores(kinds),
-            requiredStores: stores(required),
-            webLinks: run.webLinks,
+            stores: runnable(kinds),
+            requiredStores: runnable(required),
+            webLinks: run.webLinks || (wantedWeb && !canSearch),
             targetCount: run.targetCount,
             // Never the address. It is masked everywhere else it is shown, and
             // an unmasked one here would be a way to read it back off a link.

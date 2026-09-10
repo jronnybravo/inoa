@@ -17,6 +17,10 @@
   },
   // The generated config only covers src. The worker and its scripts live
   // outside it and still need type-checking and type-aware linting.
+  //
+  // scripts/*.ts is in here because those reach into the app — the environment
+  // matrix boots servers and then clears its own rows through the entities, so
+  // it is as able to go stale against a schema change as anything in src.
   "include": [
     ".svelte-kit/ambient.d.ts",
     ".svelte-kit/env.d.ts",
@@ -26,6 +30,7 @@
     "src/**/*.js",
     "src/**/*.ts",
     "src/**/*.svelte",
-    "worker/**/*.ts"
+    "worker/**/*.ts",
+    "scripts/**/*.ts"
   ]
 }

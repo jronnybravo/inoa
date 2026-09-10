@@ -18,7 +18,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . && prettier --check .",
-    "worker:dev": "node --watch --experimental-strip-types worker/index.ts"
+    "worker:dev": "node --watch --experimental-strip-types worker/index.ts",
+    "test:env": "node --experimental-strip-types scripts/env-matrix.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

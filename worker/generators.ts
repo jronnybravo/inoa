@@ -17,19 +17,107 @@
  * it, and neither should anything else that imports this module.
  */
 
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
-const run = promisify(execFile);
+/** A CLI that exited badly, in the shape describeFailure() reads. */
+interface CommandFailure extends Error {
+    stdout: string;
+    stderr: string;
+    code: number | null;
+}
+
+function failed(
+    message: string,
+    stdout: string,
+    stderr: string,
+    code: number | null
+): CommandFailure {
+    return Object.assign(new Error(message), { stdout, stderr, code });
+}
 
 /**
- * The CLI waits three seconds for stdin before giving up on it, and we never
- * write any — the prompt goes in as an argument. Closing stdin outright skips
- * that wait, which is otherwise paid on every batch of every run.
+ * Run a CLI with its stdin closed, and treat anything but a clean exit as an error.
+ *
+ * spawn rather than execFile, for the stdin. Neither CLI is given input — the
+ * prompt goes in as an argument — but both look for some anyway, and what they
+ * do when they find an open pipe differs: the Claude CLI waits three seconds
+ * and moves on, while `codex exec` blocks on it indefinitely.
+ *
+ * This used to pass `stdio: ['ignore', ...]` to execFile, which does nothing:
+ * execFile builds its own pipes to capture output and never forwards the
+ * option. So codex sat holding an open stdin until the timeout killed it —
+ * and it exits 0 on the signal, so the batch came back empty and SUCCESSFUL.
+ * Twelve minutes of a real run went that way, and every name the run was
+ * supposed to get from that source was silently lost.
+ *
+ * An empty stdout is a failure here too. A CLI that answers nothing has not
+ * answered, whatever it says on the way out, and calling it a success is what
+ * let the failover below be skipped.
  */
+async function run(
+    file: string,
+    args: string[],
+    options: { timeout: number; maxBuffer: number }
+): Promise<{ stdout: string }> {
+    return new Promise((resolve, reject) => {
+        const child = spawn(file, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stdout = '';
+        let stderr = '';
+        let overflowed = false;
+        let timedOut = false;
+
+        const collect = (into: 'out' | 'err') => (chunk: Buffer) => {
+            const text = chunk.toString();
+            if (into === 'out') {
+                stdout += text;
+            } else {
+                stderr += text;
+            }
+            if (stdout.length + stderr.length > options.maxBuffer && !overflowed) {
+                overflowed = true;
+                child.kill('SIGKILL');
+            }
+        };
+        child.stdout.on('data', collect('out'));
+        child.stderr.on('data', collect('err'));
+
+        const timer = setTimeout(() => {
+            timedOut = true;
+            child.kill('SIGKILL');
+        }, options.timeout);
+
+        child.on('error', (error) => {
+            clearTimeout(timer);
+            reject(failed(error.message, stdout, stderr, null));
+        });
+
+        child.on('close', (code) => {
+            clearTimeout(timer);
+            if (timedOut) {
+                reject(
+                    failed(
+                        `${file} produced no answer within ${Math.round(options.timeout / 1000)}s`,
+                        stdout,
+                        stderr,
+                        code
+                    )
+                );
+            } else if (overflowed) {
+                reject(failed(`${file} wrote more output than we will read`, stdout, stderr, code));
+            } else if (code !== 0) {
+                reject(failed(`${file} exited ${code}`, stdout, stderr, code));
+            } else if (stdout.trim() === '') {
+                reject(failed(`${file} answered with nothing at all`, stdout, stderr, code));
+            } else {
+                resolve({ stdout });
+            }
+        });
+    });
+}
+
 const CLI_OPTIONS = {
     maxBuffer: 32 * 1024 * 1024,
     /*
@@ -43,8 +131,7 @@ const CLI_OPTIONS = {
      * Generous against the work and short against a hang, which is what a
      * timeout is for. INOA_CLI_TIMEOUT_MS raises it for a slow machine.
      */
-    timeout: Number(process.env.INOA_CLI_TIMEOUT_MS ?? 180_000),
-    stdio: ['ignore', 'pipe', 'pipe'] as const
+    timeout: Number(process.env.INOA_CLI_TIMEOUT_MS ?? 180_000)
 };
 
 /**

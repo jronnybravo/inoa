@@ -2810,10 +2810,18 @@
                     results. The hairline under it is what separates a header
                     from its rows; the fill was doing the job twice, and louder.
                 -->
-            <TableHead class="sticky top-0 z-10 bg-white text-left normal-case dark:bg-stone-950">
+            <!--
+                z-20, above the pinned name column's z-10.
+
+                Both were z-10, and equal z-index is settled by document order —
+                so the body's sticky cells, which come later, painted over the
+                header. Scrolling slid every name straight through 'NAME'. The
+                corner cell is z-30 because it is both.
+            -->
+            <TableHead class="sticky top-0 z-20 bg-white text-left normal-case dark:bg-stone-950">
                 <TableHeadCell
                     scope="col"
-                    class="sticky left-0 z-20 bg-white px-4 py-3 align-bottom
+                    class="sticky left-0 z-30 bg-white px-4 py-3 align-bottom
                                 after:absolute after:inset-y-0 after:-right-px after:w-px
                                 after:bg-stone-200 dark:bg-stone-950 dark:after:bg-stone-800
                                 {HEADER_EDGE}"
@@ -2876,6 +2884,16 @@
                     </span>
                     <div class="relative">
                         <!--
+                            classes.select, not class.
+
+                            Select puts `class` on its wrapper div and keeps a
+                            slot for the element — so the filter styling was
+                            landing on a box around the control while the
+                            control kept the library's own defaults. A bordered
+                            select inside a bordered div, 48px tall beside a
+                            26px input, which is what made this row look like
+                            two different controls.
+
                             placeholder="" on purpose: Flowbite prepends a
                             disabled placeholder option when it has one, and
                             'Any' here is a real choice — it is how a filter is
@@ -2883,12 +2901,12 @@
                         -->
                         <Select
                             bind:value={approachFilter}
-                            size="sm"
                             placeholder=""
                             aria-label="Filter by approach"
-                            class="{FILTER_INPUT} {approachFilter
-                                ? FILTER_ACTIVE
-                                : FILTER_IDLE} pr-6"
+                            class="w-full"
+                            classes={{
+                                select: `${FILTER_INPUT} ${approachFilter ? FILTER_ACTIVE : FILTER_IDLE} pr-6`
+                            }}
                         >
                             <option value="">Any</option>
                             {#each byStrategy as s (s.id)}
@@ -2935,12 +2953,14 @@
                                     -->
                             <Select
                                 bind:value={checkFilter[k]}
-                                size="sm"
                                 placeholder=""
                                 aria-label="Filter by {checkLabel(k)}"
-                                class="{FILTER_INPUT} {checkFilter[k]
-                                    ? `${FILTER_ACTIVE} pr-6`
-                                    : FILTER_IDLE}"
+                                class="w-full"
+                                classes={{
+                                    select: `${FILTER_INPUT} ${
+                                        checkFilter[k] ? `${FILTER_ACTIVE} pr-6` : FILTER_IDLE
+                                    }`
+                                }}
                             >
                                 <option value="">Any</option>
                                 {#each LEGEND as l (l.status)}
@@ -3130,13 +3150,13 @@
                                             width mid-click makes the whole
                                             column look unstable.
                                         -->
-                                <button
+                                <Button
                                     onclick={() => recheck(c)}
                                     disabled={rechecking[c.id]}
+                                    size="xs"
+                                    color="alternative"
                                     title="Re-run the checks this run requires"
-                                    class="grid px-2 py-0.5 text-xs transition-colors
-                                                   duration-100 hover:bg-stone-100
-                                                   disabled:opacity-50 dark:hover:bg-stone-800"
+                                    class="grid px-2 py-0.5"
                                 >
                                     <span
                                         class="col-start-1 row-start-1"
@@ -3146,9 +3166,9 @@
                                         class="col-start-1 row-start-1"
                                         class:invisible={!rechecking[c.id]}>Checking…</span
                                     >
-                                </button>
-                                <button
-                                    onclick={(e) => {
+                                </Button>
+                                <Button
+                                    onclick={(e: MouseEvent) => {
                                         const r = (
                                             e.currentTarget as HTMLElement
                                         ).getBoundingClientRect();
@@ -3167,9 +3187,9 @@
                                     aria-haspopup="menu"
                                     aria-expanded={menu?.id === c.id}
                                     aria-label="Check one thing for {c.name}"
-                                    class="border-l border-stone-300 px-1.5 py-0.5 text-xs transition-colors
-                             duration-100 hover:bg-stone-100 disabled:opacity-50
-                             dark:border-stone-700 dark:hover:bg-stone-800">▾</button
+                                    size="xs"
+                                    color="alternative"
+                                    class="px-1.5 py-0.5">▾</Button
                                 >
                             </ButtonGroup>
                         </TableBodyCell>
@@ -3257,44 +3277,62 @@
             use:placed={{ x: menu.x, y: menu.y, anchorTop: menu.anchorTop }}
             role="menu"
             aria-label="Actions for this name"
-            class="fixed z-50 min-w-44 -translate-x-full rounded-lg border border-stone-200
+            class="fixed z-50 min-w-72 -translate-x-full rounded-lg border border-stone-200
                 bg-white py-1 shadow-lg shadow-stone-900/10 dark:border-stone-700
                 dark:bg-stone-900 dark:shadow-black/40"
         >
-            <p class="px-3 py-1 text-xs text-stone-500 dark:text-stone-400">Check one thing</p>
+            <!--
+                One row per check, not two lists of the same checks.
+
+                It was every check to re-run, then a rule, then every check to
+                search — so a run with eight of them opened a sixteen-row menu
+                that had said each name twice. The search is an arrow on the
+                row it belongs to, which halves the height and puts the two
+                things you might do about `.com` next to each other.
+
+                A link cannot live inside a button, so the row is a flex pair
+                rather than one control.
+            -->
+            <p class="px-3 py-1 text-xs text-stone-500 dark:text-stone-400">
+                Check one thing, or look for yourself
+            </p>
             {#each columns as k (k)}
-                <button
-                    onclick={() => row && recheck(row, k)}
-                    class="flex w-full items-center justify-between gap-4 px-3 py-1.5 text-left text-sm
-                 transition-colors duration-100 hover:bg-stone-100 dark:hover:bg-stone-800"
-                >
-                    <span>{checkLabel(k)}</span>
-                    {#if row}
-                        <span class="text-xs {CELL[statusOf(row.statuses, k)].class}">
-                            <span aria-hidden="true">{CELL[statusOf(row.statuses, k)].icon}</span>
-                            {CELL[statusOf(row.statuses, k)].text}
-                        </span>
-                    {/if}
-                </button>
-            {/each}
-            {#if row}
-                <div class="my-1 border-t border-stone-200 dark:border-stone-800"></div>
-                <p class="px-3 py-1 text-xs text-stone-500 dark:text-stone-400">
-                    Look for yourself
-                </p>
-                {#each columns as k (k)}
-                    <a
-                        href={checkSearch(k, row.name)}
-                        target="_blank"
-                        rel="external noopener noreferrer"
-                        onclick={() => (menu = null)}
-                        class="block px-3 py-1.5 text-sm transition-colors duration-100
-                    hover:bg-stone-100 dark:hover:bg-stone-800"
+                <div class="flex items-stretch">
+                    <button
+                        onclick={() => row && recheck(row, k)}
+                        class="flex flex-1 items-center justify-between gap-4 px-3 py-1.5 text-left
+                               text-sm transition-colors duration-100 hover:bg-stone-100
+                               dark:hover:bg-stone-800"
                     >
-                        {checkLabel(k)} search ↗
-                    </a>
-                {/each}
-            {/if}
+                        <span class="whitespace-nowrap">{checkLabel(k)}</span>
+                        {#if row}
+                            <span
+                                class="whitespace-nowrap text-xs {CELL[statusOf(row.statuses, k)]
+                                    .class}"
+                            >
+                                <span aria-hidden="true"
+                                    >{CELL[statusOf(row.statuses, k)].icon}</span
+                                >
+                                {CELL[statusOf(row.statuses, k)].text}
+                            </span>
+                        {/if}
+                    </button>
+                    {#if row}
+                        <a
+                            href={checkSearch(k, row.name)}
+                            target="_blank"
+                            rel="external noopener noreferrer"
+                            onclick={() => (menu = null)}
+                            aria-label="Search {checkLabel(k)} for {row.name} yourself"
+                            title="Look for yourself"
+                            class="flex items-center px-3 text-sm text-stone-500 transition-colors
+                                   duration-100 hover:bg-stone-100 hover:text-stone-900
+                                   dark:text-stone-400 dark:hover:bg-stone-800
+                                   dark:hover:text-stone-100">↗</a
+                        >
+                    {/if}
+                </div>
+            {/each}
         </div>
     {/if}
 {/if}

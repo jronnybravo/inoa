@@ -95,10 +95,16 @@ rather than SQL, and the worker claims a run optimistically rather than with
 
 ```bash
 cp .env.example .env      # fill in DATABASE_URL at minimum
-npm run db:sync           # create the tables
+npm run db:sync           # create the tables — nothing works before this
 npm run dev               # the app
 npm run worker            # in a second terminal, on your machine
 ```
+
+`db:sync` is the only thing that creates tables; the app never does it on its
+own, so that a request landing on a cold instance can never migrate a schema by
+accident. If it cannot connect it says what it was pointed at and what looks
+wrong with it — a managed host paired with a local port is the usual answer, and
+the driver on its own reports only `ETIMEDOUT`.
 
 To try it without Neon, any local Postgres will do:
 

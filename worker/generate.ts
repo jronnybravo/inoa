@@ -96,6 +96,16 @@ export interface GeneratedName {
     rationale: string;
     /** The approach this batch was asked for. */
     strategy: StrategyId;
+    /**
+     * Which generator wrote it — 'claude-cli', 'openai', 'composed'.
+     *
+     * Recorded because a run is a mixture and nothing said so. When every name
+     * in a fifty-name run came back the same approach, the table could not
+     * distinguish 'the other source produced dull names' from 'the other source
+     * produced nothing' — and it was the second. A column of labels answers that
+     * at a glance.
+     */
+    source: string;
 }
 
 /** Exported for the tests: what a request actually says is the product. */
@@ -154,7 +164,7 @@ export function promptFor(
         .join('\n');
 }
 
-function parse(output: string, strategy: StrategyId): GeneratedName[] {
+function parse(output: string, strategy: StrategyId, source: string): GeneratedName[] {
     const out: GeneratedName[] = [];
     for (const line of output.split('\n')) {
         const trimmed = line.trim();
@@ -171,10 +181,61 @@ function parse(output: string, strategy: StrategyId): GeneratedName[] {
         out.push({
             name,
             rationale: rest.join(' ').trim().slice(0, 160),
-            strategy
+            strategy,
+            source
         });
     }
     return out;
+}
+
+/**
+ * Which source leads batch `turn`, out of `sources` that share the rotation.
+ *
+ * The batch number used to pick both, and two rotations sharing one counter are
+ * not two rotations. With two approaches and two sources, `turn % 2` chose the
+ * approach and `turn % 2` chose the source, so batch 0 was compound-on-claude
+ * and batch 1 invented-on-codex, every time, for the life of the run. Each
+ * approach was welded to one model.
+ *
+ * That is a quality bug on its own — half the shortlist carries one model's
+ * taste and half the other's, when the point of rotating is that they mix — and
+ * a much worse one when a source stops answering: the run does not lose a share
+ * of its names, it loses a whole approach. A real fifty-name run asking for
+ * compounds and invented words came back fifty compounds, because the source
+ * holding 'invented' was hanging and nothing else was ever asked.
+ *
+ * Two things have to be true at once, and picking either alone gets it wrong:
+ *
+ *   - Every source should get its share from the first batch onwards, so a
+ *     short run still has both models in it. Advancing the source once per
+ *     cycle of the approaches breaks the weld, but sends the first two batches
+ *     to the same model — a fifty-name run is two batches, and would never
+ *     reach the second source at all.
+ *   - The pairing has to move, or the weld simply comes back on a longer cycle.
+ *
+ * So: walk the sources in order, and shift the starting point by one every time
+ * the list is exhausted. Two approaches and two sources give
+ * compound/claude, invented/codex, compound/codex, invented/claude — an even
+ * split from the first batch, and all four pairings inside the first four
+ * batches, which is a run of two hundred names.
+ *
+ * The shift is what does the work. Without it the pairing is (turn mod S, turn
+ * mod R), which covers everything only when the two counts share no factor, and
+ * repeats forever when they do — and 'two approaches, two CLIs' is the most
+ * ordinary configuration this has.
+ *
+ * How many approaches are in play is deliberately not an input. That number is
+ * what the approach rotates on, and reading it here is how the two rotations
+ * became one in the first place.
+ *
+ * Exported because it is the fix, and a fix nobody can see is one that comes
+ * back.
+ */
+export function sourceFor(turn: number, sources: number): number {
+    if (sources < 1) {
+        return 0;
+    }
+    return (turn + Math.floor(turn / sources)) % sources;
 }
 
 /**
@@ -192,6 +253,11 @@ function parse(output: string, strategy: StrategyId): GeneratedName[] {
  * second attempt at the one that imposed it. This is why a key is worth
  * setting on a machine that already has a subscription: the subscription runs
  * the run, and the key is there for the hour it stops being able to.
+ *
+ * A source that answers with no usable names is failed over too. It reads as
+ * success — no exception, an array, just an empty one — and was counted as one:
+ * the batch was recorded as barren, which is the signal meaning 'the brief is
+ * exhausted' and ends a run early. Nothing else was tried and nothing was said.
  */
 async function generateBatch(
     brief: string,
@@ -200,12 +266,15 @@ async function generateBatch(
     avoid: string[],
     turn: number,
     palette?: Palette,
-    languages: string[] = []
+    languages: string[] = [],
+    onProblem?: (reason: string) => Promise<void> | void
 ): Promise<GeneratedName[]> {
     // Composed rather than generated: decided once for the whole run, in
     // generateNames, so no run is half one thing and half the other.
     if (palette) {
-        return composeBatch(palette, strategy, count, avoid, seedFor(brief, turn), languages);
+        return composeBatch(palette, strategy, count, avoid, seedFor(brief, turn), languages).map(
+            (name) => ({ ...name, source: 'composed' })
+        );
     }
 
     const prompt = promptFor(brief, strategy, count, avoid, languages);
@@ -224,7 +293,7 @@ async function generateBatch(
      * batch, and the key only when the CLI cannot answer.
      */
     const rotating = rotation(sources);
-    const start = rotating.length > 0 ? turn % rotating.length : 0;
+    const start = sourceFor(turn, rotating.length);
     const order = [
         ...rotating.slice(start),
         ...rotating.slice(0, start),
@@ -234,9 +303,16 @@ async function generateBatch(
     let failure: unknown;
     for (const source of order) {
         try {
-            return parse(await source.complete(prompt), strategy);
+            const names = parse(await source.complete(prompt), strategy, source.label);
+            if (names.length === 0) {
+                throw new Error(`${source.label} returned nothing this batch could use`);
+            }
+            return names;
         } catch (error) {
             failure = error;
+            await onProblem?.(
+                `${source.label} could not do this batch — ${describeFailure(error)}`
+            );
         }
     }
     throw failure;
@@ -306,7 +382,16 @@ async function settledBatch(
     for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
         try {
             return {
-                names: await generateBatch(brief, strategy, count, avoid, turn, palette, languages),
+                names: await generateBatch(
+                    brief,
+                    strategy,
+                    count,
+                    avoid,
+                    turn,
+                    palette,
+                    languages,
+                    onProblem
+                ),
                 failed: false
             };
         } catch (error) {
@@ -453,10 +538,7 @@ export async function generateNames(
         pool.set(
             id,
             settledBatch(brief, strategy, want, avoid, id, palette, languages, onProblem).then(
-                (r) => ({
-                    id,
-                    ...r
-                })
+                (r) => ({ id, ...r })
             )
         );
     };

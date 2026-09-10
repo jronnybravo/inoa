@@ -1164,6 +1164,17 @@
                     requiredHandles,
                     stores,
                     requiredStores,
+                    /*
+                     * Sent, which it never was.
+                     *
+                     * The schema defaults it to false, so leaving it out of
+                     * the body was indistinguishable from choosing it off:
+                     * the chip turned on, said 'Web shows a column of search
+                     * links', and the run stored webLinks false and rendered
+                     * no column. The one feature a deployment without a search
+                     * provider has, and it could not be switched on.
+                     */
+                    webLinks,
                     requireAppStore: requiredStores.includes('appStore'),
                     requirePlayStore: requiredStores.includes('playStore'),
                     requireGoogle: requiredStores.includes('google'),
@@ -3009,8 +3020,19 @@
                         >
                             {checkLabel(linkColumn)}
                         </span>
-                        <span class="block text-xs text-stone-500 dark:text-stone-400"
-                            >look yourself</span
+                        <!--
+                            As tall as a filter, because it stands where one
+                            stands.
+
+                            Every other header is label-over-control and bottom
+                            aligned, so this one — label over a bare line of
+                            text — sat its label ten pixels below all the rest,
+                            and the header row read as ragged. Matching the
+                            control's height puts the labels back on one line.
+                        -->
+                        <span
+                            class="flex h-[26px] items-center justify-center text-xs text-stone-500
+                                   dark:text-stone-400">look yourself</span
                         >
                     </TableHeadCell>
                 {/if}

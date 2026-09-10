@@ -46,6 +46,29 @@ DB_DATABASE=inoa
 DATABASE_URL=postgresql://user:pass@host/inoa   # or just this
 ```
 
+### Neon, and anything else that requires channel binding
+
+Neon's snippet gives you two more variables, and both now work:
+
+```bash
+PGSSLMODE=require
+PGCHANNELBINDING=require
+```
+
+`PGCHANNELBINDING` is the one that mattered. It is a **libpq** variable and
+node-postgres has never read it — the driver will not offer
+`SCRAM-SHA-256-PLUS` unless it is handed `enableChannelBinding`, which defaults
+to false. A database configured with `channel_binding=require` then refuses the
+connection, and setting the variable the host told you to set changes nothing.
+It is passed to the driver now whenever TLS is on, which is what channel
+binding needs a certificate for.
+
+`PGSSLMODE` is read too: `disable` turns TLS off, `require` encrypts without
+checking the chain, and `verify-ca`/`verify-full` check it. `DB_SSL` still
+overrides all of it. Set `PGCHANNELBINDING=disable` if you ever need the
+mechanism off — it is on by default, which matches libpq's own `prefer`, and
+costs nothing where the server does not offer it.
+
 SQLite needs only `DB_TYPE=sqlite` and `DB_DATABASE=./inoa.sqlite`. Install
 the driver you use: `pg`, `mysql2`, or `better-sqlite3` (the last two are
 optional dependencies, so a Postgres deployment does not build SQLite).

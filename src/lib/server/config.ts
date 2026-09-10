@@ -94,7 +94,7 @@ export function targetHost(): string {
  * points, and enabling TLS against a local server fails loudly, where skipping
  * it against a remote one fails silently.
  */
-function ssl(): false | { rejectUnauthorized: boolean } {
+export function ssl(): false | { rejectUnauthorized: boolean } {
     const explicit = process.env.DB_SSL?.trim().toLowerCase();
     if (explicit === 'false' || explicit === '0' || explicit === 'off') {
         return false;
@@ -102,7 +102,51 @@ function ssl(): false | { rejectUnauthorized: boolean } {
     if (explicit === 'true' || explicit === '1' || explicit === 'on') {
         return { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' };
     }
+
+    /*
+     * PGSSLMODE, because that is the variable the host tells you to set.
+     *
+     * Neon's own snippet hands you PGSSLMODE=require, and this read DB_SSL and
+     * nothing else — so the setting did nothing and TLS happened only by way of
+     * the remote-host default below. That worked by luck rather than by
+     * instruction, which is the kind of thing that stops working quietly.
+     *
+     * verify-ca and verify-full check the chain; require does not, which is
+     * libpq's own distinction and not one to improve on here.
+     */
+    const mode = process.env.PGSSLMODE?.trim().toLowerCase();
+    if (mode === 'disable') {
+        return false;
+    }
+    if (mode === 'verify-ca' || mode === 'verify-full') {
+        return { rejectUnauthorized: true };
+    }
+    if (mode === 'require') {
+        return { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true' };
+    }
+
     return isLoopbackHost(targetHost()) ? false : { rejectUnauthorized: false };
+}
+
+/**
+ * Whether to offer SCRAM-SHA-256-PLUS, which is what channel binding is.
+ *
+ * node-postgres will not do it unless asked: `enableChannelBinding` defaults to
+ * false, and without it the driver never offers the -PLUS mechanism at all. A
+ * Neon database configured with channel_binding=require then refuses the
+ * connection, and PGCHANNELBINDING does not help because that is a libpq
+ * variable and this driver is not libpq.
+ *
+ * On by default, which matches libpq's own `prefer`. It costs nothing where it
+ * is not wanted: the driver only uses the mechanism when the server offers it,
+ * and falls back to plain SCRAM-SHA-256 otherwise. It also needs TLS — there is
+ * no certificate to bind to without it — so this is paired with ssl() below.
+ */
+export function channelBinding(): boolean {
+    const mode = (process.env.PGCHANNELBINDING ?? process.env.DB_CHANNEL_BINDING)
+        ?.trim()
+        .toLowerCase();
+    return mode !== 'disable' && mode !== 'false' && mode !== 'off' && mode !== '0';
 }
 
 /** The connection half of the DataSource options, whatever the driver. */
@@ -110,8 +154,17 @@ export function connectionOptions(): Record<string, unknown> {
     if (IS_SQLITE) {
         return { database: sqlitePath() };
     }
+
+    /*
+     * `extra` rather than a top-level option, because that is the only bag
+     * TypeORM forwards to the pg pool untouched — anything it does not
+     * recognise itself is dropped.
+     */
+    const secure = ssl();
+    const extra = secure && channelBinding() ? { extra: { enableChannelBinding: true } } : {};
+
     if (url) {
-        return { url, ssl: ssl() };
+        return { url, ssl: secure, ...extra };
     }
     return {
         host: process.env.DB_HOST ?? 'localhost',
@@ -119,6 +172,7 @@ export function connectionOptions(): Record<string, unknown> {
         username: process.env.DB_USERNAME ?? process.env.DB_USER,
         password: process.env.DB_PASSWORD,
         database: process.env.DB_DATABASE ?? process.env.DB_NAME ?? 'inoa',
-        ssl: ssl()
+        ssl: secure,
+        ...extra
     };
 }

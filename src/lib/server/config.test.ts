@@ -149,12 +149,35 @@ describe('connecting where the host asks for channel binding', () => {
         assert.equal(options.extra, undefined);
     });
 
+    /* true/false, like DB_SSL and every other switch this file owns. */
+    it('takes DB_CHANNEL_BINDING=false to turn it off', async () => {
+        clear();
+        process.env.DB_HOST = 'db.example.com';
+        process.env.DB_CHANNEL_BINDING = 'false';
+        assert.equal((await optionsNow()).extra, undefined);
+    });
+
+    it('takes DB_CHANNEL_BINDING=true to leave it on', async () => {
+        clear();
+        process.env.DB_HOST = 'db.example.com';
+        process.env.DB_CHANNEL_BINDING = 'true';
+        assert.deepEqual((await optionsNow()).extra, { enableChannelBinding: true });
+    });
+
+    /* The alias speaks libpq's words, because that is what it is an alias for. */
     it('lets PGCHANNELBINDING=disable turn it off', async () => {
         clear();
         process.env.DB_HOST = 'db.example.com';
         process.env.PGCHANNELBINDING = 'disable';
-        const options = await optionsNow();
-        assert.equal(options.extra, undefined);
+        assert.equal((await optionsNow()).extra, undefined);
+    });
+
+    it('lets the DB_ name win over the alias, as DB_SSL does over PGSSLMODE', async () => {
+        clear();
+        process.env.DB_HOST = 'db.example.com';
+        process.env.PGCHANNELBINDING = 'disable';
+        process.env.DB_CHANNEL_BINDING = 'true';
+        assert.deepEqual((await optionsNow()).extra, { enableChannelBinding: true });
     });
 
     /* PGSSLMODE is the variable the host's own snippet tells you to set. */

@@ -48,26 +48,29 @@ DATABASE_URL=postgresql://user:pass@host/inoa   # or just this
 
 ### Neon, and anything else that requires channel binding
 
-Neon's snippet gives you two more variables, and both now work:
+Channel binding — the `SCRAM-SHA-256-PLUS` mechanism — is on by default wherever
+TLS is, so a Neon connection string works as given. `DB_CHANNEL_BINDING=false`
+turns it off, taking `true`/`false` like every other `DB_` switch here; there is
+no reason to unless something is wrong, because the driver falls back to plain
+`SCRAM-SHA-256` against any server that does not offer it.
+
+It has to be asked for, which is why this needed fixing. node-postgres will not
+offer the mechanism unless handed `enableChannelBinding`, and that defaults to
+false — so a database configured with `channel_binding=require` refuses a
+connection that never offers it.
+
+Neon's own snippet gives you libpq's names rather than this project's, and both
+are accepted:
 
 ```bash
-PGSSLMODE=require
-PGCHANNELBINDING=require
+PGSSLMODE=require         # alias for DB_SSL
+PGCHANNELBINDING=require  # alias for DB_CHANNEL_BINDING
 ```
 
-`PGCHANNELBINDING` is the one that mattered. It is a **libpq** variable and
-node-postgres has never read it — the driver will not offer
-`SCRAM-SHA-256-PLUS` unless it is handed `enableChannelBinding`, which defaults
-to false. A database configured with `channel_binding=require` then refuses the
-connection, and setting the variable the host told you to set changes nothing.
-It is passed to the driver now whenever TLS is on, which is what channel
-binding needs a certificate for.
-
-`PGSSLMODE` is read too: `disable` turns TLS off, `require` encrypts without
-checking the chain, and `verify-ca`/`verify-full` check it. `DB_SSL` still
-overrides all of it. Set `PGCHANNELBINDING=disable` if you ever need the
-mechanism off — it is on by default, which matches libpq's own `prefer`, and
-costs nothing where the server does not offer it.
+`PGSSLMODE` takes `disable`, `require` (encrypt without checking the chain) and
+`verify-ca`/`verify-full` (check it). Where both names are set the `DB_` one
+wins, the same way `DB_USER` and `DB_NAME` are accepted as aliases without
+displacing `DB_USERNAME` and `DB_DATABASE`.
 
 SQLite needs only `DB_TYPE=sqlite` and `DB_DATABASE=./inoa.sqlite`. Install
 the driver you use: `pg`, `mysql2`, or `better-sqlite3` (the last two are

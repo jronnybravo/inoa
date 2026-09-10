@@ -94,12 +94,31 @@ export function targetHost(): string {
  * points, and enabling TLS against a local server fails loudly, where skipping
  * it against a remote one fails silently.
  */
-export function ssl(): false | { rejectUnauthorized: boolean } {
-    const explicit = process.env.DB_SSL?.trim().toLowerCase();
-    if (explicit === 'false' || explicit === '0' || explicit === 'off') {
+/**
+ * A DB_ switch, in the vocabulary this file already uses.
+ *
+ * One reading for all of them, so DB_SSL and DB_CHANNEL_BINDING cannot drift
+ * into disagreeing about what 'off' looks like. Undefined for anything that is
+ * not plainly one or the other, which leaves each caller to say what its own
+ * default is rather than guessing here.
+ */
+export function flag(name: string): boolean | undefined {
+    const value = process.env[name]?.trim().toLowerCase();
+    if (value === 'false' || value === '0' || value === 'off' || value === 'no') {
         return false;
     }
-    if (explicit === 'true' || explicit === '1' || explicit === 'on') {
+    if (value === 'true' || value === '1' || value === 'on' || value === 'yes') {
+        return true;
+    }
+    return undefined;
+}
+
+export function ssl(): false | { rejectUnauthorized: boolean } {
+    const explicit = flag('DB_SSL');
+    if (explicit === false) {
+        return false;
+    }
+    if (explicit === true) {
         return { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' };
     }
 
@@ -141,12 +160,20 @@ export function ssl(): false | { rejectUnauthorized: boolean } {
  * is not wanted: the driver only uses the mechanism when the server offers it,
  * and falls back to plain SCRAM-SHA-256 otherwise. It also needs TLS — there is
  * no certificate to bind to without it — so this is paired with ssl() below.
+ *
+ * DB_CHANNEL_BINDING is this project's name for it and takes true or false,
+ * like DB_SSL and every other DB_ switch here. It wins where both are set.
+ *
+ * PGCHANNELBINDING is read as an alias because it is what Neon's snippet hands
+ * you — the same courtesy DB_USER and DB_NAME already get — and it speaks
+ * libpq's vocabulary rather than ours: disable, prefer, require.
  */
 export function channelBinding(): boolean {
-    const mode = (process.env.PGCHANNELBINDING ?? process.env.DB_CHANNEL_BINDING)
-        ?.trim()
-        .toLowerCase();
-    return mode !== 'disable' && mode !== 'false' && mode !== 'off' && mode !== '0';
+    const ours = flag('DB_CHANNEL_BINDING');
+    if (ours !== undefined) {
+        return ours;
+    }
+    return process.env.PGCHANNELBINDING?.trim().toLowerCase() !== 'disable';
 }
 
 /** The connection half of the DataSource options, whatever the driver. */

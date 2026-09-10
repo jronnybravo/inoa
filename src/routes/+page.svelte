@@ -440,14 +440,26 @@
             });
         }
 
-        const address = email.trim();
-        if (address.length === 0) {
-            out.push({ field: 'email', message: 'Add the address the results should go to.' });
-        } else if (!EMAIL_SHAPE.test(address)) {
-            out.push({
-                field: 'email',
-                message: `${address} does not look like an email address.`
-            });
+        /*
+         * Only where there is somewhere to send them.
+         *
+         * The field is already hidden without a Resend key — the server skips
+         * the address entirely in that case and starts the run — but this list
+         * asked for one anyway, so Execute refused with 'Add the address the
+         * results should go to' and pointed at a field that was not on the
+         * page. focusField then had nothing to focus, so the message named a
+         * problem with no way to fix it.
+         */
+        if (data.mail) {
+            const address = email.trim();
+            if (address.length === 0) {
+                out.push({ field: 'email', message: 'Add the address the results should go to.' });
+            } else if (!EMAIL_SHAPE.test(address)) {
+                out.push({
+                    field: 'email',
+                    message: `${address} does not look like an email address.`
+                });
+            }
         }
 
         return out;
@@ -1155,7 +1167,8 @@
                     requireAppStore: requiredStores.includes('appStore'),
                     requirePlayStore: requiredStores.includes('playStore'),
                     requireGoogle: requiredStores.includes('google'),
-                    email,
+                    // null, not '': an untouched field is not an address.
+                    email: email.trim() || null,
                     targetCount
                 })
             });

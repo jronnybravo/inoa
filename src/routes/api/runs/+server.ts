@@ -51,8 +51,17 @@ const Body = z.object({
      * Optional, because a deployment with no mail configured cannot verify an
      * address and has nowhere to send results. Required in the shape only when
      * it can be used — see below.
+     *
+     * An empty string is read as 'no address'. A form field that exists and was
+     * left alone sends '', which is neither null nor an address, so the shape
+     * rejected it before the no-mail branch below could decide it did not need
+     * one — and the run was refused with 'That email address does not look
+     * complete' on a deployment that never asks for an address at all.
      */
-    email: z.email().nullish(),
+    email: z.preprocess(
+        (given) => (typeof given === 'string' && given.trim() === '' ? null : given),
+        z.email().nullish()
+    ),
     /**
      * A cost control, not a preference.
      *

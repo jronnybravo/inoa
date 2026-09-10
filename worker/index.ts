@@ -213,7 +213,8 @@ async function processRun(run: Run): Promise<void> {
                   held.map((c) => ({
                       name: c.name,
                       rationale: c.rationale ?? '',
-                      strategy: (c.strategy ?? 'compound') as never
+                      strategy: (c.strategy ?? 'compound') as never,
+                      source: c.source ?? ''
                   }))
               )
             : generateNames(
@@ -229,6 +230,7 @@ async function processRun(run: Run): Promise<void> {
                                   name: g.name,
                                   rationale: g.rationale,
                                   strategy: g.strategy,
+                                  source: g.source,
                                   position: stored_count + i
                               }))
                           );

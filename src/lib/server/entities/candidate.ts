@@ -16,6 +16,16 @@ export class Candidate extends BaseEntity {
     rationale!: string | null;
     /** Which naming approach produced it. Null for runs made before this existed. */
     strategy!: string | null;
+    /**
+     * Which generator wrote it — 'claude-cli', 'openai', 'composed'.
+     *
+     * A run rotates its batches between whatever sources are configured, and
+     * until this column there was no record of which one answered. That was
+     * fine until one of them started failing quietly, at which point the only
+     * visible symptom was a shortlist that had lost half its variety with
+     * nothing anywhere saying why. Null for rows written before this existed.
+     */
+    source!: string | null;
     position!: number;
     /**
      * One verdict per TLD this run asked for, keyed by the bare TLD.
@@ -53,6 +63,7 @@ export const CandidateSchema = new EntitySchema<Candidate>({
         name: { type: 'text' },
         rationale: { type: 'text', nullable: true },
         strategy: { ...short, nullable: true },
+        source: { ...short, nullable: true },
         position: { type: 'int', default: 0 },
         domains: { type: JSON_TYPE, nullable: true },
         handles: { type: JSON_TYPE, nullable: true },

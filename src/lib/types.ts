@@ -173,6 +173,8 @@ export interface CandidateView {
     name: string;
     rationale: string | null;
     strategy: StrategyId | null;
+    /** The generator that wrote it. Null on rows from before this was recorded. */
+    source: string | null;
     /** Keyed by check. Read through statusOf(), which answers for absent keys. */
     statuses: CheckStatuses;
     detail: Partial<Record<CheckKind, string>> | null;

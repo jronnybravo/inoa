@@ -640,12 +640,15 @@
      */
     let nameFilter = $state('');
     let approachFilter = $state('');
+    let sourceFilter = $state('');
     // Keyed by check, and the checks are the run's own — so it starts empty
     // and gains a key the first time somebody filters on a column.
     let checkFilter = $state<Record<string, string>>({});
 
     const anyFilter = $derived(
-        Boolean(nameFilter || approachFilter || Object.values(checkFilter).some(Boolean))
+        Boolean(
+            nameFilter || approachFilter || sourceFilter || Object.values(checkFilter).some(Boolean)
+        )
     );
 
     /** Escape clears the filters, from anywhere on the page. */
@@ -686,6 +689,7 @@
     function clearFilters() {
         nameFilter = '';
         approachFilter = '';
+        sourceFilter = '';
         checkFilter = {};
     }
     // Open while there is something to watch, closed once there is not: a
@@ -1015,6 +1019,9 @@
             if (approachFilter && c.strategy !== approachFilter) {
                 return false;
             }
+            if (sourceFilter && (c.source ?? '') !== sourceFilter) {
+                return false;
+            }
             return active.every(([k, want]) => statusOf(c.statuses, k) === want);
         });
         if (nameSort === 'none') {
@@ -1048,6 +1055,17 @@
             };
         }).filter((s) => s.total > 0)
     );
+
+    /**
+     * The generators that actually wrote something in this run.
+     *
+     * From the rows rather than from a fixed list: which sources a run used
+     * depends on what was configured on the machine that ran it, and a run
+     * loaded a month later should offer the labels it really has. Rows from
+     * before the column existed carry no source and are grouped under one
+     * option rather than left unfilterable.
+     */
+    const bySource = $derived([...new Set(candidates.map((c) => c.source ?? ''))].sort());
 
     const totalNames = $derived(tallies.reduce((sum, t) => sum + t.total, 0));
     const unattributed = $derived(tallies.find((t) => !t.strategy)?.total ?? 0);
@@ -1455,11 +1473,12 @@
      * that were not on screen.
      */
     async function copyCsv() {
-        const header = ['Name', 'Approach', ...columns.map(checkLabel)].join(',');
+        const header = ['Name', 'Approach', 'Source', ...columns.map(checkLabel)].join(',');
         const rows = shown.map((c) =>
             [
                 c.name,
                 strategyLabel(c.strategy),
+                c.source ?? '',
                 ...columns.map((k) => CELL[statusOf(c.statuses, k)].text)
             ]
                 .map((v) => `"${v}"`)
@@ -2956,6 +2975,49 @@
                 </TableHeadCell>
 
                 <!--
+                    Which model wrote the name, filterable like the approach.
+
+                    Worth a column of its own rather than a line in the console:
+                    a run rotates between whatever generators are configured, and
+                    when one of them stops answering the shortlist just gets
+                    narrower with nothing saying so. Filtering to a source is how
+                    you see that a source contributed nothing.
+                -->
+                <TableHeadCell
+                    scope="col"
+                    class="px-4 py-3 align-bottom whitespace-nowrap {HEADER_EDGE}"
+                >
+                    <span
+                        class="block pb-1.5 text-[0.6875rem] font-semibold tracking-wide uppercase text-stone-600 dark:text-stone-400"
+                    >
+                        Source
+                    </span>
+                    <div class="relative">
+                        <Select
+                            bind:value={sourceFilter}
+                            placeholder=""
+                            aria-label="Filter by source"
+                            class="w-full"
+                            classes={{
+                                select: `${FILTER_INPUT} ${sourceFilter ? FILTER_ACTIVE : FILTER_IDLE} pr-6`
+                            }}
+                        >
+                            <option value="">Any</option>
+                            {#each bySource as label (label)}
+                                <option value={label}>{label || 'unrecorded'}</option>
+                            {/each}
+                        </Select>
+                        {#if sourceFilter}
+                            <button
+                                onclick={() => (sourceFilter = '')}
+                                aria-label="Clear the source filter"
+                                class={CLEAR_BUTTON}>×</button
+                            >
+                        {/if}
+                    </div>
+                </TableHeadCell>
+
+                <!--
                             Centred, header and cell alike.
 
                             Every one of these holds a single glyph in a
@@ -3114,6 +3176,11 @@
                         >
                             {strategyLabel(c.strategy)}
                         </TableBodyCell>
+                        <TableBodyCell
+                            class="px-3 py-2 whitespace-nowrap text-stone-500 dark:text-stone-400"
+                        >
+                            {c.source ?? '—'}
+                        </TableBodyCell>
                         {#each columns as k (k)}
                             <TableBodyCell
                                 class="relative px-3 py-2 text-center whitespace-nowrap {CELL[
@@ -3245,11 +3312,11 @@
                                 It was colspan="8", which stopped being the
                                 number of columns the moment which checks a run
                                 makes became the run's own business — and the
-                                selection column going has moved it again. Name
-                                and approach, a column per check, the link
+                                selection column going has moved it again. Name,
+                                approach and source, a column per check, the link
                                 column when there is one, and the actions.
                             --><TableBodyCell
-                            colspan={2 + columns.length + (linkColumn ? 1 : 0) + 1}
+                            colspan={3 + columns.length + (linkColumn ? 1 : 0) + 1}
                             class="px-4 py-12 text-center text-sm font-normal whitespace-normal text-stone-500 dark:text-stone-400"
                         >
                             {#if run.status === 'stopped'}

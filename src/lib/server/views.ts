@@ -18,6 +18,7 @@ export function candidateView(c: Candidate): CandidateView {
         name: c.name,
         rationale: c.rationale,
         strategy: c.strategy as StrategyId | null,
+        source: c.source,
         statuses: candidateStatuses(c),
         detail: c.detail,
         passed: c.passed,

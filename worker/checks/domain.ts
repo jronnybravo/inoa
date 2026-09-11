@@ -31,6 +31,7 @@
  * which never drops a name and never counts as a pass.
  */
 
+import { randomBytes } from 'node:crypto';
 import { Resolver } from 'node:dns/promises';
 import { squash, type CheckOutcome } from './shared.ts';
 
@@ -136,16 +137,22 @@ const ABSENT_STATUS = new Set([404, 410]);
 const REFUSED_STATUS = new Set([401, 402, 403, 405, 406, 429, 451]);
 
 /**
- * Error codes that mean nothing is being served, as opposed to nothing could
- * be reached, mapped to how the row should read. Both leave the name
- * acquirable: a domain that does not resolve is unregistered, and one that
- * refuses connections is registered but has nobody trading behind it, which
- * this check has always counted as free.
+ * A connection refused by something that is listening at the address.
+ *
+ * The name resolved and a host answered the packet with 'no'. That is a
+ * positive statement that nothing is served there, and it leaves the name
+ * acquirable, which this check has always counted as free.
+ *
+ * ENOTFOUND used to sit beside it and does not any more. getaddrinfo reports
+ * one code for two different answers — the name genuinely does not exist, and
+ * the resolver could not find out — so 'does not resolve' was being read as
+ * 'unregistered' for domains that are registered and working. pldt.ph and
+ * jollibee.ph are both live registrations delegated to Cloudflare with no A
+ * record on the bare name, and both came back free; grab.ph and lazada.ph
+ * answer SERVFAIL, which reached us as the same code. It is settled against
+ * DNS in checkDomain now rather than taken at face value here.
  */
-const ABSENT_CODES: Record<string, string> = {
-    ENOTFOUND: 'does not resolve',
-    ECONNREFUSED: 'refuses connections'
-};
+const REFUSED_CODE = 'ECONNREFUSED';
 
 /**
  * A TLS failure, which is a server saying hello badly rather than no server.
@@ -262,11 +269,86 @@ async function lookupDelegation(domain: string): Promise<Delegation> {
             return [];
         }
     };
-    return {
-        ns: await ask(() => resolver.resolveNs(domain)),
-        addresses: await ask(() => resolver.resolve4(domain)),
-        inconclusive
-    };
+    /*
+     * Both at once. They ask different questions of the same servers and
+     * neither needs the other's answer, but they used to run in sequence — so a
+     * domain whose nameservers answer SERVFAIL paid the full timeout twice over
+     * before saying 'we could not tell'. grab.ph is one.
+     */
+    const [ns, addresses] = await Promise.all([
+        ask(() => resolver.resolveNs(domain)),
+        ask(() => resolver.resolve4(domain))
+    ]);
+    return { ns, addresses, inconclusive };
+}
+
+/**
+ * Does this registry answer for names nobody has registered?
+ *
+ * Most do not: ask .com for a name that does not exist and you get NXDOMAIN,
+ * which is how this check knows a name is free. A handful of ccTLDs answer
+ * anyway, pointing every unregistered name at one of their own hosts —
+ * Verisign did it to .com for a fortnight in 2003 and had to stop; .ph still
+ * does it today.
+ *
+ * It breaks this check in the worst possible direction. Every free .ph name
+ * resolved to 45.79.222.138, which speaks TLS badly, so isTlsRefusal above read
+ * a certificate error as 'a server is deployed there' and reported the name
+ * TAKEN. Measured: zzqwkrblxmvn.ph and qpwoeirutyalsk.ph — gibberish nobody has
+ * ever registered — both came back taken, which makes the whole TLD useless
+ * rather than merely wrong about one name.
+ *
+ * Probed rather than listed. Which registries do this changes on their own
+ * schedule and a hardcoded list would be wrong the week after it was written,
+ * so a random label is asked for once per TLD and whatever it answers becomes
+ * the signature. A registry that answers nothing — nearly all of them — costs
+ * one query per process and nothing else ever again.
+ */
+const probes = new Map<string, Promise<Set<string>>>();
+
+/** Exported for the tests: the cache is per process and outlives a case. */
+export function resetWildcardProbes(): void {
+    probes.clear();
+}
+
+export function wildcardAddresses(tld: string): Promise<Set<string>> {
+    const known = probes.get(tld);
+    if (known) {
+        return known;
+    }
+    const asking = (async () => {
+        /*
+         * Random, and long enough that nobody has it. A fixed label would be
+         * registrable — and somebody registering it would switch this off for
+         * the whole TLD, which is a failure nothing would ever notice.
+         */
+        const label = `inoa-probe-${randomBytes(8).toString('hex')}`;
+        const dns = await lookupDelegation(`${label}.${tld}`);
+        /*
+         * Addresses alone. A registry that delegates a nonexistent name to its
+         * own nameservers is describing its zone, not answering for the name,
+         * and treating that as a signature would clear every domain in the TLD.
+         */
+        return dns.ns.length === 0 ? new Set(dns.addresses) : new Set<string>();
+    })();
+    probes.set(tld, asking);
+    return asking;
+}
+
+/**
+ * Is this name only the registry's own answer for 'no such domain'?
+ *
+ * Both halves are required. The addresses have to be the wildcard's and
+ * nothing else, and the name must have no delegation of its own — a registered
+ * domain has nameservers, and an unregistered one under a wildcard has none.
+ * Either alone would be guesswork; together they are what the zone actually
+ * says.
+ */
+export function isWildcardOnly(dns: Delegation, wildcard: ReadonlySet<string>): boolean {
+    if (wildcard.size === 0 || dns.inconclusive || dns.ns.length > 0) {
+        return false;
+    }
+    return dns.addresses.length > 0 && dns.addresses.every((address) => wildcard.has(address));
 }
 
 /**
@@ -452,9 +534,20 @@ function isUnreachable(error: unknown, code: string | undefined): boolean {
 /** The verdict for a request that never produced a response. */
 export function readFailure(domain: string, error: unknown): FailureVerdict {
     const code = causeCode(error);
-    const absent = code === undefined ? undefined : ABSENT_CODES[code];
-    if (absent) {
-        return { status: 'clear', detail: `${domain} ${absent}` };
+    if (code === REFUSED_CODE) {
+        return { status: 'clear', detail: `${domain} refuses connections` };
+    }
+
+    /*
+     * The name did not resolve — which is either the answer or the absence of
+     * one, and this cannot tell which. checkDomain asks DNS directly.
+     */
+    if (code === 'ENOTFOUND') {
+        return {
+            status: 'unknown',
+            detail: `${domain} did not resolve`,
+            unsettledUnreachable: true
+        };
     }
 
     if (code !== undefined && isTlsRefusal(code)) {
@@ -483,6 +576,43 @@ export function readFailure(domain: string, error: unknown): FailureVerdict {
 
 export async function checkDomain(name: string, tld: string): Promise<CheckOutcome> {
     const domain = `${squash(name)}.${tld}`;
+
+    /*
+     * One delegation lookup per call, however many paths below want it.
+     *
+     * Three of them can, and a name that reaches two used to pay twice: a
+     * .ph domain whose nameservers answer SERVFAIL was queried once for the
+     * wildcard test and again after the request failed, and since SERVFAIL is
+     * the slowest possible answer — every try, every retry, to the full
+     * timeout — grab.ph took forty seconds to reach 'we could not tell'.
+     */
+    let asked: Promise<Delegation> | undefined;
+    const delegation = () => (asked ??= lookupDelegation(domain));
+
+    /*
+     * Under a wildcarding registry, ask DNS before anything else.
+     *
+     * The HTTP request cannot settle this and actively misleads: the registry's
+     * catch-all host answers, so a free name looks like a deployment. Asking
+     * the zone first is both correct and cheaper — a free name never reaches
+     * the network at all. The probe is memoised per TLD and empty for almost
+     * every registry, so this costs one query per process and then nothing.
+     */
+    const wildcard = await wildcardAddresses(tld);
+    if (wildcard.size > 0) {
+        const dns = await delegation();
+        if (isWildcardOnly(dns, wildcard)) {
+            return {
+                status: 'clear',
+                detail: `${domain} is unregistered — .${tld} answers every name it does not have`
+            };
+        }
+        const parked = classifyNameservers(domain, dns.ns);
+        if (parked) {
+            return parked;
+        }
+    }
+
     try {
         const response = await fetch(`https://${domain}`, {
             redirect: 'follow',
@@ -513,7 +643,7 @@ export async function checkDomain(name: string, tld: string): Promise<CheckOutco
          * costs one DNS query on the handful of names that reach it.
          */
         if (verdict.unsettledThinPage) {
-            const dns = await lookupDelegation(domain);
+            const dns = await delegation();
             return classifyNameservers(domain, dns.ns) ?? verdict;
         }
         return verdict;
@@ -526,7 +656,7 @@ export async function checkDomain(name: string, tld: string): Promise<CheckOutco
          * domain we cannot see behind.
          */
         if (verdict.unsettledUnreachable) {
-            return classifyDelegation(domain, await lookupDelegation(domain)) ?? verdict;
+            return classifyDelegation(domain, await delegation()) ?? verdict;
         }
         return verdict;
     }

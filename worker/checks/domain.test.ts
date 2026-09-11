@@ -17,11 +17,13 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
     classifyDelegation,
+    isWildcardOnly,
     classifyNameservers,
     offeredForSale,
     readFailure,
     readPage,
     visibleText,
+    type Delegation,
     type PageEvidence
 } from './domain.ts';
 
@@ -267,9 +269,19 @@ describe('which unknowns a delegation could still settle', () => {
 });
 
 describe('readFailure — a request that produced no response', () => {
-    it('clears on ENOTFOUND, which is a real statement of absence', () => {
+    /*
+     * ENOTFOUND used to clear a name outright, on the reading that a name which
+     * does not resolve is not registered. getaddrinfo does not draw that
+     * distinction: it reports the same code when the name genuinely is absent
+     * and when the resolver could not find out. pldt.ph and jollibee.ph are
+     * live registrations delegated to Cloudflare with no A record on the bare
+     * name, and both were reported free; grab.ph and lazada.ph answer SERVFAIL,
+     * which arrives here identically. checkDomain settles it against DNS.
+     */
+    it('refuses to clear ENOTFOUND on its own, and asks DNS instead', () => {
         const outcome = readFailure(DOMAIN, transportError('ENOTFOUND'));
-        assert.equal(outcome.status, 'clear');
+        assert.equal(outcome.status, 'unknown');
+        assert.ok(outcome.unsettledUnreachable, 'a delegation can still settle it');
     });
 
     it('clears on ECONNREFUSED: registered, but nobody is trading behind it', () => {
@@ -327,7 +339,7 @@ describe('readFailure — a request that produced no response', () => {
         const middle = new Error('socket');
         middle.cause = Object.assign(new Error('dns'), { code: 'ENOTFOUND' });
         outer.cause = middle;
-        assert.equal(readFailure(DOMAIN, outer).status, 'clear');
+        assert.match(readFailure(DOMAIN, outer).detail ?? '', /did not resolve/);
     });
 
     it('cannot judge a timeout, which reports no code', () => {
@@ -429,7 +441,7 @@ describe('which failures a delegation could still settle', () => {
      * is a statement about the host, and no delegation is going to improve
      * on it — asking DNS would spend a query to learn nothing.
      */
-    for (const code of ['ENOTFOUND', 'ECONNREFUSED', 'CERT_HAS_EXPIRED']) {
+    for (const code of ['ECONNREFUSED', 'CERT_HAS_EXPIRED']) {
         it(`does not flag ${code}, which is already settled`, () => {
             assert.ok(!readFailure(DOMAIN, transportError(code)).unsettledUnreachable);
         });
@@ -532,5 +544,63 @@ describe('domains a broker is selling', () => {
     /** A host in front of the same domain is still the same domain. */
     it('still fires when the domain is written with a host in front of it', () => {
         assert.equal(offeredForSale('acme.com', 'www.acme.com is for sale'), true);
+    });
+});
+
+/**
+ * Registries that answer for names nobody has registered.
+ *
+ * .ph points every unregistered name at 45.79.222.138, a host that speaks TLS
+ * badly — so isTlsRefusal read the certificate error as a deployment and
+ * reported the name TAKEN. zzqwkrblxmvn.ph and qpwoeirutyalsk.ph, gibberish
+ * nobody has ever registered, both came back taken, which does not make the
+ * check wrong about one name so much as useless for the whole TLD.
+ */
+describe('a registry that answers for names it does not have', () => {
+    const WILDCARD = new Set(['45.79.222.138']);
+    const dns = (over: Partial<Delegation> = {}): Delegation => ({
+        ns: [],
+        addresses: [],
+        inconclusive: false,
+        ...over
+    });
+
+    it('reads the catch-all address as an unregistered name', () => {
+        assert.equal(isWildcardOnly(dns({ addresses: ['45.79.222.138'] }), WILDCARD), true);
+    });
+
+    /*
+     * The delegation is the half that cannot be faked. A registered domain has
+     * nameservers of its own; one the registry is answering for has none. A
+     * domain that merely happens to sit on the same address as the catch-all
+     * is still somebody's registration.
+     */
+    it('leaves a delegated domain alone, whatever address it carries', () => {
+        const delegated = dns({ addresses: ['45.79.222.138'], ns: ['ns1.cloudflare.com'] });
+        assert.equal(isWildcardOnly(delegated, WILDCARD), false);
+    });
+
+    it("needs every address to be the registry's, not just one", () => {
+        const mixed = dns({ addresses: ['45.79.222.138', '203.0.113.9'] });
+        assert.equal(isWildcardOnly(mixed, WILDCARD), false);
+    });
+
+    it('concludes nothing from a lookup that merely failed', () => {
+        const failed = dns({ addresses: ['45.79.222.138'], inconclusive: true });
+        assert.equal(isWildcardOnly(failed, WILDCARD), false);
+    });
+
+    /*
+     * Nearly every registry answers NXDOMAIN, and for those the probe finds
+     * nothing and this whole mechanism has to stay out of the way — a .com that
+     * resolves nowhere is settled by classifyDelegation as it always was.
+     */
+    it('does nothing at all where the registry has no catch-all', () => {
+        assert.equal(isWildcardOnly(dns({ addresses: ['45.79.222.138'] }), new Set()), false);
+        assert.equal(isWildcardOnly(dns(), new Set()), false);
+    });
+
+    it('does not clear a name that resolves nowhere', () => {
+        assert.equal(isWildcardOnly(dns(), WILDCARD), false);
     });
 });

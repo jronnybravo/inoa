@@ -26,7 +26,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
-import { generateNames, sourceFor } from './generate.ts';
+import { generateNames, promptFor, sourceFor } from './generate.ts';
 import { ALL_GENERATORS } from './generators.ts';
 
 const KEYS = ['PATH', 'INOA_GENERATOR', 'INOA_AI', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'];
@@ -201,4 +201,41 @@ describe('the approach and the source', () => {
         );
         assert.ok(names.every((n) => n.source === 'claude-cli'));
     });
+});
+
+/**
+ * What each approach's request actually forbids.
+ *
+ * 'Draw only on these languages' was not holding, and the failure was
+ * invisible because the result is a decent name: a run narrowed to
+ * Austronesian, Romance and Classical returned HusayBoard — Tagalog husay
+ * welded to English board. A positive constraint alone left the model free to
+ * read 'draw on' as 'draw partly on', so the prompt now says what not to do.
+ */
+describe('what a request says about language', () => {
+    const BRIEF = 'A review app for Filipino board and civil service examinees.';
+
+    it('tells a foreign batch not to reach for English', () => {
+        const prompt = promptFor(BRIEF, 'foreign', 10, [], ['Tagalog', 'Cebuano']);
+        assert.match(prompt, /Draw only on these languages: Tagalog, Cebuano/);
+        assert.match(prompt, /Do not attach an\s+English word to a foreign one/);
+    });
+
+    it('asks a blend for one word from each, in that order', () => {
+        const prompt = promptFor(BRIEF, 'bilingual', 10, [], ['Tagalog']);
+        assert.match(prompt, /Combine ONE word from these languages: Tagalog/);
+        assert.match(prompt, /carries the meaning; the English word names the/);
+        assert.match(prompt, /all lowercase/);
+    });
+
+    /*
+     * And neither rule belongs anywhere else. A compound or an invented batch
+     * draws on material these constraints would simply narrow.
+     */
+    for (const strategy of ['compound', 'invented', 'short'] as const) {
+        it(`leaves ${strategy} unconstrained by language`, () => {
+            const prompt = promptFor(BRIEF, strategy, 10, [], ['Tagalog']);
+            assert.doesNotMatch(prompt, /Draw only on these languages|Combine ONE word/);
+        });
+    }
 });

@@ -285,10 +285,69 @@ function compose(
                 strategy
             };
         }
-        const tail = pick(ENDING, rand);
+
+        /*
+         * A second root, from the same language — not an English tail.
+         *
+         * This used to reach for ENDING, and produced Awafield, Kaihouse and
+         * Cahayasmith: a foreign word with an English one welded to it, under
+         * the approach whose entire promise is a name in another language. It
+         * is the same fault the model-written batches had, sitting in the
+         * deterministic path where it could not be blamed on a model. That
+         * shape now has an approach of its own, and this one stays in-language.
+         */
+        const sameTongue = roots.filter((r) => r.from === root.from && r.word !== root.word);
+        if (sameTongue.length === 0) {
+            return {
+                name: capitalise(root.word),
+                rationale: `${root.word} — ${root.from} for ${root.gloss}`,
+                strategy
+            };
+        }
+        const second = pick(sameTongue, rand);
+        if (root.word.length > MAX_PART || second.word.length > MAX_PART) {
+            return null;
+        }
         return {
-            name: capitalise(root.word) + tail,
-            rationale: `${root.word} (${root.from}, ${root.gloss}) + ${tail}`,
+            name: capitalise(root.word + second.word),
+            rationale: `${root.word} + ${second.word} — ${root.from} for ${root.gloss}, ${second.gloss}`,
+            strategy
+        };
+    }
+
+    if (strategy === 'bilingual') {
+        /*
+         * A foreign root for the promise, an English word for the category.
+         *
+         * The same shape the prompt asks a model for, and the same order:
+         * Tokopedia, Gojek, PayMaya all put the meaning in the borrowed half
+         * and the category in the English one. The brief's own vocabulary is
+         * preferred for that second half, because the category word is the one
+         * that has to be recognisably about this business.
+         *
+         * Both halves are kept short. A blend is already asking a reader to
+         * cross a language boundary mid-word, and it cannot also be long.
+         */
+        if (roots.length === 0) {
+            return null;
+        }
+        const root = pick(roots, rand);
+        /*
+         * ENDING, not the brief's own words.
+         *
+         * The English half has to name a category, and the brief's vocabulary
+         * is whatever the thesaurus returned — which for a revision app was
+         * 'rehash', 'repeat' and 'outset', giving Rehashalon and Repeatbukid.
+         * A verb cannot be the category half, and ENDING is the list already
+         * curated to sit at the end of a compound.
+         */
+        const english = pick(ENDING, rand);
+        if (root.word.length > MAX_PART || root.word.toLowerCase() === english) {
+            return null;
+        }
+        return {
+            name: capitalise(root.word + english),
+            rationale: `${root.word} (${root.from}, ${root.gloss}) with ${english}`,
             strategy
         };
     }

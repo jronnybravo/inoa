@@ -127,12 +127,58 @@ export function promptFor(
      * of in this context. A brief that wanted Nordic austerity got Kizuna
      * either way. Listed explicitly, the constraint holds.
      *
-     * Only for the one approach it applies to: attaching it to a compound or
+     * Only for the two approaches it applies to: attaching it to a compound or
      * an invented batch would narrow material those approaches never draw on.
      */
+    const spoken = languages.length > 0 ? languages.join(', ') : '';
+
+    /*
+     * 'Draw only on these languages' was not holding, and the failure was
+     * invisible because the result is a decent name.
+     *
+     * A run narrowed to Austronesian, Romance and Classical returned
+     * HusayBoard: Tagalog husay welded to English board. English is in none of
+     * those families, so the batch had quietly answered a question nobody
+     * asked — and a name half in English is not a name in another language,
+     * which is the whole thing the approach is for. Saying what to avoid is
+     * what makes the instruction stick; a positive constraint alone leaves the
+     * model free to read 'draw on' as 'draw partly on'.
+     */
     const drawnFrom =
-        strategy === 'foreign' && languages.length > 0
-            ? `- Draw only on these languages: ${languages.join(', ')}.`
+        strategy === 'foreign' && spoken
+            ? [
+                  `- Draw only on these languages: ${spoken}.`,
+                  '- Every part of every name must come from one of them. Do not attach an',
+                  '  English word to a foreign one — no Husay+Board, no Toko+Hub. A name that',
+                  '  is half English belongs to a different approach and will be discarded.'
+              ].join('\n')
+            : '';
+
+    /*
+     * The blend, asked for on purpose.
+     *
+     * The rules are the ones that separate Tokopedia and Gojek from a name
+     * that reads as two words that happened to collide. The foreign half
+     * carries the promise and the English half names the category, because the
+     * reverse — an English idea dressed in an exotic category word — reads as
+     * decoration. And it has to survive lowercase: a name that needs a capital
+     * in the middle to be parsed is a name that breaks in its own domain.
+     */
+    const blended =
+        strategy === 'bilingual'
+            ? [
+                  spoken
+                      ? `- Combine ONE word from these languages: ${spoken}`
+                      : '- Combine ONE word from a language other than English',
+                  '  with ONE ordinary English word. Nothing else in the name.',
+                  '- The non-English word carries the meaning; the English word names the',
+                  '  category — Tokopedia, Gojek, PayMaya, Zerodha. Not the other way round.',
+                  '- Write it as one word, capitalised like a brand: Tokopedia, not TokoPedia.',
+                  '- It has to survive being written in all lowercase, which is how a domain',
+                  '  is written — no capital letter inside the word doing the work of showing',
+                  '  the join. Say it aloud: if the seam needs explaining, drop it.',
+                  '- Give the meaning of the non-English word in the reason.'
+              ].join('\n')
             : '';
 
     return [
@@ -143,6 +189,7 @@ export function promptFor(
         'Use this naming approach for every name:',
         chosen ? `- ${chosen.label}: ${chosen.hint}` : '- Any approach that fits the brief',
         drawnFrom,
+        blended,
         '',
         'Rules:',
         '- One to three syllables. Pronounceable by an English speaker on sight.',

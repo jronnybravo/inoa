@@ -22,8 +22,8 @@ import { db } from '../src/lib/server/db.ts';
 import { sendResults } from '../src/lib/server/email.ts';
 import { Candidate } from '../src/lib/server/entities/candidate.ts';
 import { Run } from '../src/lib/server/entities/run.ts';
-import { checkLabel } from '../src/lib/types.ts';
-import { priorVerdict } from './checks/reuse.ts';
+import { checkLabel, type CheckKind } from '../src/lib/types.ts';
+import { CHECKER_VERSION, priorVerdict } from './checks/reuse.ts';
 import { sleep } from './checks/shared.ts';
 import { closeBrowser } from './checks/web.ts';
 import { claimable } from './claim.ts';
@@ -265,6 +265,19 @@ async function processRun(run: Run): Promise<void> {
             let borrowed = 0;
 
             const one = async (candidate: { id: string; name: string }) => {
+                /*
+                 * When each verdict was actually seen, kind by kind.
+                 *
+                 * Anything checked here was seen now; anything borrowed keeps
+                 * the time of the original sighting, so the next run ages it
+                 * from there. Writing 'now' for a borrowed verdict is what made
+                 * the reuse window unable to expire — see reuse.ts.
+                 */
+                const now = new Date();
+                const observedAt: Partial<Record<CheckKind, string>> = Object.fromEntries(
+                    kinds.map((k) => [k, now.toISOString()])
+                );
+
                 const result = await checkCandidate(
                     candidate.name,
                     required,
@@ -273,6 +286,7 @@ async function processRun(run: Run): Promise<void> {
                         const found = await priorVerdict(n, k, run.id);
                         if (found) {
                             borrowed++;
+                            observedAt[k] = found.observedAt;
                         }
                         return found;
                     },
@@ -294,9 +308,11 @@ async function processRun(run: Run): Promise<void> {
                      */
                     google: deferWeb ? (result.droppedBy ? 'skipped' : 'pending') : columns.google,
                     detail: result.detail,
+                    observedAt,
+                    checkerVersion: CHECKER_VERSION,
                     passed: result.passed,
                     droppedBy: result.droppedBy,
-                    checkedAt: new Date()
+                    checkedAt: now
                 });
                 checked++;
                 // Written per name, not per batch: the page polls this, and a counter

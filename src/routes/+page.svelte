@@ -162,8 +162,19 @@
      * nothing about which checkbox it answered to. It lives inside the card
      * now, so the ownership is the layout.
      */
-    const FOREIGN_STRATEGY = STRATEGIES.find((s) => s.id === 'foreign') ?? STRATEGIES[0];
-    const onForeign = $derived(strategies.includes('foreign'));
+    /*
+     * The two approaches that take a language, and the picker they share.
+     *
+     * 'Two languages' needs the setting every bit as much as 'Other languages'
+     * does — it blends one word from the chosen language with one in English,
+     * and with nothing chosen the model drifts to Japanese and Latin, which is
+     * the same failure naming the languages explicitly was added to fix. The
+     * picker was gated on 'Other languages' alone, so picking the blend on its
+     * own left no way to say which language it was blending.
+     */
+    const SPOKEN_IDS: readonly string[] = ['foreign', 'bilingual'];
+    const SPOKEN_STRATEGIES = STRATEGIES.filter((s) => SPOKEN_IDS.includes(s.id));
+    const onSpoken = $derived(SPOKEN_STRATEGIES.some((s) => strategies.includes(s.id)));
 
     /**
      * The domains to look for, and which of them a name must actually be free on.
@@ -936,6 +947,7 @@
         metaphor: 'Metaphor',
         portmanteau: 'Blend',
         foreign: 'Language',
+        bilingual: 'Two languages',
         short: 'Abstract',
         respell: 'Respelled'
     };
@@ -1681,7 +1693,7 @@
                                focus:outline-stone-900 dark:focus:outline-stone-100"
                     >
                         <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                            {#each STRATEGIES.filter((s) => s.id !== 'foreign') as s (s.id)}
+                            {#each STRATEGIES.filter((s) => !SPOKEN_IDS.includes(s.id)) as s (s.id)}
                                 <label
                                     class="flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm
                                        transition-colors duration-150
@@ -1710,44 +1722,46 @@
                             {/each}
                         </div>
                         <!--
-                            Other languages, out of the grid and full width,
-                            because it is the only approach that takes a
-                            setting.
+                            The two approaches that take a setting, out of the
+                            grid and full width, sharing the one picker.
 
                             The picker used to be a row of the form in its own
                             right, a sibling of Domains and Handles — so
                             nothing said it belonged to this checkbox rather
                             than to the form. Inside the card, revealed by the
-                            box that enables it and indented under it, the
+                            boxes that enable it and indented under them, the
                             ownership is the layout rather than a sentence
                             asking you to infer it.
                         -->
                         <div
                             class="mt-2 rounded-lg border transition-colors duration-150
-                                   {onForeign
+                                   {onSpoken
                                 ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
                                 : 'border-stone-500 hover:border-stone-900 dark:hover:border-stone-100'}"
                         >
-                            <label class="flex cursor-pointer items-start gap-2.5 p-3 text-sm">
-                                <Checkbox
-                                    class="mt-0.5"
-                                    checked={onForeign}
-                                    onchange={(e) => {
-                                        const on = e.currentTarget.checked;
-                                        strategies = on
-                                            ? [...strategies, 'foreign']
-                                            : strategies.filter((x) => x !== 'foreign');
-                                    }}
-                                />
-                                <span>
-                                    <span class="font-medium">{FOREIGN_STRATEGY.label}</span>
-                                    <span class="block text-xs text-stone-500 dark:text-stone-400"
-                                        >{FOREIGN_STRATEGY.hint}</span
-                                    >
-                                </span>
-                            </label>
+                            {#each SPOKEN_STRATEGIES as s (s.id)}
+                                <label class="flex cursor-pointer items-start gap-2.5 p-3 text-sm">
+                                    <Checkbox
+                                        class="mt-0.5"
+                                        checked={strategies.includes(s.id)}
+                                        onchange={(e) => {
+                                            const on = e.currentTarget.checked;
+                                            strategies = on
+                                                ? [...strategies, s.id]
+                                                : strategies.filter((x) => x !== s.id);
+                                        }}
+                                    />
+                                    <span>
+                                        <span class="font-medium">{s.label}</span>
+                                        <span
+                                            class="block text-xs text-stone-500 dark:text-stone-400"
+                                            >{s.hint}</span
+                                        >
+                                    </span>
+                                </label>
+                            {/each}
 
-                            {#if onForeign}
+                            {#if onSpoken}
                                 <!--
                                     Indented behind a rule that starts where
                                     the label above it does, so the eye reads

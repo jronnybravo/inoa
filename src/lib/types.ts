@@ -150,6 +150,23 @@ export const STRATEGIES = [
     { id: 'metaphor', label: 'Metaphor & symbolism', hint: 'Cadence, Lodestar, Tidal' },
     { id: 'portmanteau', label: 'Blends', hint: 'Swiftsylva, Novaris' },
     { id: 'foreign', label: 'Other languages', hint: 'Kizuna, Sonder, Vesta' },
+    /*
+     * One word from the chosen language, one in English.
+     *
+     * Its own approach because it is what 'Other languages' kept producing by
+     * accident. Asked for Austronesian names, a batch came back with
+     * HusayBoard — Tagalog husay, English board — which is a fair name and not
+     * what was asked for, and there was no way to ask for it on purpose or to
+     * stop it happening.
+     *
+     * It is also a pattern with a real record behind it, rather than a
+     * curiosity: Tokopedia is Indonesian toko with Greek -pedia, Gojek is
+     * English go with Indonesian ojek, Zerodha is English zero with Sanskrit
+     * rodha, and Mang Inasal pairs Tagalog with Hiligaynon. What they have in
+     * common is an audience that already speaks both — a blend reads as a seam
+     * only to somebody outside the room.
+     */
+    { id: 'bilingual', label: 'Two languages', hint: 'Tokopedia, Gojek, PayMaya' },
     { id: 'short', label: 'Short & abstract', hint: 'Ovo, Nuo, Kip' },
     /*
      * The one move that exists because the real word is taken, which is this

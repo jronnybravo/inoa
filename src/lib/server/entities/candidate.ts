@@ -44,6 +44,30 @@ export class Candidate extends BaseEntity {
     google!: CheckStatus;
     /** What each check actually saw. Null where nothing has been written yet. */
     detail!: Partial<Record<CheckKind, string>> | null;
+    /**
+     * When each verdict was actually seen on the network, as an ISO string.
+     *
+     * Not the same as checkedAt, which is when this row was written. A verdict
+     * borrowed from an earlier run carries the time of the ORIGINAL sighting,
+     * and that distinction is the difference between a cache that expires and
+     * one that cannot: reuse used to renew checkedAt, so every borrowed verdict
+     * looked freshly checked and the next run borrowed it again. A wrong answer
+     * recorded once was handed out for ever, its fourteen-day window reset
+     * daily by the very act of reusing it.
+     *
+     * Per check rather than per row, because one row mixes them — a .com looked
+     * up a moment ago beside a .ph borrowed from last week.
+     */
+    observedAt!: Partial<Record<CheckKind, string>> | null;
+    /**
+     * Which generation of the checking rules produced these verdicts.
+     *
+     * A verdict is only as good as the code that reached it, and that code
+     * changes. When .ph turned out to need wildcard handling, every .ph verdict
+     * already stored was wrong — and reuse kept serving them long after the
+     * checker itself was right. Bumping CHECKER_VERSION retires them.
+     */
+    checkerVersion!: number | null;
     /** Survived every check the run required. Null until checking reaches it. */
     passed!: boolean | null;
     /** The required gate that dropped it, for explaining a rejection. */
@@ -72,6 +96,8 @@ export const CandidateSchema = new EntitySchema<Candidate>({
         playStore: { ...short, default: 'pending' },
         google: { ...short, default: 'pending' },
         detail: { type: JSON_TYPE, nullable: true },
+        observedAt: { type: JSON_TYPE, nullable: true },
+        checkerVersion: { type: 'int', nullable: true },
         passed: { type: 'boolean', nullable: true },
         droppedBy: { ...short, nullable: true },
         checkedAt: { type: TIMESTAMP_TYPE, nullable: true }

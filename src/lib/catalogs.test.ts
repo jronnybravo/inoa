@@ -18,6 +18,7 @@ import { FOREIGN } from '../../worker/words.ts';
 import { asHandle, DEFAULT_PLATFORMS, isPlatform, platform, PLATFORMS } from './handles.ts';
 import { isLanguage, language, LANGUAGE_GROUPS, LANGUAGES, languagesCovered } from './languages.ts';
 import { ALL_TLDS, isTld } from './tlds.ts';
+import { NAME_PATTERN, parseOwnNames } from './types.ts';
 
 const ids = (list: readonly { id: string }[]): string[] => list.map((x) => x.id);
 
@@ -232,5 +233,58 @@ describe('the languages and the word list agree', () => {
             assert.ok(root.gloss.length > 0, `${root.word} has no meaning recorded`);
             assert.ok(root.from.length > 0, `${root.word} has no language recorded`);
         }
+    });
+});
+
+/**
+ * The box under the brief, where somebody puts the names they already have.
+ *
+ * They go through the same checks as a generated name, so they have to clear
+ * the same bar — and anything that does not has to be said out loud while the
+ * person is still looking at the field, rather than discovered an hour later
+ * as a gap in the results.
+ */
+describe('names somebody brings themselves', () => {
+    it('takes one per line', () => {
+        assert.deepEqual(parseOwnNames('Husaybook\nTandadeck\nAraldeck').names, [
+            'Husaybook',
+            'Tandadeck',
+            'Araldeck'
+        ]);
+    });
+
+    // A list pasted out of a notes app is as likely to be comma-separated.
+    it('takes commas too, and ignores the whitespace around them', () => {
+        assert.deepEqual(parseOwnNames(' Husaybook , Tandadeck ').names, [
+            'Husaybook',
+            'Tandadeck'
+        ]);
+    });
+
+    it('says what it dropped rather than dropping it quietly', () => {
+        const { names, rejected } = parseOwnNames('Husaybook\nMy Great Idea!\nx\nTanda2deck');
+        assert.deepEqual(names, ['Husaybook']);
+        assert.deepEqual(rejected, ['My Great Idea!', 'x', 'Tanda2deck']);
+    });
+
+    /*
+     * Case-insensitively, because a domain does not distinguish them: asking
+     * for husaybook.com twice is one question, and two rows would disagree
+     * with each other the moment one of them was re-checked.
+     */
+    it('keeps one of a name repeated in another case', () => {
+        assert.deepEqual(parseOwnNames('Husaybook\nhusaybook\nHUSAYBOOK').names, ['Husaybook']);
+    });
+
+    it('reads an empty box as no names at all', () => {
+        assert.deepEqual(parseOwnNames('').names, []);
+        assert.deepEqual(parseOwnNames('\n \n,\n').names, []);
+    });
+
+    it('holds them to the same shape a generated name has to clear', () => {
+        assert.equal(NAME_PATTERN.test('Ab'), false, 'two letters is not a name');
+        assert.equal(NAME_PATTERN.test('Abc'), true);
+        assert.equal(NAME_PATTERN.test('A'.repeat(16)), true);
+        assert.equal(NAME_PATTERN.test('A'.repeat(17)), false);
     });
 });

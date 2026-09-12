@@ -150,23 +150,6 @@ export const STRATEGIES = [
     { id: 'metaphor', label: 'Metaphor & symbolism', hint: 'Cadence, Lodestar, Tidal' },
     { id: 'portmanteau', label: 'Blends', hint: 'Swiftsylva, Novaris' },
     { id: 'foreign', label: 'Other languages', hint: 'Kizuna, Sonder, Vesta' },
-    /*
-     * One word from the chosen language, one in English.
-     *
-     * Its own approach because it is what 'Other languages' kept producing by
-     * accident. Asked for Austronesian names, a batch came back with
-     * HusayBoard — Tagalog husay, English board — which is a fair name and not
-     * what was asked for, and there was no way to ask for it on purpose or to
-     * stop it happening.
-     *
-     * It is also a pattern with a real record behind it, rather than a
-     * curiosity: Tokopedia is Indonesian toko with Greek -pedia, Gojek is
-     * English go with Indonesian ojek, Zerodha is English zero with Sanskrit
-     * rodha, and Mang Inasal pairs Tagalog with Hiligaynon. What they have in
-     * common is an audience that already speaks both — a blend reads as a seam
-     * only to somebody outside the room.
-     */
-    { id: 'bilingual', label: 'Two languages', hint: 'Tokopedia, Gojek, PayMaya' },
     { id: 'short', label: 'Short & abstract', hint: 'Ovo, Nuo, Kip' },
     /*
      * The one move that exists because the real word is taken, which is this
@@ -177,6 +160,62 @@ export const STRATEGIES = [
 ] as const;
 
 export type StrategyId = (typeof STRATEGIES)[number]['id'];
+
+/**
+ * What a candidate name may look like.
+ *
+ * The same rule generation is already held to — letters only, long enough to
+ * say and short enough to fit a logo. A name somebody brings themselves is
+ * checked by exactly the same machinery as a generated one, so it has to clear
+ * the same bar or the checks would be asked questions they cannot answer.
+ */
+export const NAME_PATTERN = /^[A-Za-z]{3,16}$/;
+
+/**
+ * What the `source` column says for a name somebody typed in themselves.
+ *
+ * A value in the same column the generators write to, because it answers the
+ * same question — where did this name come from — and a separate flag would
+ * mean two places to look and two ways to disagree.
+ */
+export const OWN_SOURCE = 'you';
+
+/** How many names somebody may bring to a run of their own. */
+export const OWN_NAMES_MAX = 200;
+
+/**
+ * Names typed into the box under the brief, one per line.
+ *
+ * Commas are taken as separators too, because a list pasted out of a notes app
+ * is as likely to be comma-separated as line-separated and guessing wrong
+ * would silently turn six names into one.
+ *
+ * Rejects are returned rather than dropped. A name quietly discarded for a
+ * stray digit is the kind of thing somebody only notices when the results come
+ * back missing it, so the form says so while they are still looking at it.
+ */
+export function parseOwnNames(text: string): { names: string[]; rejected: string[] } {
+    const names: string[] = [];
+    const rejected: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of text.split(/[\n,]/)) {
+        const name = raw.trim();
+        if (name === '') {
+            continue;
+        }
+        if (!NAME_PATTERN.test(name)) {
+            rejected.push(name);
+            continue;
+        }
+        // Case-insensitively, because a domain does not distinguish them.
+        const key = name.toLowerCase();
+        if (!seen.has(key)) {
+            seen.add(key);
+            names.push(name);
+        }
+    }
+    return { names, rejected };
+}
 
 /**
  * The shapes the API actually returns.
@@ -209,6 +248,8 @@ export interface RunSettings {
     brief: string;
     strategies: string[];
     languages: string[];
+    /** Names the person brought themselves. Empty on a run that brought none. */
+    ownNames: string[];
     tlds: string[];
     requiredTlds: string[];
     handles: string[];
@@ -227,6 +268,8 @@ export interface RunView {
     strategies: StrategyId[] | null;
     /** Languages the foreign approach was narrowed to. Empty means any. */
     languages: string[];
+    /** Names the person brought themselves, checked alongside the generated ones. */
+    ownNames: string[];
     /**
      * The checks this run makes, resolved on the server.
      *

@@ -59,6 +59,7 @@ async function settingsOf(id: string): Promise<RunSettings | null> {
             brief: run.brief,
             strategies: run.strategies ?? [],
             languages: run.languages ?? [],
+            ownNames: run.ownNames ?? [],
             tlds: named('tld:', kinds),
             requiredTlds: named('tld:', required),
             handles: named('at:', kinds),

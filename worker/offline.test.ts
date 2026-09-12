@@ -242,29 +242,7 @@ describe('a name in another language is in that language', () => {
         }
     });
 
-    /*
-     * And the blend, which is the same shape asked for on purpose: the
-     * borrowed word carries the promise and the English one names the
-     * category. Tokopedia, Gojek, PayMaya — never the other way round.
-     */
-    it('puts the borrowed word first and the English category second', () => {
-        const words = roots(AUSTRONESIAN);
-        const names = composeBatch(FARM, 'bilingual', 40, [], 7, AUSTRONESIAN);
-        assert.ok(names.length > 0, 'the approach produced something to check');
-
-        for (const { name } of names) {
-            const lower = name.toLowerCase();
-            const root = words.find((w) => lower.startsWith(w));
-            assert.ok(root, `${name} does not open with a word from the chosen languages`);
-            assert.ok(
-                ENDING.includes(lower.slice(root.length)),
-                `${name} does not close with an English category word`
-            );
-        }
-    });
-
     it('asks for nothing at all where the languages have no words', () => {
-        assert.deepEqual(composeBatch(FARM, 'bilingual', 10, [], 7, ['Klingon']), []);
         assert.deepEqual(composeBatch(FARM, 'foreign', 10, [], 7, ['Klingon']), []);
     });
 });

@@ -154,33 +154,6 @@ export function promptFor(
               ].join('\n')
             : '';
 
-    /*
-     * The blend, asked for on purpose.
-     *
-     * The rules are the ones that separate Tokopedia and Gojek from a name
-     * that reads as two words that happened to collide. The foreign half
-     * carries the promise and the English half names the category, because the
-     * reverse — an English idea dressed in an exotic category word — reads as
-     * decoration. And it has to survive lowercase: a name that needs a capital
-     * in the middle to be parsed is a name that breaks in its own domain.
-     */
-    const blended =
-        strategy === 'bilingual'
-            ? [
-                  spoken
-                      ? `- Combine ONE word from these languages: ${spoken}`
-                      : '- Combine ONE word from a language other than English',
-                  '  with ONE ordinary English word. Nothing else in the name.',
-                  '- The non-English word carries the meaning; the English word names the',
-                  '  category — Tokopedia, Gojek, PayMaya, Zerodha. Not the other way round.',
-                  '- Write it as one word, capitalised like a brand: Tokopedia, not TokoPedia.',
-                  '- It has to survive being written in all lowercase, which is how a domain',
-                  '  is written — no capital letter inside the word doing the work of showing',
-                  '  the join. Say it aloud: if the seam needs explaining, drop it.',
-                  '- Give the meaning of the non-English word in the reason.'
-              ].join('\n')
-            : '';
-
     return [
         `Generate exactly ${count} candidate brand names for this brief:`,
         '',
@@ -189,7 +162,6 @@ export function promptFor(
         'Use this naming approach for every name:',
         chosen ? `- ${chosen.label}: ${chosen.hint}` : '- Any approach that fits the brief',
         drawnFrom,
-        blended,
         '',
         'Rules:',
         '- One to three syllables. Pronounceable by an English speaker on sight.',

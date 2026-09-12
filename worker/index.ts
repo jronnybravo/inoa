@@ -22,7 +22,7 @@ import { db } from '../src/lib/server/db.ts';
 import { sendResults } from '../src/lib/server/email.ts';
 import { Candidate } from '../src/lib/server/entities/candidate.ts';
 import { Run } from '../src/lib/server/entities/run.ts';
-import { checkLabel, type CheckKind } from '../src/lib/types.ts';
+import { OWN_SOURCE, checkLabel, type CheckKind } from '../src/lib/types.ts';
 import { CHECKER_VERSION, priorVerdict } from './checks/reuse.ts';
 import { sleep } from './checks/shared.ts';
 import { closeBrowser } from './checks/web.ts';
@@ -181,11 +181,54 @@ async function processRun(run: Run): Promise<void> {
          * raised, everything already found kept. One rule covers both, so
          * there is no mode to get wrong.
          */
-        const held = await Candidate.find({
+        let held = await Candidate.find({
             where: { runId: run.id },
             order: { position: 'ASC' }
         });
-        const leftover = held.length;
+
+        /*
+         * The names the person brought with them, seeded once.
+         *
+         * Here rather than at the point the run was created, so one path owns
+         * the creation of a candidate row and a run claimed twice cannot seed
+         * them twice — the filter against what is already stored is what makes
+         * that safe, and it is the same filter that stops a topped-up run
+         * adding them again.
+         */
+        const known = new Set(held.map((c) => c.name.toLowerCase()));
+        const bringing = (run.ownNames ?? []).filter((n) => !known.has(n.toLowerCase()));
+        if (bringing.length > 0) {
+            await Candidate.insert(
+                bringing.map((name, i) => ({
+                    runId: run.id,
+                    name,
+                    rationale: null,
+                    // Neither generated nor composed: nothing chose an approach
+                    // for it, and saying 'compound' would be inventing a story.
+                    strategy: null,
+                    source: OWN_SOURCE,
+                    position: held.length + i
+                }))
+            );
+            await log(
+                `Checking ${bringing.length} name${bringing.length === 1 ? '' : 's'} you brought`,
+                'success'
+            );
+            held = await Candidate.find({
+                where: { runId: run.id },
+                order: { position: 'ASC' }
+            });
+        }
+
+        /*
+         * Only what was generated counts towards the target.
+         *
+         * targetCount asks how many names to GENERATE. A shortlist somebody
+         * already had is not generation, and counting it would quietly hand
+         * back fewer names than the number on the form — twenty of your own
+         * would make a fifty-name run generate thirty.
+         */
+        const leftover = held.filter((c) => c.source !== OWN_SOURCE).length;
         const wanted = Math.max(0, run.targetCount - leftover);
         const resuming = wanted === 0;
 
@@ -198,7 +241,8 @@ async function processRun(run: Run): Promise<void> {
          * it happens inside time that was already being spent waiting.
          */
         let generationDone = resuming;
-        let stored_count = leftover;
+        // Positions run across every row, brought names included.
+        let stored_count = held.length;
 
         if (resuming) {
             await log(`Resuming — ${leftover} names already generated`, 'success');
@@ -405,12 +449,22 @@ async function processRun(run: Run): Promise<void> {
             return;
         }
 
-        // The stored count, not the requested one: concurrent batches overshoot and
-        // every name they produced is kept, so '1042 of 1000' was the denominator
-        // being wrong rather than the numerator.
+        /*
+         * The stored count, not the requested one: concurrent batches overshoot
+         * and every name they produced is kept, so '1042 of 1000' was the
+         * denominator being wrong rather than the numerator.
+         *
+         * Minus the ones nothing generated. Counting every row read a run that
+         * brought four names of its own as '54 of 50 generated', which is a
+         * claim about the model that the model had nothing to do with.
+         * Subtracted rather than filtered, because `source` is null on every
+         * row written before that column existed and SQL will not compare it.
+         */
+        const rows = await Candidate.countBy({ runId: run.id });
+        const brought = await Candidate.countBy({ runId: run.id, source: OWN_SOURCE });
         await Run.update(run.id, {
             status: 'checking',
-            generatedCount: await Candidate.countBy({ runId: run.id })
+            generatedCount: rows - brought
         });
         await checking;
         if (stopped()) {

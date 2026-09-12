@@ -10,7 +10,7 @@ import { Run } from '$lib/server/entities/run';
 import { Verification } from '$lib/server/entities/verification';
 import { issueCode } from '$lib/server/verification';
 import { isTld } from '$lib/tlds';
-import { STORE_ORDER, STRATEGIES, type StrategyId } from '$lib/types';
+import { NAME_PATTERN, OWN_NAMES_MAX, STORE_ORDER, STRATEGIES, type StrategyId } from '$lib/types';
 import type { RequestHandler } from './$types';
 
 const ids = STRATEGIES.map((s) => s.id) as [StrategyId, ...StrategyId[]];
@@ -20,6 +20,19 @@ const Body = z.object({
     strategies: z.array(z.enum(ids)).min(1),
     /** Empty means any, which is what 'Other languages' meant all along. */
     languages: z.array(z.string().refine(isLanguage, 'not a language this offers')).default([]),
+    /**
+     * Names the person brought with them, to be checked alongside the rest.
+     *
+     * Held to the same shape as a generated name, because they go through the
+     * same checks: a domain lookup cannot be asked about 'My Great Idea!'. The
+     * form parses the box with parseOwnNames and tells them what it dropped, so
+     * anything arriving here that fails is a caller ignoring that, not a person
+     * being surprised.
+     */
+    ownNames: z
+        .array(z.string().refine((n) => NAME_PATTERN.test(n), 'letters only, 3 to 16 of them'))
+        .max(OWN_NAMES_MAX)
+        .default([]),
     /**
      * Which domains to check, and which of those must be free.
      *

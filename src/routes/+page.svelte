@@ -24,6 +24,8 @@
         checkLabel,
         checkSearch,
         handleKind,
+        OWN_NAMES_MAX,
+        parseOwnNames,
         statusOf,
         STORE_ORDER,
         tldKind,
@@ -62,6 +64,22 @@
     const seed = data.prefill ?? null;
 
     let brief = $state(data.run?.brief ?? seed?.brief ?? '');
+
+    /**
+     * Names the person already has, checked alongside the generated ones.
+     *
+     * Held as the raw text they typed rather than the parsed list, so the box
+     * still reads back what they wrote — a field that silently rewrites itself
+     * while somebody is mid-line is worse than one that waits until they stop.
+     */
+    let ownText = $state((data.run?.ownNames ?? seed?.ownNames ?? []).join('\n'));
+    const own = $derived(parseOwnNames(ownText));
+
+    /*
+     * Two lines, which is the instruction. A one-line placeholder would say
+     * 'a name goes here' where the field needs to say 'one per line'.
+     */
+    const OWN_PLACEHOLDER = 'Husaybook\nTandadeck';
     let strategies = $state<string[]>(
         data.run?.strategies ?? seed?.strategies ?? ['compound', 'invented']
     );
@@ -162,19 +180,8 @@
      * nothing about which checkbox it answered to. It lives inside the card
      * now, so the ownership is the layout.
      */
-    /*
-     * The two approaches that take a language, and the picker they share.
-     *
-     * 'Two languages' needs the setting every bit as much as 'Other languages'
-     * does — it blends one word from the chosen language with one in English,
-     * and with nothing chosen the model drifts to Japanese and Latin, which is
-     * the same failure naming the languages explicitly was added to fix. The
-     * picker was gated on 'Other languages' alone, so picking the blend on its
-     * own left no way to say which language it was blending.
-     */
-    const SPOKEN_IDS: readonly string[] = ['foreign', 'bilingual'];
-    const SPOKEN_STRATEGIES = STRATEGIES.filter((s) => SPOKEN_IDS.includes(s.id));
-    const onSpoken = $derived(SPOKEN_STRATEGIES.some((s) => strategies.includes(s.id)));
+    const FOREIGN_STRATEGY = STRATEGIES.find((s) => s.id === 'foreign') ?? STRATEGIES[0];
+    const onForeign = $derived(strategies.includes('foreign'));
 
     /**
      * The domains to look for, and which of them a name must actually be free on.
@@ -503,6 +510,7 @@
      */
     const ICONS = {
         brief: ['M6 3.5h12v17H6z', 'M9 8h6', 'M9 12h6', 'M9 16h4'],
+        own: ['M4 7h10', 'M4 12h7', 'M4 17h10', 'M17 9.5l2.5 2.5L17 14.5'],
         strategy: [
             'M12 3.5l1.7 4.8 4.8 1.7-4.8 1.7-1.7 4.8-1.7-4.8-4.8-1.7 4.8-1.7z',
             'M18.4 15.4l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z'
@@ -947,7 +955,6 @@
         metaphor: 'Metaphor',
         portmanteau: 'Blend',
         foreign: 'Language',
-        bilingual: 'Two languages',
         short: 'Abstract',
         respell: 'Respelled'
     };
@@ -1208,6 +1215,7 @@
                     requireAppStore: requiredStores.includes('appStore'),
                     requirePlayStore: requiredStores.includes('playStore'),
                     requireGoogle: requiredStores.includes('google'),
+                    ownNames: own.names,
                     // null, not '': an untouched field is not an address.
                     email: email.trim() || null,
                     targetCount
@@ -1646,6 +1654,64 @@
                 </div>
             </div>
 
+            <!--
+                Names somebody already has, checked with the rest.
+
+                Under the brief because that is the order the thinking happens
+                in: here is the business, and here is what I had already come
+                up with. They are checked, never generated from — the count
+                below still asks how many names to make, and a shortlist you
+                brought is not a substitute for the ones you asked for.
+            -->
+            <div class={ROW}>
+                <div>
+                    <label for="own" class="flex items-center gap-2 text-sm font-medium">
+                        <FieldIcon paths={ICONS.own} />Your own names
+                    </label>
+                    <p id="own-help" class="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                        Optional. Names you already have, one per line, checked alongside the
+                        generated ones. They do not count towards the number below.
+                    </p>
+                </div>
+                <div class="flex h-full flex-col">
+                    <Textarea
+                        id="own"
+                        bind:value={ownText}
+                        rows={2}
+                        placeholder={OWN_PLACEHOLDER}
+                        aria-describedby="own-help own-count"
+                        class="h-full w-full flex-1 text-sm"
+                    />
+                    <!--
+                        Said while they are still looking at the box.
+
+                        A name dropped for a stray digit is otherwise only
+                        noticed when the results come back without it, which is
+                        an hour later and on a different screen.
+                    -->
+                    <p id="own-count" class="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                        {#if own.names.length > 0}
+                            {own.names.length} name{own.names.length === 1 ? '' : 's'} to check
+                        {:else if ownText.trim() === ''}
+                            Leave empty if you have none.
+                        {/if}
+                        {#if own.rejected.length > 0}
+                            <span class="text-amber-700 dark:text-amber-400">
+                                — skipping {own.rejected.slice(0, 3).join(', ')}{own.rejected
+                                    .length > 3
+                                    ? ` and ${own.rejected.length - 3} more`
+                                    : ''}: letters only, 3 to 16 of them.
+                            </span>
+                        {/if}
+                        {#if own.names.length > OWN_NAMES_MAX}
+                            <span class="text-rose-700 dark:text-rose-400">
+                                — only the first {OWN_NAMES_MAX} will be kept.
+                            </span>
+                        {/if}
+                    </p>
+                </div>
+            </div>
+
             <div class={ROW}>
                 <div>
                     <h2 id="strategy-label" class="flex items-center gap-2 text-sm font-medium">
@@ -1693,7 +1759,7 @@
                                focus:outline-stone-900 dark:focus:outline-stone-100"
                     >
                         <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                            {#each STRATEGIES.filter((s) => !SPOKEN_IDS.includes(s.id)) as s (s.id)}
+                            {#each STRATEGIES.filter((s) => s.id !== 'foreign') as s (s.id)}
                                 <label
                                     class="flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-sm
                                        transition-colors duration-150
@@ -1722,46 +1788,44 @@
                             {/each}
                         </div>
                         <!--
-                            The two approaches that take a setting, out of the
-                            grid and full width, sharing the one picker.
+                            Other languages, out of the grid and full width,
+                            because it is the only approach that takes a
+                            setting.
 
                             The picker used to be a row of the form in its own
                             right, a sibling of Domains and Handles — so
                             nothing said it belonged to this checkbox rather
                             than to the form. Inside the card, revealed by the
-                            boxes that enable it and indented under them, the
+                            box that enables it and indented under it, the
                             ownership is the layout rather than a sentence
                             asking you to infer it.
                         -->
                         <div
                             class="mt-2 rounded-lg border transition-colors duration-150
-                                   {onSpoken
+                                   {onForeign
                                 ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
                                 : 'border-stone-500 hover:border-stone-900 dark:hover:border-stone-100'}"
                         >
-                            {#each SPOKEN_STRATEGIES as s (s.id)}
-                                <label class="flex cursor-pointer items-start gap-2.5 p-3 text-sm">
-                                    <Checkbox
-                                        class="mt-0.5"
-                                        checked={strategies.includes(s.id)}
-                                        onchange={(e) => {
-                                            const on = e.currentTarget.checked;
-                                            strategies = on
-                                                ? [...strategies, s.id]
-                                                : strategies.filter((x) => x !== s.id);
-                                        }}
-                                    />
-                                    <span>
-                                        <span class="font-medium">{s.label}</span>
-                                        <span
-                                            class="block text-xs text-stone-500 dark:text-stone-400"
-                                            >{s.hint}</span
-                                        >
-                                    </span>
-                                </label>
-                            {/each}
+                            <label class="flex cursor-pointer items-start gap-2.5 p-3 text-sm">
+                                <Checkbox
+                                    class="mt-0.5"
+                                    checked={onForeign}
+                                    onchange={(e) => {
+                                        const on = e.currentTarget.checked;
+                                        strategies = on
+                                            ? [...strategies, 'foreign']
+                                            : strategies.filter((x) => x !== 'foreign');
+                                    }}
+                                />
+                                <span>
+                                    <span class="font-medium">{FOREIGN_STRATEGY.label}</span>
+                                    <span class="block text-xs text-stone-500 dark:text-stone-400"
+                                        >{FOREIGN_STRATEGY.hint}</span
+                                    >
+                                </span>
+                            </label>
 
-                            {#if onSpoken}
+                            {#if onForeign}
                                 <!--
                                     Indented behind a rule that starts where
                                     the label above it does, so the eye reads

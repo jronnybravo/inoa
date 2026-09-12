@@ -35,6 +35,16 @@ export class Run extends BaseEntity {
      */
     languages!: string[] | null;
     /**
+     * Names the person brought with them, checked alongside the generated ones.
+     *
+     * Kept on the run rather than written straight to candidates, so the worker
+     * owns the one path that creates them and a run claimed twice cannot seed
+     * them twice. They do not count towards targetCount: that field asks how
+     * many names to GENERATE, and a shortlist somebody already had is not
+     * generation it should stand in for.
+     */
+    ownNames!: string[] | null;
+    /**
      * The TLDs to check, and which of them a name must be free on.
      *
      * Null on runs made before a run could ask for anything but the .com;
@@ -100,6 +110,7 @@ export const RunSchema = new EntitySchema<Run>({
         brief: { type: 'text' },
         strategies: { type: JSON_TYPE, nullable: true },
         languages: { type: JSON_TYPE, nullable: true },
+        ownNames: { type: JSON_TYPE, nullable: true },
         tlds: { type: JSON_TYPE, nullable: true },
         requiredTlds: { type: JSON_TYPE, nullable: true },
         handles: { type: JSON_TYPE, nullable: true },

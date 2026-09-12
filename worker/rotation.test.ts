@@ -221,13 +221,6 @@ describe('what a request says about language', () => {
         assert.match(prompt, /Do not attach an\s+English word to a foreign one/);
     });
 
-    it('asks a blend for one word from each, in that order', () => {
-        const prompt = promptFor(BRIEF, 'bilingual', 10, [], ['Tagalog']);
-        assert.match(prompt, /Combine ONE word from these languages: Tagalog/);
-        assert.match(prompt, /carries the meaning; the English word names the/);
-        assert.match(prompt, /all lowercase/);
-    });
-
     /*
      * And neither rule belongs anywhere else. A compound or an invented batch
      * draws on material these constraints would simply narrow.

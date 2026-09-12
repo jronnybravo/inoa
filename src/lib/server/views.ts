@@ -40,6 +40,7 @@ export function runView(run: Run): RunView {
         brief: run.brief,
         strategies: run.strategies,
         languages: run.languages ?? [],
+        ownNames: run.ownNames ?? [],
         checks: runChecks(run),
         webLinks: run.webLinks,
         email: run.email ? run.email.replace(/(.).*(@.*)/, '$1•••$2') : null,

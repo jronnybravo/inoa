@@ -315,43 +315,6 @@ function compose(
         };
     }
 
-    if (strategy === 'bilingual') {
-        /*
-         * A foreign root for the promise, an English word for the category.
-         *
-         * The same shape the prompt asks a model for, and the same order:
-         * Tokopedia, Gojek, PayMaya all put the meaning in the borrowed half
-         * and the category in the English one. The brief's own vocabulary is
-         * preferred for that second half, because the category word is the one
-         * that has to be recognisably about this business.
-         *
-         * Both halves are kept short. A blend is already asking a reader to
-         * cross a language boundary mid-word, and it cannot also be long.
-         */
-        if (roots.length === 0) {
-            return null;
-        }
-        const root = pick(roots, rand);
-        /*
-         * ENDING, not the brief's own words.
-         *
-         * The English half has to name a category, and the brief's vocabulary
-         * is whatever the thesaurus returned — which for a revision app was
-         * 'rehash', 'repeat' and 'outset', giving Rehashalon and Repeatbukid.
-         * A verb cannot be the category half, and ENDING is the list already
-         * curated to sit at the end of a compound.
-         */
-        const english = pick(ENDING, rand);
-        if (root.word.length > MAX_PART || root.word.toLowerCase() === english) {
-            return null;
-        }
-        return {
-            name: capitalise(root.word + english),
-            rationale: `${root.word} (${root.from}, ${root.gloss}) with ${english}`,
-            strategy
-        };
-    }
-
     if (strategy === 'respell') {
         /*
          * A wider pool than the other approaches draw on.

@@ -296,11 +296,48 @@ describe('a source that has run out of quota', () => {
         assert.deepEqual(labels(), ['claude-cli', 'codex-cli']);
     });
 
+    /*
+     * The question that made this necessary: upgrade a plan mid-run, and the
+     * service's own answer stops being true with nothing to say so. Codex says
+     * 'try again at Oct 10th' and means it — until you pay, a minute later.
+     *
+     * So the stated reset is reported and the source is asked again anyway, on
+     * a cadence. A breaker that never closes again is a fuse.
+     */
+    it('is offered again on the retry cadence, however far off the reset', () => {
+        only({ CLAUDE_CLI: 'true', CODEX_CLI: 'true' });
+        withCli('claude', 'codex');
+        const until = noteUsageLimit('codex-cli', 'try again at Oct 10th, 2026 9:31 PM', NOW);
+        assert.ok(until - NOW > 20 * 24 * 60 * 60 * 1000, 'the stated reset is weeks away');
+
+        assert.deepEqual(
+            usable(NOW + 14 * 60_000).map((g) => g.label),
+            ['claude-cli']
+        );
+        assert.deepEqual(
+            usable(NOW + 16 * 60_000).map((g) => g.label),
+            ['claude-cli', 'codex-cli']
+        );
+    });
+
+    it('goes straight back down when the retry finds it still out', () => {
+        only({ CLAUDE_CLI: 'true', CODEX_CLI: 'true' });
+        withCli('claude', 'codex');
+        noteUsageLimit('codex-cli', 'usage limit reached', NOW);
+        const probe = NOW + 16 * 60_000;
+        assert.equal(usable(probe).length, 2, 'offered at the retry');
+        noteUsageLimit('codex-cli', 'usage limit reached', probe);
+        assert.deepEqual(
+            usable(probe + 60_000).map((g) => g.label),
+            ['claude-cli']
+        );
+    });
+
     it('comes back by itself once the window has passed', () => {
         only({ CLAUDE_CLI: 'true' });
         withCli('claude');
         const until = limited('usage limit reached');
-        assert.equal(setAsideUntil('claude-cli', NOW), until);
+        assert.equal(setAsideUntil('claude-cli', NOW), until, 'reports the stated reset');
         assert.equal(setAsideUntil('claude-cli', until + 1), undefined);
         assert.deepEqual(
             usable(until + 1).map((g) => g.label),

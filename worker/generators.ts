@@ -353,13 +353,29 @@ export function generators(): Generator[] {
 }
 
 /**
- * Sources set aside until their quota resets, by label.
+ * A source put down after it reported a usage limit.
+ *
+ * Two times, not one, and the difference is the whole point. `until` is when
+ * the service said it would be back, which is what a person wants told.
+ * `retryAt` is when we will ask it anyway — because the service's answer can
+ * stop being true the moment somebody upgrades a plan, and a breaker that never
+ * closes again is a fuse.
+ */
+interface Setback {
+    /** When the service said it returns. Reported, never trusted absolutely. */
+    until: number;
+    /** When to try regardless, in case it came back early. */
+    retryAt: number;
+}
+
+/**
+ * Sources set aside, by label.
  *
  * Per process, which is the right lifetime: a worker is long-lived and will
  * meet the same limit again within minutes, while a restart is a fair moment to
  * find out whether anything has changed.
  */
-const exhausted = new Map<string, number>();
+const exhausted = new Map<string, Setback>();
 
 /**
  * The longest a source is ever set aside.
@@ -375,8 +391,23 @@ const exhausted = new Map<string, number>();
  */
 const MAX_SETBACK = 30 * 24 * 60 * 60 * 1000;
 
-/** Where nothing in the message says. Long enough not to hammer, short enough to recover. */
-const DEFAULT_SETBACK = Number(process.env.INOA_LIMIT_COOLDOWN_MIN ?? 60) * 60 * 1000;
+/**
+ * How often a source that has run out is tried again anyway.
+ *
+ * The service's own reset time is information, not a contract: upgrade a plan
+ * mid-run and Codex's 'try again at Oct 10th' becomes wrong immediately, and
+ * nothing tells us. So it is asked again on this cadence whatever it said, and
+ * put back down if it says the same thing.
+ *
+ * Fifteen minutes because the probe is nearly free — a CLI that is out answers
+ * in about a second, and the batch moves straight on to the next source — and
+ * because a person who has just paid for more quota should not have to restart
+ * a worker to spend it.
+ *
+ * It also stands in for the reset time where the message named none. A guess
+ * about a window nobody stated is worth no more than a retry.
+ */
+const RETRY_EVERY = Number(process.env.INOA_LIMIT_RETRY_MIN ?? 15) * 60 * 1000;
 
 /**
  * When a service says its quota comes back, if it says at all.
@@ -464,22 +495,34 @@ export function resetAt(said: string, now: number = Date.now()): number | undefi
  * configured to carry the rest of the batches.
  */
 export function noteUsageLimit(label: string, said: string, now: number = Date.now()): number {
-    const until = resetAt(said, now) ?? now + DEFAULT_SETBACK;
-    exhausted.set(label, Math.max(until, exhausted.get(label) ?? 0));
-    return exhausted.get(label) ?? until;
+    const stated = resetAt(said, now);
+    /*
+     * The longer of what it says now and what it said before, so a vaguer
+     * second answer cannot release a source the first one shelved properly.
+     */
+    const until = Math.max(stated ?? now + RETRY_EVERY, exhausted.get(label)?.until ?? 0);
+    exhausted.set(label, { until, retryAt: Math.min(until, now + RETRY_EVERY) });
+    return until;
 }
 
-/** When this source can be asked again, or undefined if it can be asked now. */
+/**
+ * When this source is believed to return, or undefined if it may be asked now.
+ *
+ * 'May be asked' is the retry cadence, not the stated reset. A source whose
+ * window has not arrived is still offered once the cadence comes round, and put
+ * straight back down if it still says no — which costs about a second and is
+ * the only way a plan upgraded mid-run is ever noticed.
+ */
 export function setAsideUntil(label: string, now: number = Date.now()): number | undefined {
-    const until = exhausted.get(label);
-    if (until === undefined) {
+    const setback = exhausted.get(label);
+    if (setback === undefined) {
         return undefined;
     }
-    if (until <= now) {
+    if (setback.retryAt <= now) {
         exhausted.delete(label);
         return undefined;
     }
-    return until;
+    return setback.until;
 }
 
 /** Exported for the tests: the map is per process and outlives a case. */

@@ -181,12 +181,16 @@ keys are not touched — not as failover, not as overflow — because a
 subscription is already paid for and a key is billed by the batch. Set
 `CLAUDE_CLI=false` and `CODEX_CLI=false` to use the keys instead.
 
-**A usage limit costs one source, not the run.** A limit comes back on a clock
-rather than on a retry, so the source that reported it is set aside until it
-returns and the rest of the rotation carries the batches. Where the service
-says when — 'try again in 4 hours', 'resets at 3pm' — that is read and used;
-otherwise `INOA_LIMIT_COOLDOWN_MIN` applies. Generation only stops once
-everything configured is out at the same time.
+**A usage limit costs one source, not the run.** The source that reported it is
+set aside and the rest of the rotation carries the batches; generation stops
+only once everything configured is out at the same time. Where the service says
+when it returns — 'try again in 4 hours', 'at Oct 10th, 2026 9:31 PM' — that is
+read and reported.
+
+It is not obeyed. Upgrade a plan mid-run and that answer is wrong immediately
+with nothing to say so, so the source is offered again every
+`INOA_LIMIT_RETRY_MIN` minutes whatever it said, and put back down if it still
+says no. A breaker that never closes again is a fuse.
 
 ### Without a model
 

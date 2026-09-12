@@ -75,11 +75,6 @@
     let ownText = $state((data.run?.ownNames ?? seed?.ownNames ?? []).join('\n'));
     const own = $derived(parseOwnNames(ownText));
 
-    /*
-     * Two lines, which is the instruction. A one-line placeholder would say
-     * 'a name goes here' where the field needs to say 'one per line'.
-     */
-    const OWN_PLACEHOLDER = 'Husaybook\nTandadeck';
     let strategies = $state<string[]>(
         data.run?.strategies ?? seed?.strategies ?? ['compound', 'invented']
     );
@@ -1655,13 +1650,15 @@
             </div>
 
             <!--
-                Names somebody already has, checked with the rest.
+                Names somebody already has, checked with the rest — and read.
 
                 Under the brief because that is the order the thinking happens
-                in: here is the business, and here is what I had already come
-                up with. They are checked, never generated from — the count
-                below still asks how many names to make, and a shortlist you
-                brought is not a substitute for the ones you asked for.
+                in: here is the business, and here is what I had already come up
+                with. A brief says what the business does and nothing about what
+                its owner likes the sound of; this says exactly that, so it
+                shapes the generated names as well as being checked beside them.
+                The count below still asks how many to make, and a shortlist you
+                brought is not a substitute for those.
             -->
             <div class={ROW}>
                 <div>
@@ -1669,8 +1666,9 @@
                         <FieldIcon paths={ICONS.own} />Your own names
                     </label>
                     <p id="own-help" class="mt-1 text-xs text-stone-500 dark:text-stone-400">
-                        Optional. Names you already have, one per line, checked alongside the
-                        generated ones. They do not count towards the number below.
+                        Optional. Names you already have, one per line. They are checked alongside
+                        the generated ones, and the rest are written to match what you like about
+                        them. They do not count towards the number below.
                     </p>
                 </div>
                 <div class="flex h-full flex-col">
@@ -1678,7 +1676,6 @@
                         id="own"
                         bind:value={ownText}
                         rows={2}
-                        placeholder={OWN_PLACEHOLDER}
                         aria-describedby="own-help own-count"
                         class="h-full w-full flex-1 text-sm"
                     />

@@ -234,3 +234,52 @@ describe('what a request says about language', () => {
         });
     }
 });
+
+/**
+ * The names somebody brought, read for taste rather than only avoided.
+ *
+ * A brief says what the business does and nothing about what its owner likes
+ * the sound of. The box under it does — somebody who typed Husaybook and
+ * Tandadeck has said more about the register they want than three sentences of
+ * brief will — and it was being used as an exclusion list and nothing else.
+ */
+describe('what a request does with the names somebody brought', () => {
+    const BRIEF = 'A review app for Filipino board and civil service examinees.';
+    const LIKED = ['Husaybook', 'Tandadeck'];
+
+    it('shows them as taste, and says not to hand them back', () => {
+        const prompt = promptFor(BRIEF, 'compound', 10, LIKED, [], LIKED);
+        assert.match(prompt, /Names the person came up with themselves:/);
+        assert.match(prompt, /Husaybook, Tandadeck/);
+        assert.match(prompt, /let it shape what you write/);
+        assert.match(prompt, /do not hand back respellings or near-variants/);
+    });
+
+    /*
+     * Both things at once, which is the distinction worth spelling out: one
+     * list says 'never these', the other says 'more like these', and a request
+     * that only did the first came back with near-spellings of them.
+     */
+    it('still names them among the ones not to repeat', () => {
+        const prompt = promptFor(BRIEF, 'compound', 10, LIKED, [], LIKED);
+        assert.match(prompt, /Do not repeat any of these already-generated names/);
+    });
+
+    it('says nothing at all when the person brought none', () => {
+        const prompt = promptFor(BRIEF, 'compound', 10, [], [], []);
+        assert.doesNotMatch(prompt, /came up with themselves/);
+    });
+
+    /*
+     * Somebody who brought two hundred names has already said everything this
+     * can use, and the rest is prompt spent for nothing.
+     */
+    it('caps the list, and says it has been cut', () => {
+        const many = Array.from(
+            { length: 60 },
+            (_, i) => `Namealpha${String.fromCharCode(97 + (i % 26))}`
+        );
+        const prompt = promptFor(BRIEF, 'compound', 10, [], [], many);
+        assert.match(prompt, /\(24 of 60\)/);
+    });
+});

@@ -122,7 +122,9 @@ export function promptFor(
     strategy: StrategyId,
     count: number,
     avoid: string[],
-    languages: string[] = []
+    languages: string[] = [],
+    /** Names the person brought themselves, as evidence of what they like. */
+    liked: string[] = []
 ): string {
     const chosen = STRATEGIES.find((s) => s.id === strategy);
     const listed = exclusions(avoid);
@@ -156,10 +158,43 @@ export function promptFor(
     const drawnFrom =
         strategy === 'foreign' && spoken ? `- Draw only on these languages: ${spoken}.` : '';
 
+    /*
+     * The names the person already had, as a reading of their taste.
+     *
+     * A brief says what the business does; it says nothing about what its owner
+     * likes the sound of. The box under it does — somebody who typed Husaybook
+     * and Tandadeck has told you more about the register they want than three
+     * sentences of brief ever will, and it was being used only as an exclusion
+     * list.
+     *
+     * Taste, not material. They are in the avoid list as well, so the model is
+     * being told to sound like these and not to hand them back — which is the
+     * distinction worth spelling out, or it returns a set of near-spellings.
+     *
+     * Capped, because a person who brought two hundred names has already told
+     * us everything this can use and the rest is prompt spent for nothing.
+     */
+    const TASTE = 24;
+    const shown = liked.slice(0, TASTE);
+    const taste = shown.length
+        ? [
+              '',
+              `Names the person came up with themselves${
+                  liked.length > shown.length ? ` (${shown.length} of ${liked.length})` : ''
+              }:`,
+              shown.join(', '),
+              'Read what they like from these — the sound, the length, the register, the',
+              'kind of word they reach for — and let it shape what you write. Do not repeat',
+              'them, and do not hand back respellings or near-variants of them.',
+              ''
+          ].join('\n')
+        : '';
+
     return [
         `Generate exactly ${count} candidate brand names for this brief:`,
         '',
         brief,
+        taste,
         '',
         'Use this naming approach for every name:',
         chosen ? `- ${chosen.label}: ${chosen.hint}` : '- Any approach that fits the brief',
@@ -301,6 +336,7 @@ async function generateBatch(
     turn: number,
     palette?: Palette,
     languages: string[] = [],
+    liked: string[] = [],
     onProblem?: (reason: string) => Promise<void> | void
 ): Promise<GeneratedName[]> {
     // Composed rather than generated: decided once for the whole run, in
@@ -311,7 +347,7 @@ async function generateBatch(
         );
     }
 
-    const prompt = promptFor(brief, strategy, count, avoid, languages);
+    const prompt = promptFor(brief, strategy, count, avoid, languages, liked);
     if (generators().length === 0) {
         throw new Error(
             'No generator is configured. Switch on CLAUDE_CLI or CODEX_CLI with that CLI ' +
@@ -416,6 +452,7 @@ async function settledBatch(
     turn: number,
     palette: Palette | undefined,
     languages: string[],
+    liked: string[],
     onProblem?: (reason: string) => Promise<void> | void
 ): Promise<{ names: GeneratedName[]; failed: boolean }> {
     const ATTEMPTS = 3;
@@ -430,6 +467,7 @@ async function settledBatch(
                     turn,
                     palette,
                     languages,
+                    liked,
                     onProblem
                 ),
                 failed: false
@@ -485,7 +523,15 @@ export async function generateNames(
      * every request's exclusion list is read from — so a name found an hour
      * ago is avoided exactly as firmly as one found a second ago.
      */
-    already: string[] = []
+    already: string[] = [],
+    /**
+     * Names the person brought themselves, read for taste rather than material.
+     *
+     * A subset of `already` — they are in the exclusion list too — and passed
+     * separately because the two say different things to a request: one is
+     * 'never these', the other is 'more like these'.
+     */
+    liked: string[] = []
 ): Promise<GeneratedName[]> {
     const seen = new Set(already.map((name) => name.toLowerCase()));
     const all: GeneratedName[] = [];
@@ -577,9 +623,17 @@ export async function generateNames(
         }
         pool.set(
             id,
-            settledBatch(brief, strategy, want, avoid, id, palette, languages, onProblem).then(
-                (r) => ({ id, ...r })
-            )
+            settledBatch(
+                brief,
+                strategy,
+                want,
+                avoid,
+                id,
+                palette,
+                languages,
+                liked,
+                onProblem
+            ).then((r) => ({ id, ...r }))
         );
     };
 
@@ -655,6 +709,7 @@ export async function generateNames(
             nextId++,
             palette,
             languages,
+            liked,
             onProblem
         );
         await absorb(top.names, top.failed);

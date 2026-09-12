@@ -284,7 +284,11 @@ async function processRun(run: Run): Promise<void> {
                       await log(`Generated ${leftover + total} of ${run.targetCount}`);
                   },
                   async (reason) => log(`Generation: ${reason}`, 'warn'),
-                  held.map((c) => c.name)
+                  held.map((c) => c.name),
+                  // Read for taste, not just avoided: the box under the brief
+                  // says what this person likes the sound of, which the brief
+                  // itself never does.
+                  held.filter((c) => c.source === OWN_SOURCE).map((c) => c.name)
               );
 
         // Whichever TLDs this run asked for, plus the stores it required.

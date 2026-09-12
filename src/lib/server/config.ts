@@ -86,8 +86,10 @@ export function targetHost(): string {
 /**
  * Whether to negotiate TLS.
  *
- * DB_SSL settles it when set. Otherwise: a local database does not need it and
- * a remote one almost always does, which is the right default for a managed
+ * DB_SSL settles it when set, and is the only variable that does — PGSSLMODE
+ * used to be read as well, which is two spellings of one setting and a silent
+ * winner when they disagree. Otherwise: a local database does not need it and a
+ * remote one almost always does, which is the right default for a managed
  * Postgres and harmless to override.
  *
  * A URL that will not parse is treated as remote. We cannot tell where it
@@ -122,28 +124,6 @@ export function ssl(): false | { rejectUnauthorized: boolean } {
         return { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' };
     }
 
-    /*
-     * PGSSLMODE, because that is the variable the host tells you to set.
-     *
-     * Neon's own snippet hands you PGSSLMODE=require, and this read DB_SSL and
-     * nothing else — so the setting did nothing and TLS happened only by way of
-     * the remote-host default below. That worked by luck rather than by
-     * instruction, which is the kind of thing that stops working quietly.
-     *
-     * verify-ca and verify-full check the chain; require does not, which is
-     * libpq's own distinction and not one to improve on here.
-     */
-    const mode = process.env.PGSSLMODE?.trim().toLowerCase();
-    if (mode === 'disable') {
-        return false;
-    }
-    if (mode === 'verify-ca' || mode === 'verify-full') {
-        return { rejectUnauthorized: true };
-    }
-    if (mode === 'require') {
-        return { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true' };
-    }
-
     return isLoopbackHost(targetHost()) ? false : { rejectUnauthorized: false };
 }
 
@@ -153,27 +133,20 @@ export function ssl(): false | { rejectUnauthorized: boolean } {
  * node-postgres will not do it unless asked: `enableChannelBinding` defaults to
  * false, and without it the driver never offers the -PLUS mechanism at all. A
  * Neon database configured with channel_binding=require then refuses the
- * connection, and PGCHANNELBINDING does not help because that is a libpq
- * variable and this driver is not libpq.
+ * connection.
  *
  * On by default, which matches libpq's own `prefer`. It costs nothing where it
  * is not wanted: the driver only uses the mechanism when the server offers it,
  * and falls back to plain SCRAM-SHA-256 otherwise. It also needs TLS — there is
  * no certificate to bind to without it — so this is paired with ssl() below.
  *
- * DB_CHANNEL_BINDING is this project's name for it and takes true or false,
- * like DB_SSL and every other DB_ switch here. It wins where both are set.
- *
- * PGCHANNELBINDING is read as an alias because it is what Neon's snippet hands
- * you — the same courtesy DB_USER and DB_NAME already get — and it speaks
- * libpq's vocabulary rather than ours: disable, prefer, require.
+ * DB_CHANNEL_BINDING is the name, and the only name. Neon's own snippet hands
+ * you PGCHANNELBINDING and this used to read that too, which meant two spellings
+ * of one setting and a silent winner when they disagreed. One name is worth the
+ * one-line edit when copying a snippet in.
  */
 export function channelBinding(): boolean {
-    const ours = flag('DB_CHANNEL_BINDING');
-    if (ours !== undefined) {
-        return ours;
-    }
-    return process.env.PGCHANNELBINDING?.trim().toLowerCase() !== 'disable';
+    return flag('DB_CHANNEL_BINDING') ?? true;
 }
 
 /** The connection half of the DataSource options, whatever the driver. */
@@ -196,9 +169,9 @@ export function connectionOptions(): Record<string, unknown> {
     return {
         host: process.env.DB_HOST ?? 'localhost',
         port: Number(process.env.DB_PORT ?? (DIALECT === 'postgres' ? 5432 : 3306)),
-        username: process.env.DB_USERNAME ?? process.env.DB_USER,
+        username: process.env.DB_USERNAME,
         password: process.env.DB_PASSWORD,
-        database: process.env.DB_DATABASE ?? process.env.DB_NAME ?? 'inoa',
+        database: process.env.DB_DATABASE ?? 'inoa',
         ssl: secure,
         ...extra
     };

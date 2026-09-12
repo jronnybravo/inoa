@@ -26,7 +26,15 @@
  */
 
 import { STRATEGIES, type StrategyId } from '../src/lib/types.ts';
-import { aiAllowed, generators, rotation } from './generators.ts';
+import {
+    aiAllowed,
+    exhaustedUntil,
+    generators,
+    isUsageLimit,
+    noteUsageLimit,
+    saidBy,
+    usable
+} from './generators.ts';
 import { composeBatch, paletteFor, seedFor, type Palette } from './offline.ts';
 
 const BATCH_SIZE = Number(process.env.INOA_BATCH_SIZE ?? 50);
@@ -127,32 +135,26 @@ export function promptFor(
      * of in this context. A brief that wanted Nordic austerity got Kizuna
      * either way. Listed explicitly, the constraint holds.
      *
-     * Only for the two approaches it applies to: attaching it to a compound or
+     * Only for the one approach it applies to: attaching it to a compound or
      * an invented batch would narrow material those approaches never draw on.
      */
     const spoken = languages.length > 0 ? languages.join(', ') : '';
 
     /*
-     * 'Draw only on these languages' was not holding, and the failure was
-     * invisible because the result is a decent name.
+     * A blend is allowed, and is often the best name in the batch.
      *
-     * A run narrowed to Austronesian, Romance and Classical returned
-     * HusayBoard: Tagalog husay welded to English board. English is in none of
-     * those families, so the batch had quietly answered a question nobody
-     * asked — and a name half in English is not a name in another language,
-     * which is the whole thing the approach is for. Saying what to avoid is
-     * what makes the instruction stick; a positive constraint alone leaves the
-     * model free to read 'draw on' as 'draw partly on'.
+     * This briefly forbade it — no Husay+Board, no Toko+Hub — after a run
+     * narrowed to Austronesian returned HusayBoard. The instruction held, and
+     * the names got worse: a shortlist of pure Tagalog words is beautiful and
+     * almost entirely registered, while the blends were nearly all free. It is
+     * also the shape behind Tokopedia, Gojek and PayMaya, so ruling it out was
+     * ruling out the pattern with the best record in the market this serves.
+     *
+     * The language list still narrows where the borrowed half comes from,
+     * which is what it was always for.
      */
     const drawnFrom =
-        strategy === 'foreign' && spoken
-            ? [
-                  `- Draw only on these languages: ${spoken}.`,
-                  '- Every part of every name must come from one of them. Do not attach an',
-                  '  English word to a foreign one — no Husay+Board, no Toko+Hub. A name that',
-                  '  is half English belongs to a different approach and will be discarded.'
-              ].join('\n')
-            : '';
+        strategy === 'foreign' && spoken ? `- Draw only on these languages: ${spoken}.` : '';
 
     return [
         `Generate exactly ${count} candidate brand names for this brief:`,
@@ -278,6 +280,19 @@ export function sourceFor(turn: number, sources: number): number {
  * the batch was recorded as barren, which is the signal meaning 'the brief is
  * exhausted' and ends a run early. Nothing else was tried and nothing was said.
  */
+/**
+ * When a source comes back, said in as much as the reader needs.
+ *
+ * A time alone for today, a date as well for anything further out. 'set aside
+ * until 5:23:00 PM' was how a reset a MONTH away was reported, which reads as
+ * 'back after lunch'.
+ */
+function whenBack(at: number): string {
+    const when = new Date(at);
+    const sameDay = when.toDateString() === new Date().toDateString();
+    return sameDay ? when.toLocaleTimeString() : when.toLocaleString();
+}
+
 async function generateBatch(
     brief: string,
     strategy: StrategyId,
@@ -297,27 +312,32 @@ async function generateBatch(
     }
 
     const prompt = promptFor(brief, strategy, count, avoid, languages);
-    const sources = generators();
-    if (sources.length === 0) {
+    if (generators().length === 0) {
         throw new Error(
-            'No generator is configured. Sign in to the Claude CLI with `claude login`, ' +
-                'set ANTHROPIC_API_KEY or OPENAI_API_KEY, or set INOA_AI=off to compose ' +
-                'names without a model.'
+            'No generator is configured. Switch on CLAUDE_CLI or CODEX_CLI with that CLI ' +
+                'signed in, set ANTHROPIC_API_KEY or OPENAI_API_KEY, or set INOA_AI=false ' +
+                'to compose names without a model.'
         );
     }
 
     /*
-     * Rotate within the leading tier, then fall back through everything else
-     * in preference order. With one CLI and one key that is: the CLI for every
-     * batch, and the key only when the CLI cannot answer.
+     * What can answer now, which is not what is configured.
+     *
+     * A source out of quota is set aside until it resets rather than asked
+     * again: a usage limit comes back on a clock, and a retry only spends the
+     * next window's allowance. The rest of the rotation carries on without it.
      */
-    const rotating = rotation(sources);
-    const start = sourceFor(turn, rotating.length);
-    const order = [
-        ...rotating.slice(start),
-        ...rotating.slice(0, start),
-        ...sources.filter((source) => !rotating.includes(source))
-    ];
+    const sources = usable();
+    if (sources.length === 0) {
+        const until = exhaustedUntil();
+        throw new Error(
+            'Every generator has reached its usage limit' +
+                (until ? ` — the first returns at ${whenBack(until)}` : '')
+        );
+    }
+
+    const start = sourceFor(turn, sources.length);
+    const order = [...sources.slice(start), ...sources.slice(0, start)];
 
     let failure: unknown;
     for (const source of order) {
@@ -329,6 +349,21 @@ async function generateBatch(
             return names;
         } catch (error) {
             failure = error;
+            /*
+             * A quota is not a fault, and must not cost the next batch.
+             *
+             * Setting the source aside here is what turns 'the run stops' into
+             * 'the other one carries it'. Generation used to end the moment any
+             * source reported a limit, with a second one sitting idle beside it.
+             */
+            if (isUsageLimit(error)) {
+                const until = noteUsageLimit(source.label, saidBy(error));
+                await onProblem?.(
+                    `${source.label} has reached its usage limit — set aside until ` +
+                        whenBack(until)
+                );
+                continue;
+            }
             await onProblem?.(
                 `${source.label} could not do this batch — ${describeFailure(error)}`
             );
@@ -344,20 +379,6 @@ async function generateBatch(
  * — so taking the final line reported the notice and hid the failure. Prefer a
  * line that reads like an error, and keep the exit code either way.
  */
-/**
- * A usage limit is not a transient hiccup and should not be described as one.
- *
- * It presents as every batch failing at once, which is indistinguishable from
- * an outage unless you read the message. It also resets on a clock rather than
- * on a retry, so a short backoff cannot help — the run has to say so and stop.
- */
-function isUsageLimit(error: unknown): boolean {
-    const e = error as Error & { stderr?: string; stdout?: string };
-    return /usage limit|rate limit|limit reached|too many requests|429|quota exceeded/i.test(
-        `${e.stderr ?? ''} ${e.stdout ?? ''} ${e.message}`
-    );
-}
-
 function describeFailure(error: unknown): string {
     const e = error as Error & { stderr?: string; stdout?: string; code?: number };
     const lines = `${e.stderr ?? ''}\n${e.stdout ?? ''}`
@@ -416,10 +437,16 @@ async function settledBatch(
         } catch (error) {
             const reason = describeFailure(error);
 
-            // Retrying a usage limit only spends the next window's allowance.
+            /*
+             * Retrying a usage limit only spends the next window's allowance.
+             *
+             * generateBatch has already set the offending source aside and
+             * tried the rest, so reaching here means nothing configured can
+             * answer — not that one source is busy.
+             */
             if (isUsageLimit(error)) {
                 await onProblem?.(
-                    `Claude usage limit reached — generation cannot continue until it resets. ${reason}`
+                    `Generation cannot continue until a usage limit resets. ${reason}`
                 );
                 return { names: [], failed: true };
             }
@@ -481,15 +508,9 @@ export async function generateNames(
                 : 'INOA_AI is off — composing names from a thesaurus and word lists.'
         );
     } else {
-        const sharing = rotation(sources);
-        const spare = sources.filter((source) => !sharing.includes(source));
-        if (sharing.length > 1 || spare.length > 0) {
-            await onProblem?.(
-                `Generating with ${sharing.map((s) => s.label).join(', ')}` +
-                    (spare.length > 0
-                        ? `, falling back to ${spare.map((s) => s.label).join(', ')}`
-                        : '')
-            );
+        const sharing = sources;
+        if (sharing.length > 1) {
+            await onProblem?.(`Generating with ${sharing.map((s) => s.label).join(', ')}`);
         }
     }
 

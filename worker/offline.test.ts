@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { STRATEGIES } from '../src/lib/types.ts';
 import { blend, composeBatch, keywords, seedFor, type Palette } from './offline.ts';
-import { ENDING, FOREIGN, NOT_A_NAME, pronounceable } from './words.ts';
+import { NOT_A_NAME, pronounceable } from './words.ts';
 
 /** No thesaurus, so the bundled lists carry it — the offline-offline case. */
 const BARE: Palette = { related: [] };
@@ -201,48 +201,5 @@ describe('composeBatch', () => {
     it('works with no thesaurus at all, which is the case it exists for', () => {
         const made = composeBatch(BARE, 'compound', 15, [], seedFor('brief', 8));
         assert.equal(made.length, 15);
-    });
-});
-
-/**
- * Which language a name is allowed to be in.
- *
- * 'Other languages' produced Awafield, Kaihouse and Cahayasmith — a foreign
- * root with an English word welded on, under the approach whose entire promise
- * is a name in another language. The model-written batches had the same fault
- * and returned HusayBoard from a run narrowed to Austronesian. The blend is a
- * fair name and now has an approach of its own; what it must not be is the
- * answer to a question nobody asked.
- */
-describe('a name in another language is in that language', () => {
-    const AUSTRONESIAN = ['Tagalog', 'Cebuano', 'Indonesian', 'Malay', 'Hawaiian', 'Māori'];
-    const roots = (from: string[]) =>
-        FOREIGN.filter((r) => from.includes(r.from)).map((r) => r.word.toLowerCase());
-
-    it('builds a foreign name out of foreign words and nothing else', () => {
-        const words = roots(AUSTRONESIAN);
-        assert.ok(words.length > 0, 'the bundled list has Austronesian roots');
-
-        const names = composeBatch(FARM, 'foreign', 40, [], 7, AUSTRONESIAN);
-        assert.ok(names.length > 0, 'the approach produced something to check');
-
-        for (const { name } of names) {
-            const lower = name.toLowerCase();
-            const english = ENDING.find((tail) => lower.endsWith(tail));
-            assert.equal(english, undefined, `${name} ends in the English word "${english}"`);
-            /*
-             * Whatever is left after removing one root has to be another root
-             * from the same list — which is what stops a second English word
-             * getting in by some other door.
-             */
-            const first = words.find((w) => lower.startsWith(w));
-            assert.ok(first, `${name} does not begin with a root from the chosen languages`);
-            const rest = lower.slice(first.length);
-            assert.ok(rest === '' || words.includes(rest), `${name} ends in "${rest}", not a root`);
-        }
-    });
-
-    it('asks for nothing at all where the languages have no words', () => {
-        assert.deepEqual(composeBatch(FARM, 'foreign', 10, [], 7, ['Klingon']), []);
     });
 });

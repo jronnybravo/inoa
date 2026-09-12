@@ -164,38 +164,23 @@ describe('connecting where the host asks for channel binding', () => {
         assert.deepEqual((await optionsNow()).extra, { enableChannelBinding: true });
     });
 
-    /* The alias speaks libpq's words, because that is what it is an alias for. */
-    it('lets PGCHANNELBINDING=disable turn it off', async () => {
-        clear();
-        process.env.DB_HOST = 'db.example.com';
-        process.env.PGCHANNELBINDING = 'disable';
-        assert.equal((await optionsNow()).extra, undefined);
-    });
-
-    it('lets the DB_ name win over the alias, as DB_SSL does over PGSSLMODE', async () => {
-        clear();
-        process.env.DB_HOST = 'db.example.com';
-        process.env.PGCHANNELBINDING = 'disable';
-        process.env.DB_CHANNEL_BINDING = 'true';
-        assert.deepEqual((await optionsNow()).extra, { enableChannelBinding: true });
-    });
-
-    /* PGSSLMODE is the variable the host's own snippet tells you to set. */
-    it('reads PGSSLMODE=disable as no TLS', async () => {
+    /*
+     * The libpq spellings are not read at all any more.
+     *
+     * PGSSLMODE and PGCHANNELBINDING used to be accepted as aliases, because
+     * they are what a managed host's own snippet hands you. Two spellings of
+     * one setting is two places to look and a silent winner when they
+     * disagree, so there is one name for each now and copying a snippet in
+     * costs a one-line edit.
+     */
+    it('ignores the libpq spellings entirely', async () => {
         clear();
         process.env.DB_HOST = 'db.example.com';
         process.env.PGSSLMODE = 'disable';
-        assert.equal((await optionsNow()).ssl, false);
-    });
-
-    it('reads verify-full as checking the chain, and require as not', async () => {
-        clear();
-        process.env.DB_HOST = 'db.example.com';
-        process.env.PGSSLMODE = 'verify-full';
-        assert.deepEqual((await optionsNow()).ssl, { rejectUnauthorized: true });
-
-        process.env.PGSSLMODE = 'require';
-        assert.deepEqual((await optionsNow()).ssl, { rejectUnauthorized: false });
+        process.env.PGCHANNELBINDING = 'disable';
+        const options = await optionsNow();
+        assert.deepEqual(options.ssl, { rejectUnauthorized: false }, 'remote still means TLS');
+        assert.deepEqual(options.extra, { enableChannelBinding: true }, 'still offered');
     });
 
     it('still lets DB_SSL win, since it is this project own switch', async () => {

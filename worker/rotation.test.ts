@@ -29,7 +29,7 @@ import { afterEach, describe, it } from 'node:test';
 import { generateNames, promptFor, sourceFor } from './generate.ts';
 import { ALL_GENERATORS } from './generators.ts';
 
-const KEYS = ['PATH', 'INOA_GENERATOR', 'INOA_AI', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'];
+const KEYS = ['PATH', 'CLAUDE_CLI', 'CODEX_CLI', 'INOA_AI', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'];
 const saved = new Map(KEYS.map((key) => [key, process.env[key]]));
 
 afterEach(() => {
@@ -66,7 +66,10 @@ function withStubs(scripts: Record<string, string>): string {
     process.env.ANTHROPIC_API_KEY = '';
     process.env.OPENAI_API_KEY = '';
     process.env.INOA_AI = '';
-    process.env.INOA_GENERATOR = '';
+    // Asked for explicitly: neither CLI is assumed, so a stub on PATH is not
+    // enough on its own to make it a source.
+    process.env.CLAUDE_CLI = 'true';
+    process.env.CODEX_CLI = 'true';
     return dir;
 }
 
@@ -215,10 +218,9 @@ describe('the approach and the source', () => {
 describe('what a request says about language', () => {
     const BRIEF = 'A review app for Filipino board and civil service examinees.';
 
-    it('tells a foreign batch not to reach for English', () => {
+    it('narrows a foreign batch to the languages chosen', () => {
         const prompt = promptFor(BRIEF, 'foreign', 10, [], ['Tagalog', 'Cebuano']);
         assert.match(prompt, /Draw only on these languages: Tagalog, Cebuano/);
-        assert.match(prompt, /Do not attach an\s+English word to a foreign one/);
     });
 
     /*
@@ -228,7 +230,7 @@ describe('what a request says about language', () => {
     for (const strategy of ['compound', 'invented', 'short'] as const) {
         it(`leaves ${strategy} unconstrained by language`, () => {
             const prompt = promptFor(BRIEF, strategy, 10, [], ['Tagalog']);
-            assert.doesNotMatch(prompt, /Draw only on these languages|Combine ONE word/);
+            assert.doesNotMatch(prompt, /Draw only on these languages/);
         });
     }
 });

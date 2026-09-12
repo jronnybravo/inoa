@@ -59,18 +59,12 @@ offer the mechanism unless handed `enableChannelBinding`, and that defaults to
 false — so a database configured with `channel_binding=require` refuses a
 connection that never offers it.
 
-Neon's own snippet gives you libpq's names rather than this project's, and both
-are accepted:
-
-```bash
-PGSSLMODE=require         # alias for DB_SSL
-PGCHANNELBINDING=require  # alias for DB_CHANNEL_BINDING
-```
-
-`PGSSLMODE` takes `disable`, `require` (encrypt without checking the chain) and
-`verify-ca`/`verify-full` (check it). Where both names are set the `DB_` one
-wins, the same way `DB_USER` and `DB_NAME` are accepted as aliases without
-displacing `DB_USERNAME` and `DB_DATABASE`.
+Neon's own snippet gives you libpq's names rather than this project's, and
+these were briefly accepted as aliases. They are not any more: two spellings of
+one setting is two places to look and a silent winner when they disagree. A
+pasted snippet costs a one-line edit — `PGSSLMODE` becomes `DB_SSL` and
+`PGCHANNELBINDING` becomes `DB_CHANNEL_BINDING`, both taking `true` or `false`
+like every other switch here.
 
 SQLite needs only `DB_TYPE=sqlite` and `DB_DATABASE=./inoa.sqlite`. Install
 the driver you use: `pg`, `mysql2`, or `better-sqlite3` (the last two are
@@ -116,10 +110,11 @@ then set `DATABASE_URL=postgresql://postgres:inoa@localhost:55432/inoa`.
 
 The worker needs a signed-in CLI: `claude login`.
 
-That is the default and it costs nothing beyond the subscription. If you have
-no Claude subscription, or you want generation to survive a usage limit rather
-than stop at one, set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` instead. Sources
-are tried in order, CLI first, and `INOA_GENERATOR` reorders them.
+That is the default and it costs nothing beyond the subscription. A Codex CLI
+on your PATH is used the same way, and two of them rotate. If you have no
+subscription at all, set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` instead — the
+keys are used only when no CLI is, so switch `CLAUDE_CLI=false` and
+`CODEX_CLI=false` to reach them on a machine that has a CLI installed.
 
 **Restart the worker after changing its code or `.env`.** Node does not reload
 a running process, so a worker started before a change keeps the old behaviour
@@ -181,15 +176,21 @@ That order is measured rather than assumed. A batch of fifty names takes
 **5.5s** — five per cent, against a cost difference of everything versus
 nothing. Both reach the same model family for what is a single-turn prompt.
 
-**API keys as failover.** A subscription that hits its usage limit used to end
-generation dead; with `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` set it moves to
-the key instead. Batches are shared only within the leading tier, so a working
-subscription is never quietly billed against a key sitting beside it.
-`INOA_GENERATOR` asks for both together when that is what you want.
+**A CLI beats a key outright.** While any CLI is switched on and present the
+keys are not touched — not as failover, not as overflow — because a
+subscription is already paid for and a key is billed by the batch. Set
+`CLAUDE_CLI=false` and `CODEX_CLI=false` to use the keys instead.
+
+**A usage limit costs one source, not the run.** A limit comes back on a clock
+rather than on a retry, so the source that reported it is set aside until it
+returns and the rest of the rotation carries the batches. Where the service
+says when — 'try again in 4 hours', 'resets at 3pm' — that is read and used;
+otherwise `INOA_LIMIT_COOLDOWN_MIN` applies. Generation only stops once
+everything configured is out at the same time.
 
 ### Without a model
 
-Set `INOA_AI=off`, or configure nothing at all, and names are composed here
+Set `INOA_AI=false`, or configure nothing at all, and names are composed here
 instead — from the brief's own vocabulary, a free thesaurus, and a bundled word
 list. No key, no subscription, no cost, and the brief never leaves the
 building.
@@ -437,21 +438,23 @@ job first and refuses anything over ten minutes without `--yes`.
 
 Everything the worker paces itself by, all optional:
 
-| variable                  | default        | what it changes                                        |
-| ------------------------- | -------------- | ------------------------------------------------------ |
-| `INOA_MODEL`              | the CLI's own  | which model the Claude CLI generates with              |
-| `INOA_GENERATOR`          | CLI, then keys | which sources generate, and in what order              |
-| `INOA_AI`                 | on             | `off` composes names here instead of asking a model    |
-| `INOA_ANTHROPIC_MODEL`    | claude-opus-5  | model for the Anthropic API source                     |
-| `INOA_OPENAI_MODEL`       | gpt-5.6        | model for the OpenAI source                            |
-| `INOA_BATCH_SIZE`         | 50             | names asked for per generation call                    |
-| `INOA_CONCURRENCY`        | 5              | generation calls in flight at once                     |
-| `INOA_CHECK_CONCURRENCY`  | 8              | names checked at once                                  |
-| `INOA_REUSE_DAYS`         | 14             | how long an earlier verdict may be reused; 0 disables  |
-| `INOA_SCRAPE_INTERVAL_MS` | 5000           | minimum gap between scrapes; 0 scrapes every name      |
-| `INOA_SCRAPE_ENGINES`     | off            | re-enable HTTP scraping, e.g. `bing` or `bing,google`  |
-| `INOA_WEB_INTERVAL_MS`    | 60000          | gap between browser web checks, when no API key is set |
-| `INOA_WEB_BACKOFF_MS`     | 1800000        | how long to stand down after a search engine objects   |
+| variable                  | default       | what it changes                                        |
+| ------------------------- | ------------- | ------------------------------------------------------ |
+| `INOA_MODEL`              | the CLI's own | which model the Claude CLI generates with              |
+| `CLAUDE_CLI`              | true          | use the signed-in Claude CLI when it is on PATH        |
+| `CODEX_CLI`               | true          | use the signed-in Codex CLI when it is on PATH         |
+| `INOA_AI`                 | true          | `false` composes names here instead of asking a model  |
+| `INOA_LIMIT_COOLDOWN_MIN` | 60            | how long a source sits out after a usage limit         |
+| `INOA_ANTHROPIC_MODEL`    | claude-opus-5 | model for the Anthropic API source                     |
+| `INOA_OPENAI_MODEL`       | gpt-5.6       | model for the OpenAI source                            |
+| `INOA_BATCH_SIZE`         | 50            | names asked for per generation call                    |
+| `INOA_CONCURRENCY`        | 5             | generation calls in flight at once                     |
+| `INOA_CHECK_CONCURRENCY`  | 8             | names checked at once                                  |
+| `INOA_REUSE_DAYS`         | 14            | how long an earlier verdict may be reused; 0 disables  |
+| `INOA_SCRAPE_INTERVAL_MS` | 5000          | minimum gap between scrapes; 0 scrapes every name      |
+| `INOA_SCRAPE_ENGINES`     | off           | re-enable HTTP scraping, e.g. `bing` or `bing,google`  |
+| `INOA_WEB_INTERVAL_MS`    | 60000         | gap between browser web checks, when no API key is set |
+| `INOA_WEB_BACKOFF_MS`     | 1800000       | how long to stand down after a search engine objects   |
 
 `INOA_WEB_INTERVAL_MS` and `INOA_WEB_BACKOFF_MS` apply only to the
 browser fallback; with any search provider configured the web check runs in the

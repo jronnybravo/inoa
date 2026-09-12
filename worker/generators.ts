@@ -21,6 +21,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { flag } from '../src/lib/server/config.ts';
 
 /** A CLI that exited badly, in the shape describeFailure() reads. */
 interface CommandFailure extends Error {
@@ -167,6 +168,20 @@ export interface Generator {
 }
 
 /**
+ * A CLI this deployment has asked for, by name.
+ *
+ * CLAUDE_CLI and CODEX_CLI take true or false like every other switch in this
+ * project's .env, and neither is assumed. Unset means no: a subscription is
+ * somebody's account and their money's worth of quota, and spending it because
+ * a binary happened to be on PATH is not a decision this should make on their
+ * behalf. Say which one you want and it is used; say nothing and the keys are
+ * reached instead, or names are composed here.
+ */
+function switchedOn(name: string): boolean {
+    return flag(name) ?? false;
+}
+
+/**
  * Is this binary on PATH?
  *
  * Cheaper than asking the CLI its version, which costs a process spawn per
@@ -187,7 +202,7 @@ function onPath(binary: string): boolean {
 const claudeCli: Generator = {
     label: 'claude-cli',
     tier: 'cli',
-    available: () => onPath('claude'),
+    available: () => switchedOn('CLAUDE_CLI') && onPath('claude'),
     complete: async (prompt) => {
         const args = ['-p', prompt, '--output-format', 'text'];
         const model = process.env.INOA_MODEL;
@@ -271,7 +286,7 @@ const openaiApi: Generator = {
 const codexCli: Generator = {
     label: 'codex-cli',
     tier: 'cli',
-    available: () => onPath('codex'),
+    available: () => switchedOn('CODEX_CLI') && onPath('codex'),
     complete: async (prompt) => {
         const args = [
             'exec',
@@ -313,70 +328,212 @@ export const ALL_GENERATORS: Generator[] = [claudeCli, codexCli, anthropicApi, o
  * not leave the building.
  */
 export function aiAllowed(): boolean {
-    const setting = (process.env.INOA_AI ?? '').trim().toLowerCase();
-    return !['off', 'no', 'false', '0'].includes(setting);
+    return flag('INOA_AI') ?? true;
 }
 
 /**
- * The sources that could answer right now, in preference order.
+ * The sources this deployment will actually use.
  *
- * INOA_GENERATOR overrides the order and the membership both, so a machine
- * with the CLI installed can still be told to use the API instead. A name it
- * does not recognise is ignored rather than fatal, matching how the scraped
- * search engines read their own list.
+ * A CLI beats a key outright, and not by a hair: a signed-in CLI spends a
+ * subscription already paid for, and a key spends money per batch. So if any
+ * CLI is switched on and present, the run rotates between the CLIs and the
+ * keys are not touched at all — not as failover, not as overflow. A machine
+ * that wants its keys used says so by switching the CLIs off.
+ *
+ * With no CLI, the keys rotate between themselves on the same terms. With
+ * neither, this is empty and names are composed here instead.
  */
 export function generators(): Generator[] {
     if (!aiAllowed()) {
         return [];
     }
+    const ready = ALL_GENERATORS.filter((generator) => generator.available());
+    const clis = ready.filter((generator) => generator.tier === 'cli');
+    return clis.length > 0 ? clis : ready.filter((generator) => generator.tier === 'api');
+}
 
-    const wanted = (process.env.INOA_GENERATOR ?? '')
-        .split(',')
-        .map((label) => label.trim().toLowerCase())
-        .filter(Boolean);
+/**
+ * Sources set aside until their quota resets, by label.
+ *
+ * Per process, which is the right lifetime: a worker is long-lived and will
+ * meet the same limit again within minutes, while a restart is a fair moment to
+ * find out whether anything has changed.
+ */
+const exhausted = new Map<string, number>();
 
-    /*
-     * An explicit list is taken at its word, order and all. Naming a CLI and a
-     * key together is a deliberate request to rotate between them, and
-     * second-guessing it would leave no way to ask for that at all.
-     */
-    if (wanted.length > 0) {
-        return wanted
-            .map((label) => ALL_GENERATORS.find((g) => g.label === label))
-            .filter((g): g is Generator => g !== undefined)
-            .filter((generator) => generator.available());
+/**
+ * The longest a source is ever set aside.
+ *
+ * A sanity bound on a reading, not a policy about windows. It started at twelve
+ * hours, on the assumption that no service shelves you for longer — and then
+ * the Codex CLI said 'try again at Oct 10th, 2026' on the twelfth of September,
+ * which is a real answer about a real monthly quota that twelve hours would
+ * have thrown away in favour of retrying hourly for a month.
+ *
+ * Thirty days honours that and still refuses nonsense. The map is per process,
+ * so restarting the worker is the escape hatch if a service comes back early.
+ */
+const MAX_SETBACK = 30 * 24 * 60 * 60 * 1000;
+
+/** Where nothing in the message says. Long enough not to hammer, short enough to recover. */
+const DEFAULT_SETBACK = Number(process.env.INOA_LIMIT_COOLDOWN_MIN ?? 60) * 60 * 1000;
+
+/**
+ * When a service says its quota comes back, if it says at all.
+ *
+ * Every one of these has been seen in the wild from one CLI or the other, and
+ * none of them is a format either service promises to keep — so each is tried,
+ * nothing is required, and a message that matches none of them falls back to
+ * the cooldown rather than to a guess dressed up as a reading.
+ *
+ * Exported for the tests, which is the only way to pin behaviour that depends
+ * on somebody else's error text.
+ */
+export function resetAt(said: string, now: number = Date.now()): number | undefined {
+    const capped = (at: number): number | undefined =>
+        at > now && at - now <= MAX_SETBACK ? at : undefined;
+
+    // 'try again in 4 hours 12 minutes', 'retry in 30 minutes'
+    const relative =
+        /(?:try again|retry|available again|back) in\s+(?:(\d+)\s*h(?:ours?)?)?\s*(?:(\d+)\s*m(?:in(?:utes?)?)?)?/i.exec(
+            said
+        );
+    if (relative && (relative[1] || relative[2])) {
+        const ms = (Number(relative[1] ?? 0) * 60 + Number(relative[2] ?? 0)) * 60 * 1000;
+        return capped(now + ms);
     }
 
-    return ALL_GENERATORS.filter((generator) => generator.available());
+    /*
+     * A written-out date and time, which is what the Codex CLI actually says:
+     * 'try again at Oct 10th, 2026 9:31 PM'. The ordinal suffix has to come off
+     * first — Date.parse handles 'Oct 10, 2026 9:31 PM' and not 'Oct 10th'.
+     */
+    const written =
+        /(?:try again|retry|available again|back|reset[a-z]*)\s+(?:at|on)\s+([A-Z][a-z]{2,8}\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}(?:,?\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?)?)/i.exec(
+            said
+        );
+    if (written?.[1]) {
+        const at = Date.parse(written[1].replace(/(\d+)(?:st|nd|rd|th)/i, '$1'));
+        if (!Number.isNaN(at)) {
+            return capped(at);
+        }
+    }
+
+    // An explicit instant: ISO 8601, or the epoch seconds some CLIs print.
+    const iso =
+        /reset[^.]*?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)/i.exec(
+            said
+        );
+    if (iso?.[1]) {
+        const at = Date.parse(iso[1].replace(' ', 'T'));
+        if (!Number.isNaN(at)) {
+            return capped(at);
+        }
+    }
+    const epoch = /reset[^.]*?\b(1[0-9]{9})\b/i.exec(said);
+    if (epoch?.[1]) {
+        return capped(Number(epoch[1]) * 1000);
+    }
+
+    // 'your limit will reset at 3pm' / 'resets at 15:00'
+    const clock = /reset[^.]*?\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i.exec(said);
+    if (clock?.[1]) {
+        let hour = Number(clock[1]);
+        const meridiem = clock[3]?.toLowerCase();
+        if (meridiem === 'pm' && hour < 12) {
+            hour += 12;
+        }
+        if (meridiem === 'am' && hour === 12) {
+            hour = 0;
+        }
+        const at = new Date(now);
+        at.setHours(hour, Number(clock[2] ?? 0), 0, 0);
+        // Already past today means they mean tomorrow.
+        return capped(at.getTime() > now ? at.getTime() : at.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    return undefined;
 }
 
 /**
- * The sources a healthy run shares its batches between.
+ * Set a source aside because it is out of quota.
  *
- * The leading tier only, which is the whole point: rotation is for spreading
- * load and widening the shortlist between equals, and a subscription and a
- * metered key are not equals. Rotating across both would quietly bill a
- * machine whose CLI was working perfectly well.
- *
- * Everything below this stays in `generators()` as failover — which is what a
- * key was added for in the first place. A subscription that hits its usage
- * limit used to end generation dead; it now moves to the next source, and an
- * earlier version of this tiering had silently taken that away by refusing to
- * cross from one tier to the other at all.
+ * A usage limit resets on a clock rather than on a retry, so asking again
+ * immediately spends nothing but time. Setting the one source aside — rather
+ * than ending the run, which is what used to happen — leaves whatever else is
+ * configured to carry the rest of the batches.
  */
-export function rotation(sources: Generator[] = generators()): Generator[] {
-    const leading = sources[0]?.tier;
-    return leading ? sources.filter((source) => source.tier === leading) : [];
+export function noteUsageLimit(label: string, said: string, now: number = Date.now()): number {
+    const until = resetAt(said, now) ?? now + DEFAULT_SETBACK;
+    exhausted.set(label, Math.max(until, exhausted.get(label) ?? 0));
+    return exhausted.get(label) ?? until;
+}
+
+/** When this source can be asked again, or undefined if it can be asked now. */
+export function setAsideUntil(label: string, now: number = Date.now()): number | undefined {
+    const until = exhausted.get(label);
+    if (until === undefined) {
+        return undefined;
+    }
+    if (until <= now) {
+        exhausted.delete(label);
+        return undefined;
+    }
+    return until;
+}
+
+/** Exported for the tests: the map is per process and outlives a case. */
+export function clearUsageLimits(): void {
+    exhausted.clear();
 }
 
 /**
- * Whether a model will be asked for the names.
+ * The configured sources that are not currently out of quota.
  *
- * Not 'whether names can be produced' any more, which is what this used to
- * mean: false now sends the run to the deterministic composer rather than
- * stopping it. The distinction matters to anything reporting what a run is
- * about to do, and nothing else should be branching on it.
+ * Distinct from generators() on purpose. That answers 'is anything set up',
+ * which decides whether a run generates or composes; this answers 'can
+ * anything answer right now', which decides where a batch goes. Reading one
+ * for the other would turn a temporary limit into a run of composed names with
+ * nothing saying why.
  */
+export function usable(now: number = Date.now()): Generator[] {
+    return generators().filter((generator) => setAsideUntil(generator.label, now) === undefined);
+}
+
+/**
+ * Does anything this run reaches have a quota to come back?
+ *
+ * Says when, so the line a person reads is 'nothing until 3pm' rather than
+ * 'nothing'.
+ */
+export function exhaustedUntil(now: number = Date.now()): number | undefined {
+    const times = generators()
+        .map((generator) => setAsideUntil(generator.label, now))
+        .filter((at): at is number => at !== undefined);
+    return times.length === generators().length && times.length > 0
+        ? Math.min(...times)
+        : undefined;
+}
+
+/**
+ * Whether a failure is a quota rather than a fault.
+ *
+ * It presents as every batch failing at once, which is indistinguishable from
+ * an outage unless you read the message — and it resets on a clock rather than
+ * on a retry, so a short backoff cannot help.
+ */
+export function isUsageLimit(error: unknown): boolean {
+    return /usage limit|rate limit|limit reached|too many requests|429|quota exceeded/i.test(
+        saidBy(error)
+    );
+}
+
+/** Everything a failed source told us, for reading a limit out of. */
+export function saidBy(error: unknown): string {
+    const e = error as Partial<Error> & { stderr?: string; stdout?: string };
+    return `${e.stderr ?? ''} ${e.stdout ?? ''} ${e.message ?? ''}`;
+}
+
 export function hasGenerator(): boolean {
     return generators().length > 0;
 }

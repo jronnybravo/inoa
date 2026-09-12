@@ -16,9 +16,20 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
-import { ALL_GENERATORS, aiAllowed, generators, hasGenerator, rotation } from './generators.ts';
+import {
+    ALL_GENERATORS,
+    aiAllowed,
+    clearUsageLimits,
+    exhaustedUntil,
+    generators,
+    hasGenerator,
+    noteUsageLimit,
+    resetAt,
+    setAsideUntil,
+    usable
+} from './generators.ts';
 
-const KEYS = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'INOA_GENERATOR', 'INOA_AI', 'PATH'];
+const KEYS = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'CLAUDE_CLI', 'CODEX_CLI', 'INOA_AI', 'PATH'];
 const saved = new Map(KEYS.map((key) => [key, process.env[key]]));
 
 /**
@@ -47,7 +58,13 @@ const withoutCli = (): void => {
 };
 
 function only(configured: Record<string, string> = {}): void {
-    for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'INOA_GENERATOR', 'INOA_AI']) {
+    for (const key of [
+        'ANTHROPIC_API_KEY',
+        'OPENAI_API_KEY',
+        'CLAUDE_CLI',
+        'CODEX_CLI',
+        'INOA_AI'
+    ]) {
         Reflect.deleteProperty(process.env, key);
     }
     for (const [key, value] of Object.entries(configured)) {
@@ -58,6 +75,7 @@ function only(configured: Record<string, string> = {}): void {
 const labels = (): string[] => generators().map((g) => g.label);
 
 afterEach(() => {
+    clearUsageLimits();
     for (const [key, value] of saved) {
         if (value === undefined) {
             Reflect.deleteProperty(process.env, key);
@@ -76,14 +94,14 @@ describe('what counts as configured', () => {
     });
 
     it('offers the CLI on its own, with no key anywhere', () => {
-        only();
+        only({ CLAUDE_CLI: 'true' });
         withCli('claude');
         assert.deepEqual(labels(), ['claude-cli']);
         assert.equal(hasGenerator(), true);
     });
 
     it('offers both CLIs when both are installed, so a run can rotate', () => {
-        only();
+        only({ CLAUDE_CLI: 'true', CODEX_CLI: 'true' });
         withCli('claude', 'codex');
         assert.deepEqual(labels(), ['claude-cli', 'codex-cli']);
     });
@@ -114,76 +132,97 @@ describe('what counts as configured', () => {
     });
 });
 
-describe('the order they are tried in', () => {
+describe('a CLI beats a key outright', () => {
     /*
-     * A subscription beats a key, measured rather than assumed: a batch of
-     * fifty names takes about 108 seconds through the CLI, of which the
-     * process spawn is 5.5. Five per cent, against a cost difference of
-     * everything versus nothing.
+     * Not by a hair, and not as a preference that can be overflowed past. A
+     * signed-in CLI spends a subscription already paid for; a key spends money
+     * per batch. So the keys are not touched at all while a CLI is working —
+     * not as failover, not as overflow — and a machine that wants its keys used
+     * says so by switching the CLIs off.
      */
-    it('prefers the CLI over both paid APIs', () => {
-        only({ ANTHROPIC_API_KEY: 'a', OPENAI_API_KEY: 'b' });
+    it('ignores the keys entirely when a CLI is on', () => {
+        only({ CLAUDE_CLI: 'true', ANTHROPIC_API_KEY: 'a', OPENAI_API_KEY: 'b' });
         withCli('claude');
-        assert.deepEqual(labels(), ['claude-cli', 'anthropic', 'openai']);
+        assert.deepEqual(labels(), ['claude-cli']);
     });
 
-    it('falls to the APIs in a fixed order when no CLI is installed', () => {
+    it('rotates between the CLIs, and still ignores the keys', () => {
+        only({ CLAUDE_CLI: 'true', CODEX_CLI: 'true', ANTHROPIC_API_KEY: 'a' });
+        withCli('claude', 'codex');
+        assert.deepEqual(labels(), ['claude-cli', 'codex-cli']);
+    });
+
+    it('uses the keys when no CLI is installed', () => {
         only({ OPENAI_API_KEY: 'b', ANTHROPIC_API_KEY: 'a' });
         withoutCli();
         assert.deepEqual(labels(), ['anthropic', 'openai']);
     });
 
-    it('rotates the CLIs and keeps the keys underneath as failover', () => {
-        only({ ANTHROPIC_API_KEY: 'a' });
-        withCli('claude', 'codex');
-        assert.deepEqual(labels(), ['claude-cli', 'codex-cli', 'anthropic']);
-        assert.deepEqual(
-            rotation().map((g) => g.label),
-            ['claude-cli', 'codex-cli']
-        );
+    it('offers nothing when neither is there, and names get composed', () => {
+        only();
+        withoutCli();
+        assert.deepEqual(labels(), []);
+        assert.equal(hasGenerator(), false);
     });
 });
 
-describe('which sources share the batches', () => {
+describe('CLAUDE_CLI and CODEX_CLI', () => {
     /*
-     * Rotation is for spreading load between equals, and a subscription and a
-     * metered key are not equals. Everything below the leading tier stays
-     * reachable as failover, which is the entire reason to set a key on a
-     * machine that already has a subscription.
+     * Neither is assumed. A subscription is somebody's account and their
+     * money's worth of quota, and spending it because a binary happened to be
+     * on PATH is not a decision this should make for them.
      */
-    it('shares batches within the leading tier only', () => {
-        only({ ANTHROPIC_API_KEY: 'a', OPENAI_API_KEY: 'b' });
-        withCli('claude');
-        assert.deepEqual(
-            rotation().map((g) => g.label),
-            ['claude-cli']
-        );
-    });
-
-    it('keeps the paid sources reachable underneath it', () => {
-        only({ ANTHROPIC_API_KEY: 'a', OPENAI_API_KEY: 'b' });
-        withCli('claude');
-        const spare = generators().filter((g) => !rotation().includes(g));
-        assert.deepEqual(
-            spare.map((g) => g.label),
-            ['anthropic', 'openai'],
-            'a usage limit on the subscription has somewhere to go'
-        );
-    });
-
-    it('rotates between the keys when they are the leading tier', () => {
-        only({ ANTHROPIC_API_KEY: 'a', OPENAI_API_KEY: 'b' });
-        withoutCli();
-        assert.deepEqual(
-            rotation().map((g) => g.label),
-            ['anthropic', 'openai']
-        );
-    });
-
-    it('has nothing to share when nothing is configured', () => {
+    it('leaves an installed CLI alone until it is asked for', () => {
         only();
+        withCli('claude', 'codex');
+        assert.deepEqual(labels(), []);
+    });
+
+    it('uses the one it is told to, and only that one', () => {
+        only({ CODEX_CLI: 'true' });
+        withCli('claude', 'codex');
+        assert.deepEqual(labels(), ['codex-cli']);
+    });
+
+    it('rotates the ones it is told to', () => {
+        only({ CLAUDE_CLI: 'true', CODEX_CLI: 'true' });
+        withCli('claude', 'codex');
+        assert.deepEqual(labels(), ['claude-cli', 'codex-cli']);
+    });
+
+    /*
+     * The keys are reached by asking for no CLI, which is also the default —
+     * so a machine with a key and nothing else set up simply works.
+     */
+    it('uses the keys when no CLI is asked for', () => {
+        only({ ANTHROPIC_API_KEY: 'a' });
+        withCli('claude', 'codex');
+        assert.deepEqual(labels(), ['anthropic']);
+    });
+
+    it('ignores the keys the moment a CLI is asked for', () => {
+        only({ CLAUDE_CLI: 'true', ANTHROPIC_API_KEY: 'a' });
+        withCli('claude', 'codex');
+        assert.deepEqual(labels(), ['claude-cli']);
+    });
+
+    it('reads the same true and false as every other switch here', () => {
+        for (const on of ['true', '1', 'on', 'yes', 'TRUE', '  on  ']) {
+            only({ CLAUDE_CLI: on });
+            withCli('claude');
+            assert.deepEqual(labels(), ['claude-cli'], `${JSON.stringify(on)} should switch it on`);
+        }
+        for (const off of ['false', '0', 'off', 'no', '']) {
+            only({ CLAUDE_CLI: off });
+            withCli('claude');
+            assert.deepEqual(labels(), [], `${JSON.stringify(off)} should leave it off`);
+        }
+    });
+
+    it('cannot conjure a CLI that is not installed', () => {
+        only({ CLAUDE_CLI: 'true' });
         withoutCli();
-        assert.deepEqual(rotation(), []);
+        assert.deepEqual(labels(), []);
     });
 });
 
@@ -203,78 +242,16 @@ describe('INOA_AI', () => {
     }
 
     it('leaves the sources alone when set to anything else', () => {
-        only({ ANTHROPIC_API_KEY: 'a' });
+        only({ CLAUDE_CLI: 'true', ANTHROPIC_API_KEY: 'a' });
         withCli('claude');
         process.env.INOA_AI = 'on';
         assert.equal(aiAllowed(), true);
-        assert.deepEqual(labels(), ['claude-cli', 'anthropic']);
+        assert.deepEqual(labels(), ['claude-cli']);
     });
 
     it('is on by default, because most runs want a model', () => {
         only({ ANTHROPIC_API_KEY: 'a' });
         assert.equal(aiAllowed(), true);
-    });
-});
-
-describe('INOA_GENERATOR', () => {
-    it('overrides the order outright', () => {
-        only({ INOA_GENERATOR: 'openai,claude-cli', OPENAI_API_KEY: 'b' });
-        withCli('claude');
-        assert.deepEqual(labels(), ['openai', 'claude-cli']);
-    });
-
-    it('narrows to one source, so a subscription can be left alone', () => {
-        only({ INOA_GENERATOR: 'anthropic', ANTHROPIC_API_KEY: 'a' });
-        assert.deepEqual(labels(), ['anthropic']);
-    });
-
-    it('is case and whitespace insensitive, since it is typed into a .env', () => {
-        only({ INOA_GENERATOR: '  OPENAI , claude-cli ', OPENAI_API_KEY: 'b' });
-        withCli('claude');
-        assert.deepEqual(labels(), ['openai', 'claude-cli']);
-    });
-
-    /*
-     * A typo should cost you that source, not the run. Naming a source with
-     * no key still drops it: asking for something unusable is not a reason to
-     * pretend it is available.
-     */
-    it('ignores a name it does not know', () => {
-        only({ INOA_GENERATOR: 'gemini,claude-cli' });
-        withCli('claude');
-        assert.deepEqual(labels(), ['claude-cli']);
-    });
-
-    it('still drops a named source that has no key behind it', () => {
-        only({ INOA_GENERATOR: 'openai' });
-        withoutCli();
-        assert.deepEqual(labels(), []);
-    });
-
-    it('falls back to the default order when set to nothing', () => {
-        only({ INOA_GENERATOR: '   ', ANTHROPIC_API_KEY: 'a' });
-        withCli('claude');
-        assert.deepEqual(labels(), ['claude-cli', 'anthropic']);
-    });
-
-    /*
-     * Naming a key and a CLI together is a deliberate request to rotate
-     * between them — the one way to ask a healthy subscription to share the
-     * work with something metered, which the defaults will never do.
-     */
-    it('rotates across tiers when told to, which the defaults never do', () => {
-        only({ INOA_GENERATOR: 'anthropic,claude-cli', ANTHROPIC_API_KEY: 'a' });
-        withCli('claude');
-        const sources = generators();
-        assert.deepEqual(
-            sources.map((g) => g.label),
-            ['anthropic', 'claude-cli']
-        );
-        assert.deepEqual(
-            rotation(sources).map((g) => g.label),
-            ['anthropic'],
-            'the list is honoured in order, and its head still leads'
-        );
     });
 });
 
@@ -291,5 +268,158 @@ describe('the source list itself', () => {
             assert.equal(typeof generator.available, 'function');
             assert.equal(typeof generator.complete, 'function');
         }
+    });
+});
+
+/**
+ * A quota is not a fault, and does not deserve the next batch.
+ *
+ * A usage limit comes back on a clock rather than on a retry, so asking again
+ * spends the next window's allowance and nothing else. Generation used to end
+ * the moment any source reported one — even with a second CLI sitting idle
+ * beside it — so a limit on one subscription cost the whole run.
+ */
+describe('a source that has run out of quota', () => {
+    const NOW = Date.parse('2026-09-12T10:00:00Z');
+    const limited = (said: string) => noteUsageLimit('claude-cli', said, NOW);
+
+    it('is set aside, leaving the rest of the rotation to carry on', () => {
+        only({ CLAUDE_CLI: 'true', CODEX_CLI: 'true' });
+        withCli('claude', 'codex');
+        limited('Claude usage limit reached.');
+        assert.deepEqual(
+            usable(NOW).map((g) => g.label),
+            ['codex-cli'],
+            'the other CLI keeps the run going'
+        );
+        // Still CONFIGURED, which is what decides generate against compose.
+        assert.deepEqual(labels(), ['claude-cli', 'codex-cli']);
+    });
+
+    it('comes back by itself once the window has passed', () => {
+        only({ CLAUDE_CLI: 'true' });
+        withCli('claude');
+        const until = limited('usage limit reached');
+        assert.equal(setAsideUntil('claude-cli', NOW), until);
+        assert.equal(setAsideUntil('claude-cli', until + 1), undefined);
+        assert.deepEqual(
+            usable(until + 1).map((g) => g.label),
+            ['claude-cli']
+        );
+    });
+
+    /*
+     * Nothing left is a different thing from nothing configured, and the two
+     * must not be confused: one is a run that waits, the other is a run that
+     * composes its names from a word list.
+     */
+    it('reports when the first one returns, once they are all out', () => {
+        only({ CLAUDE_CLI: 'true', CODEX_CLI: 'true' });
+        withCli('claude', 'codex');
+        limited('usage limit reached');
+        noteUsageLimit('codex-cli', 'usage limit reached', NOW + 60_000);
+        assert.deepEqual(
+            usable(NOW).map((g) => g.label),
+            []
+        );
+        assert.equal(exhaustedUntil(NOW), setAsideUntil('claude-cli', NOW));
+    });
+
+    it('says nothing is exhausted while something can still answer', () => {
+        only({ CLAUDE_CLI: 'true', CODEX_CLI: 'true' });
+        withCli('claude', 'codex');
+        limited('usage limit reached');
+        assert.equal(exhaustedUntil(NOW), undefined);
+    });
+
+    it('keeps the longer of two limits rather than shortening one', () => {
+        only({ CLAUDE_CLI: 'true' });
+        withCli('claude');
+        const far = limited('try again in 6 hours');
+        const near = limited('try again in 10 minutes');
+        assert.equal(near, far, 'a shorter reading must not release it early');
+    });
+});
+
+/**
+ * Reading a reset time out of somebody else's error text.
+ *
+ * None of these formats is promised by the service that prints it, so each is
+ * tried and none is required: a message that matches nothing falls back to a
+ * cooldown rather than to a guess dressed up as a reading.
+ */
+describe('when a service says its quota comes back', () => {
+    const NOW = Date.parse('2026-09-12T10:00:00Z');
+    const at = (said: string) => resetAt(said, NOW);
+
+    it('reads a wait in hours and minutes', () => {
+        assert.equal(
+            at('You have hit your usage limit. Try again in 4 hours 12 minutes.'),
+            NOW + (4 * 60 + 12) * 60_000
+        );
+        assert.equal(at('rate limited — retry in 30 minutes'), NOW + 30 * 60_000);
+        assert.equal(at('try again in 2h'), NOW + 2 * 60 * 60_000);
+    });
+
+    /*
+     * Verbatim from the Codex CLI, met in a real run. It is the format that
+     * made the case for every other decision here: a written-out date with an
+     * ordinal Date.parse will not take, naming a reset a MONTH out — which the
+     * cap used to refuse in favour of retrying hourly until then.
+     */
+    it('reads what the Codex CLI actually prints', () => {
+        const said =
+            "ERROR: You've hit your usage limit. Upgrade to Plus to continue using Codex " +
+            '(https://chatgpt.com/explore/plus), or try again at Oct 10th, 2026 9:31 PM.';
+        assert.equal(at(said), new Date(2026, 9, 10, 21, 31).getTime());
+    });
+
+    it('reads an explicit instant', () => {
+        assert.equal(
+            at('Your limit will reset at 2026-09-12T11:30:00Z'),
+            Date.parse('2026-09-12T11:30:00Z')
+        );
+        assert.equal(at(`limit resets ${Math.floor(NOW / 1000) + 3600}`), NOW + 3_600_000);
+    });
+
+    /*
+     * Built from the local clock rather than written down, because 'at 3pm'
+     * means three in the afternoon wherever the worker is running and a fixed
+     * expectation would pass in one timezone and fail in the next.
+     */
+    it('reads a clock time as the next time it comes round', () => {
+        const local = new Date(NOW);
+        const soon = (local.getHours() + 2) % 24;
+        const at2 = at(`Your limit will reset at ${soon}:00`);
+        assert.ok(at2, 'a time two hours out should be read');
+        assert.equal(at2, NOW + 2 * 60 * 60 * 1000);
+    });
+
+    /*
+     * A time already gone today means tomorrow, which is more than twelve
+     * hours away and so refused by the cap below — the cooldown covers it
+     * instead. Better a source retried in an hour than one shelved overnight
+     * on the strength of a clock reading.
+     */
+    it('takes a clock time already past today as tomorrow', () => {
+        const local = new Date(NOW);
+        const gone = (local.getHours() + 23) % 24;
+        const tomorrow = at(`your limit will reset at ${gone}:00`);
+        assert.ok(tomorrow, 'a time gone today means the next one');
+        assert.ok(tomorrow > NOW && tomorrow - NOW < 24 * 60 * 60 * 1000);
+    });
+
+    /*
+     * A misread must not take a source out for a week, and a reading that is
+     * already in the past is not a reading at all.
+     */
+    it('refuses a time that is absurd or already gone', () => {
+        assert.equal(at('reset at 2020-01-01T00:00:00Z'), undefined);
+        assert.equal(at('try again at Jan 1st, 2099 9:00 AM'), undefined);
+    });
+
+    it('says nothing about a message that names no time', () => {
+        assert.equal(at('Claude usage limit reached.'), undefined);
+        assert.equal(at(''), undefined);
     });
 });

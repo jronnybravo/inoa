@@ -287,30 +287,17 @@ function compose(
         }
 
         /*
-         * A second root, from the same language — not an English tail.
+         * An English tail, which makes a blend — Kaihouse, Awafield.
          *
-         * This used to reach for ENDING, and produced Awafield, Kaihouse and
-         * Cahayasmith: a foreign word with an English one welded to it, under
-         * the approach whose entire promise is a name in another language. It
-         * is the same fault the model-written batches had, sitting in the
-         * deterministic path where it could not be blamed on a model. That
-         * shape now has an approach of its own, and this one stays in-language.
+         * Briefly forbidden in favour of a second root from the same language,
+         * after HusayBoard. Allowed again for the reason the prompt gives: the
+         * blends are the names that are still available, and the pattern has
+         * Tokopedia and Gojek behind it.
          */
-        const sameTongue = roots.filter((r) => r.from === root.from && r.word !== root.word);
-        if (sameTongue.length === 0) {
-            return {
-                name: capitalise(root.word),
-                rationale: `${root.word} — ${root.from} for ${root.gloss}`,
-                strategy
-            };
-        }
-        const second = pick(sameTongue, rand);
-        if (root.word.length > MAX_PART || second.word.length > MAX_PART) {
-            return null;
-        }
+        const tail = pick(ENDING, rand);
         return {
-            name: capitalise(root.word + second.word),
-            rationale: `${root.word} + ${second.word} — ${root.from} for ${root.gloss}, ${second.gloss}`,
+            name: capitalise(root.word) + tail,
+            rationale: `${root.word} (${root.from}, ${root.gloss}) + ${tail}`,
             strategy
         };
     }

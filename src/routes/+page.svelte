@@ -2228,12 +2228,25 @@
                                           : `${r.label} is reported but never drops a name. Click to require it.`
                                       : `${r.label} is not checked at all. Click to check it.`}
                                 class="flex items-center gap-1.5 {must
-                                    ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-800/50'
+                                    ? 'border-stone-900 bg-stone-50 dark:border-stone-100 dark:bg-stone-700'
                                     : on
                                       ? ''
                                       : 'text-stone-500 dark:text-stone-400'}"
                             >
                                 {r.label}
+                                <!--
+                                    stone-700, not stone-800/50.
+
+                                    These three are Buttons rather than the bare
+                                    spans the TLD and handle chips use, so they
+                                    already carry an opaque stone-800. Painting
+                                    the required state at half alpha over that
+                                    made it DARKER than the two beside it: the
+                                    strongest state read as the faintest, and an
+                                    unchecked Web chip looked more selected than
+                                    a required App Store. A step lighter, and it
+                                    reads as raised.
+                                -->
                                 {#if on}
                                     <FieldIcon
                                         paths={linkOnly

@@ -2,6 +2,7 @@ import { runChecks } from '$lib/checks';
 import { db } from '$lib/server/db';
 import { Candidate } from '$lib/server/entities/candidate';
 import { Run } from '$lib/server/entities/run';
+import { OWN_SOURCE } from '$lib/types';
 import type { PageServerLoad } from './$types';
 
 /** Enough to scroll, few enough that the page stays one query. */
@@ -40,9 +41,19 @@ export const load: PageServerLoad = async () => {
             .select('c.runId', 'runId')
             .addSelect('COUNT(*)', 'total')
             .addSelect('COUNT(CASE WHEN c.passed THEN 1 END)', 'passed')
+            /*
+             * Counted apart, because targetCount does not govern them.
+             *
+             * That field asks how many names to GENERATE, and a card that
+             * counted the ones somebody typed in themselves against it read
+             * '54 of 50 names' — a run that had done exactly what it was asked
+             * looking like it had overshot.
+             */
+            .addSelect(`COUNT(CASE WHEN c.source = :own THEN 1 END)`, 'brought')
+            .setParameter('own', OWN_SOURCE)
             .where('c.runId IN (:...ids)', { ids: runs.map((r) => r.id) })
             .groupBy('c.runId')
-            .getRawMany<{ runId: string; total: string; passed: string }>();
+            .getRawMany<{ runId: string; total: string; passed: string; brought: string }>();
 
         const byRun = new Map(tallies.map((t) => [t.runId, t]));
 
@@ -58,7 +69,8 @@ export const load: PageServerLoad = async () => {
                     requiredCount: required.length,
                     targetCount: run.targetCount,
                     generatedCount: run.generatedCount,
-                    names: Number(tally?.total ?? 0),
+                    names: Number(tally?.total ?? 0) - Number(tally?.brought ?? 0),
+                    brought: Number(tally?.brought ?? 0),
                     passed: Number(tally?.passed ?? 0),
                     createdAt: run.createdAt.toISOString(),
                     finishedAt: run.finishedAt ? run.finishedAt.toISOString() : null

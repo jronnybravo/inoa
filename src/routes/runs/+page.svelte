@@ -87,11 +87,24 @@
                            transition-colors duration-100 hover:border-stone-400
                            dark:border-stone-800 dark:bg-stone-900 dark:hover:border-stone-600"
                 >
+                    <!--
+                        The brief takes the room, and the status keeps its line.
+
+                        Both were plain flex children, so a brief long enough to
+                        wrap pushed the status onto a line of its own — where
+                        justify-between put it hard against the LEFT edge, under
+                        the sentence, while every shorter card had it top right.
+                        min-w-0 lets the paragraph shrink and wrap inside its own
+                        column instead of shoving its neighbour down.
+                    -->
                     <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                        <p class="text-sm font-medium text-stone-900 dark:text-stone-100">
+                        <p
+                            class="min-w-0 flex-1 text-sm font-medium text-stone-900
+                                   dark:text-stone-100"
+                        >
                             {run.brief}
                         </p>
-                        <span class="flex items-center gap-1.5 text-xs whitespace-nowrap">
+                        <span class="flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap">
                             <span class="h-1.5 w-1.5 rounded-full {STATUS_TONE[run.status]}"></span>
                             <!-- Total over every RunStatus, so there is no case to fall back to. -->
                             {STATUS_WORD[run.status]}
@@ -111,6 +124,12 @@
                             -->
                             {run.names.toLocaleString()} of {run.targetCount.toLocaleString()} names
                         </span>
+                        {#if run.brought > 0}
+                            <!-- Beside the total rather than inside it: nobody generated these. -->
+                            <span class="tabular-nums"
+                                >{run.brought.toLocaleString()} of your own</span
+                            >
+                        {/if}
                         {#if run.names > 0}
                             <span class="tabular-nums">{run.passed.toLocaleString()} passing</span>
                         {/if}

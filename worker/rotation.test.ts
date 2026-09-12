@@ -251,8 +251,20 @@ describe('what a request does with the names somebody brought', () => {
         const prompt = promptFor(BRIEF, 'compound', 10, LIKED, [], LIKED);
         assert.match(prompt, /Names the person came up with themselves:/);
         assert.match(prompt, /Husaybook, Tandadeck/);
-        assert.match(prompt, /let it shape what you write/);
-        assert.match(prompt, /do not hand back respellings or near-variants/);
+        assert.match(prompt, /no respellings or near-variants/);
+    });
+
+    /*
+     * One influence, not the brief's replacement. Told plainly to let these
+     * shape what it wrote, a run from four Tagalog-and-English blends came back
+     * as fifty of them — a person's taste read back to them rather than a
+     * shortlist, which is the opposite of why anybody asks a machine for names.
+     */
+    it('asks for them as one influence among several, not the whole list', () => {
+        const prompt = promptFor(BRIEF, 'compound', 10, LIKED, [], LIKED);
+        assert.match(prompt, /ONE influence among several/);
+        assert.match(prompt, /not the shape of the whole/);
+        assert.match(prompt, /the rest should go\s+somewhere they would not have thought of/);
     });
 
     /*

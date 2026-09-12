@@ -1156,6 +1156,41 @@
     let stopDialog = $state<HTMLDialogElement | null>(null);
     let stopping = $state(false);
 
+    /**
+     * How many more to look for, beside the button that asks.
+     *
+     * It used to double the target with nothing to say so, which is the right
+     * guess and the wrong amount as often as not — a run that found three good
+     * names out of fifty wants another fifty, one that found forty wants five.
+     * Seeded from the run's own target, because a person who asked for fifty
+     * thinks in fifties, and editable because that is the point.
+     *
+     * undefined rather than 0 for an empty box: Svelte binds a number input to
+     * a number, and clearing it to retype gives undefined rather than ''. A
+     * field that cannot be emptied cannot be retyped.
+     */
+    let more = $state<number | undefined>(data.run?.targetCount);
+    const moreUsable = $derived(
+        more !== undefined && Number.isInteger(more) && more > 0 && more <= 2000
+    );
+
+    /*
+     * Seeded once, and then left alone.
+     *
+     * A run reached from the form rather than from a link arrives after this
+     * component does, so the first sight of one fills the box — but only the
+     * first. Refilling it whenever it is empty would mean a box that cannot be
+     * cleared to retype, and refilling it on every poll would mean a box that
+     * undoes what you just typed.
+     */
+    let moreSeeded = $state(data.run !== null);
+    $effect(() => {
+        if (run && !moreSeeded) {
+            more = run.targetCount;
+            moreSeeded = true;
+        }
+    });
+
     async function stopRun() {
         if (!run) {
             return;
@@ -1284,7 +1319,7 @@
      * Changing something first is neither of these — that is `?from=`, which
      * is this run's settings loaded into the compose form.
      */
-    async function rerun(mode: 'fresh' | 'continue') {
+    async function rerun(mode: 'fresh' | 'continue', more?: number) {
         const current = run;
         if (!current || rerunning) {
             return;
@@ -1295,7 +1330,7 @@
             const response = await fetch(`/api/runs/${current.id}/rerun`, {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ mode })
+                body: JSON.stringify({ mode, more })
             });
             const body = (await response.json()) as { id?: string; message?: string };
             if (!response.ok || !body.id) {
@@ -2572,15 +2607,6 @@
                     ></span>
                 </span>
                 <span class="text-sm font-medium">{STATUS_LABEL[run.status] ?? run.status}</span>
-
-                {#if stoppable}
-                    <button
-                        onclick={() => stopDialog?.showModal()}
-                        class="ml-2 rounded border border-stone-500 px-2 py-0.5 text-xs
-                               transition-colors duration-100 hover:bg-stone-200
-                               dark:hover:bg-stone-800">Stop</button
-                    >
-                {/if}
             </div>
 
             {#each progress as stat (stat.label)}
@@ -2609,35 +2635,85 @@
             {/each}
 
             <!--
-                Three ways to run this again, where the run's own numbers are.
+                Everything you can do to this run, in one place.
+
+                Stop used to sit against the status pill at the far left while
+                the three ways of running it again sat at the far right, which
+                made the row's own two halves disagree about where a control
+                lives. They are one group now, and the first button is whichever
+                one the run's state admits: Stop while it is working, Continue
+                once it has been stopped, nothing when it is done.
 
                 'Again' means two different things and the difference is the
                 whole decision: a brief that produced nothing usable wants a
                 clean sheet, one that produced four good names wants a fifth —
-                and starting over would throw those four away along with every
+                and restarting would throw those four away along with every
                 check paid for.
 
                 Changing something first is the third, and it is a link rather
                 than a button: it goes to the compose form with these settings
                 in it, which is the screen for editing settings.
             -->
-            {#if finished}
-                <div class="ml-auto flex flex-wrap items-center gap-2">
+            <div class="ml-auto flex flex-wrap items-center gap-2">
+                {#if stoppable}
                     <Button
-                        onclick={() => rerun('continue')}
+                        onclick={() => stopDialog?.showModal()}
+                        color="alternative"
+                        size="sm"
+                        title="Keep everything found so far and stop looking.">Stop</Button
+                    >
+                {:else if run.status === 'stopped'}
+                    <!--
+                        Not 'find more': this run has a target it never reached,
+                        so carrying on asks for nothing new — which is `more: 0`
+                        and the reason that endpoint takes a number at all.
+                    -->
+                    <Button
+                        onclick={() => rerun('continue', 0)}
                         disabled={rerunning !== ''}
                         color="alternative"
                         size="sm"
-                        title="Keep every name and verdict here, and look for as many again."
-                        >{rerunning === 'continue' ? 'Asking…' : 'Find more'}</Button
+                        title="Pick this up where it stopped, keeping every name and verdict."
+                        >{rerunning === 'continue' ? 'Asking…' : 'Continue'}</Button
                     >
+                {/if}
+
+                {#if finished}
+                    <!--
+                        The number belongs to the button, so they are one
+                        control: 'find more' with nothing saying how many was a
+                        button that silently doubled the target.
+                    -->
+                    <div class="flex items-center">
+                        <input
+                            type="number"
+                            min="1"
+                            max="2000"
+                            step="1"
+                            bind:value={more}
+                            aria-label="How many more names to look for"
+                            class="w-16 rounded-l-lg border border-r-0 border-stone-500 bg-transparent
+                                   px-2 py-1 text-sm tabular-nums
+                                   focus:border-stone-900 focus:outline-none
+                                   dark:focus:border-stone-100 {moreUsable ? '' : FIELD_ERROR}"
+                        />
+                        <Button
+                            onclick={() => rerun('continue', more)}
+                            disabled={rerunning !== '' || !moreUsable}
+                            color="alternative"
+                            size="sm"
+                            class="rounded-l-none"
+                            title="Keep every name and verdict here, and look for this many more."
+                            >{rerunning === 'continue' ? 'Asking…' : 'Find more'}</Button
+                        >
+                    </div>
                     <Button
                         onclick={() => rerun('fresh')}
                         disabled={rerunning !== ''}
                         color="alternative"
                         size="sm"
                         title="A new run beside this one: same settings, no names carried over."
-                        >{rerunning === 'fresh' ? 'Starting…' : 'Run again'}</Button
+                        >{rerunning === 'fresh' ? 'Starting…' : 'Restart'}</Button
                     >
                     <!-- Still an <a>: it navigates, so it must behave like a link. -->
                     <Button
@@ -2647,8 +2723,8 @@
                         title="The compose form, with these settings already in it."
                         >Edit and run</Button
                     >
-                </div>
-            {/if}
+                {/if}
+            </div>
         </div>
     </section>
 

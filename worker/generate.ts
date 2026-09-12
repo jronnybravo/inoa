@@ -171,6 +171,12 @@ export function promptFor(
      * being told to sound like these and not to hand them back — which is the
      * distinction worth spelling out, or it returns a set of near-spellings.
      *
+     * And one influence, not the brief's replacement. Told plainly to let these
+     * shape what it wrote, a run from four Tagalog-and-English blends came back
+     * as fifty Tagalog-and-English blends — which is a person's taste read back
+     * to them rather than a shortlist, and the opposite of why anybody asks a
+     * machine for names.
+     *
      * Capped, because a person who brought two hundred names has already told
      * us everything this can use and the rest is prompt spent for nothing.
      */
@@ -183,9 +189,12 @@ export function promptFor(
                   liked.length > shown.length ? ` (${shown.length} of ${liked.length})` : ''
               }:`,
               shown.join(', '),
-              'Read what they like from these — the sound, the length, the register, the',
-              'kind of word they reach for — and let it shape what you write. Do not repeat',
-              'them, and do not hand back respellings or near-variants of them.',
+              'These say something the brief cannot: what this person likes the sound',
+              'of. Take it as ONE influence among several, not the shape of the whole',
+              'list — the brief and the approach above still decide what a name is.',
+              'Some of what you return should echo their register; the rest should go',
+              'somewhere they would not have thought of, which is what they came here',
+              'for. Do not repeat them, and no respellings or near-variants of them.',
               ''
           ].join('\n')
         : '';

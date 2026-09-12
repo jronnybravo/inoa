@@ -38,10 +38,35 @@ const SETTINGS = [
     'emailVerified'
 ] as const;
 
+/**
+ * The most a single 'find more' may add.
+ *
+ * The same ceiling the compose form puts on a run, for the same reason: a
+ * number typed into a box should not be able to queue a week of somebody's
+ * rate limits by accident.
+ */
+const MOST_MORE = 2000;
+
 export const POST: RequestHandler = async ({ params, request }) => {
-    const { mode } = (await request.json().catch(() => ({}))) as { mode?: string };
+    const { mode, more } = (await request.json().catch(() => ({}))) as {
+        mode?: string;
+        more?: unknown;
+    };
     if (mode !== 'fresh' && mode !== 'continue') {
         error(400, "mode must be 'fresh' or 'continue'");
+    }
+    /*
+     * How many more, if the caller said.
+     *
+     * Zero is meaningful and is why this is not a falsy check: resuming a run
+     * that was stopped asks for nothing new, only for the rest of what it was
+     * already asked for.
+     */
+    if (more !== undefined && (!Number.isInteger(more) || (more as number) < 0)) {
+        error(400, 'more must be a whole number of names, or left out');
+    }
+    if (typeof more === 'number' && more > MOST_MORE) {
+        error(400, `Ask for at most ${MOST_MORE} more at a time.`);
     }
 
     await db();
@@ -57,16 +82,22 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
     if (mode === 'continue') {
         /*
-         * The same run, asked for as many again.
+         * The same run, carried on.
          *
-         * The increment is the original target rather than a number picked
-         * here, because 'the same settings again' is the whole request — and
-         * a run that asked for fifty is a person who thinks in fifties.
+         * How many more is the caller's to say, because only they know whether
+         * they want another fifty or another five. Left out it is the original
+         * target again, which is what this did before there was a box to type
+         * in and remains the sensible reading of 'find more'.
+         *
+         * Zero is the other half of this endpoint's job: a run that was stopped
+         * has a target it never reached, and picking it up again asks for
+         * nothing new at all.
          *
          * The worker tops up to whatever the target says and keeps what it
          * holds, so this is the entire change.
          */
-        const target = run.targetCount * 2;
+        const added = typeof more === 'number' ? more : run.targetCount;
+        const target = run.targetCount + added;
         await Run.update(run.id, {
             targetCount: target,
             status: 'queued',
@@ -78,8 +109,11 @@ export const POST: RequestHandler = async ({ params, request }) => {
             runId: run.id,
             level: 'info',
             message:
-                `Asked for more names — the target is now ${target}. ` +
-                'Everything already found is kept, and the new names will avoid it.'
+                added === 0
+                    ? `Picking this up again — the target is still ${target}. ` +
+                      'Everything already found is kept.'
+                    : `Asked for ${added} more names — the target is now ${target}. ` +
+                      'Everything already found is kept, and the new names will avoid it.'
         });
         return json({ id: run.id, mode, targetCount: target });
     }
